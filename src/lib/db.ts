@@ -2,7 +2,7 @@ import initSqlJs, { type Database } from "sql.js";
 
 let SQL: any = null;
 
-// Inicializa el módulo WASM de sql.js
+// Initializes the sql.js WASM module
 export async function initDb(): Promise<void> {
   if (!SQL) {
     SQL = await initSqlJs({
@@ -11,15 +11,15 @@ export async function initDb(): Promise<void> {
   }
 }
 
-// Carga la base de datos desde un buffer
+// Loads the database from a buffer
 export function loadDb(buffer: ArrayBuffer | Uint8Array): Database {
   if (!SQL) {
-    throw new Error("SQL.js no ha sido inicializado. Llama a initDb() primero.");
+    throw new Error("SQL.js has not been initialized. Call initDb() first.");
   }
   return new SQL.Database(buffer);
 }
 
-// Ejecuta una consulta y devuelve los resultados
+// Executes a query and returns the results as an array of objects
 export function queryData(db: Database, query: string): any[] {
   const results = [];
   const stmt = db.prepare(query);
