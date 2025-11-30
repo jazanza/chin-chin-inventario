@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react";
+import { DateRange } from "react-day-picker";
+import { format } from "date-fns";
 import { initDb, loadDb, queryData } from "@/lib/db";
 
 interface IElectronAPI {
@@ -14,25 +16,36 @@ declare global {
 const WEEKLY_GOAL_LITERS = 500;
 const GOAL_ML = WEEKLY_GOAL_LITERS * 1000;
 
-// Queries updated to fetch Description along with the Name
-const VOLUME_QUERY = `
+const createQuery = (baseQuery: string, dateRange?: DateRange): string => {
+  let whereClause = "WHERE T3.DocumentTypeId = 2";
+  if (dateRange?.from) {
+    const fromDate = format(dateRange.from, "yyyy-MM-dd 00:00:00");
+    const toDate = dateRange.to
+      ? format(dateRange.to, "yyyy-MM-dd 23:59:59")
+      : format(dateRange.from, "yyyy-MM-dd 23:59:59");
+    whereClause += ` AND T3.DateCreated BETWEEN '${fromDate}' AND '${toDate}'`;
+  }
+  return baseQuery.replace("{{WHERE_CLAUSE}}", whereClause);
+};
+
+const VOLUME_QUERY_BASE = `
   SELECT T1.Quantity, T2.Name AS ItemName, T2.Description AS ItemDescription
   FROM DocumentItem AS T1
   INNER JOIN Product AS T2 ON T1.ProductId = T2.Id
   INNER JOIN Document AS T3 ON T1.DocumentId = T3.Id
-  WHERE T3.DateCreated >= DATETIME('now', '-7 days') AND T3.DocumentTypeId = 2;
+  {{WHERE_CLAUSE}};
 `;
 
-const SPECTRUM_QUERY = `
+const SPECTRUM_QUERY_BASE = `
   SELECT T2.Name as ItemName, T2.Description AS ItemDescription, SUM(T1.Quantity) as TotalQuantity
   FROM DocumentItem AS T1
   INNER JOIN Product AS T2 ON T1.ProductId = T2.Id
   INNER JOIN Document AS T3 ON T1.DocumentId = T3.Id
-  WHERE T3.DateCreated >= DATETIME('now', '-7 days') AND T3.DocumentTypeId = 2
+  {{WHERE_CLAUSE}}
   GROUP BY T2.Name, T2.Description;
 `;
 
-const LOYALTY_QUERY = `
+const LOYALTY_QUERY_BASE = `
   SELECT
     T4.Name AS CustomerName,
     T2.Name AS ItemName,
@@ -42,12 +55,11 @@ const LOYALTY_QUERY = `
   INNER JOIN Product AS T2 ON T1.ProductId = T2.Id
   INNER JOIN Document AS T3 ON T1.DocumentId = T3.Id
   INNER JOIN Customer AS T4 ON T3.CustomerId = T4.Id
-  WHERE T3.DateCreated >= DATETIME('now', '-7 days') AND T3.DocumentTypeId = 2 AND T4.Name IS NOT NULL
+  {{WHERE_CLAUSE}} AND T4.Name IS NOT NULL
   GROUP BY T4.Name, T2.Name, T2.Description
   ORDER BY SUM(T1.Quantity) DESC;
 `;
 
-// More robust function to extract volume
 const extractVolumeMl = (name: string, description: string | null): number => {
   const textToSearch = `${name} ${description || ""}`.toLowerCase();
   const volumeRegex = /(\d+)\s*ml/i;
@@ -57,14 +69,13 @@ const extractVolumeMl = (name: string, description: string | null): number => {
     return parseInt(match[1], 10);
   }
 
-  // Fallback for common terms
   if (textToSearch.includes("pinta")) return 473;
   if (textToSearch.includes("caña")) return 200;
   if (textToSearch.includes("botella")) return 330;
   if (textToSearch.includes("lata")) return 330;
 
   console.warn(`Could not determine volume for item: ${name}. Defaulting to 0.`);
-  return 0; // Default to 0 if no volume can be determined
+  return 0;
 };
 
 const categorizeBeer = (itemName: string): string => {
@@ -88,13 +99,18 @@ export function useDb() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const processData = useCallback(async (dbBuffer: Uint8Array) => {
+  const processData = useCallback(async (dbBuffer: Uint8Array, dateRange?: DateRange) => {
     setLoading(true);
     setError(null);
-    console.log("Starting database processing...");
+    console.log("Starting database processing with date range:", dateRange);
     try {
       await initDb();
       const db = loadDb(dbBuffer);
+      
+      const VOLUME_QUERY = createQuery(VOLUME_QUERY_BASE, dateRange);
+      const SPECTRUM_QUERY = createQuery(SPECTRUM_QUERY_BASE, dateRange);
+      const LOYALTY_QUERY = createQuery(LOYALTY_QUERY_BASE, dateRange);
+
       const volumeData = queryData(db, VOLUME_QUERY);
       const spectrumData = queryData(db, SPECTRUM_QUERY);
       const loyaltyData = queryData(db, LOYALTY_QUERY);
@@ -104,7 +120,6 @@ export function useDb() {
       console.log("Raw Spectrum Data:", spectrumData);
       console.log("Raw Loyalty Data:", loyaltyData);
 
-      // 1. Consumption Metrics
       let totalMl = 0;
       for (const item of volumeData) {
         const volume = extractVolumeMl(item.ItemName, item.ItemDescription);
@@ -112,9 +127,7 @@ export function useDb() {
       }
       const totalLiters = totalMl / 1000;
       const percentage = Math.min(totalMl / GOAL_ML, 1.0);
-      console.log(`Calculated Total Liters: ${totalLiters}, Percentage: ${percentage}`);
 
-      // 2. Flavor Spectrum
       const flavorMl: { [key: string]: number } = {};
       for (const item of spectrumData) {
         const volume = extractVolumeMl(item.ItemName, item.ItemDescription);
@@ -123,15 +136,12 @@ export function useDb() {
           flavorMl[category] = (flavorMl[category] || 0) + item.TotalQuantity * volume;
         }
       }
-      console.log("Calculated Flavor Spectrum (ml):", flavorMl);
 
-      // 3. Variety Metrics
       const varietyMetrics = {
         totalLiters,
         uniqueProducts: spectrumData.length,
       };
 
-      // 4. Loyalty Metrics
       const customerVolumes: { [key: string]: number } = {};
       for (const item of loyaltyData) {
         const volume = extractVolumeMl(item.ItemName, item.ItemDescription);
@@ -143,7 +153,6 @@ export function useDb() {
         .map(([name, ml]) => ({ name, liters: ml / 1000 }))
         .sort((a, b) => b.liters - a.liters);
       const topCustomers = sortedCustomers.slice(0, 5);
-      console.log("Calculated Top Customers:", topCustomers);
 
       setData({
         consumptionMetrics: { liters: totalLiters, percentage, goal: WEEKLY_GOAL_LITERS },
