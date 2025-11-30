@@ -1,19 +1,13 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import path from "path";
 import fs from "fs";
-import chokidar from "chokidar";
-
-// --- CONFIGURATION ---
-// IMPORTANT: Replace this with the actual path to your Aronium database file.
-const DB_FILE_PATH = "/Users/jazanza/Downloads/aronium-auto-backup-2025-11-14-13-50-22.db";
-// --- END CONFIGURATION ---
 
 let mainWindow: BrowserWindow | null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1200,
+    height: 800,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -33,42 +27,33 @@ function createWindow() {
   });
 }
 
-function setupFileWatcher() {
-  console.log(`Watching for changes on: ${DB_FILE_PATH}`);
-  const watcher = chokidar.watch(DB_FILE_PATH, {
-    persistent: true,
-    ignoreInitial: true,
-  });
-
-  watcher.on("change", (path) => {
-    console.log(`File ${path} has been changed. Notifying renderer.`);
-    mainWindow?.webContents.send("db-file-updated");
-  });
-
-  watcher.on("error", (error) => {
-    console.error(`Watcher error: ${error}`);
-  });
-}
-
 app.whenReady().then(() => {
-  // IPC handler to read the database file and send it to the renderer
-  ipcMain.handle("get-db-buffer", async () => {
+  // IPC handler para abrir el diálogo de selección de archivos y leer el archivo de la base de datos
+  ipcMain.handle("open-db-file", async () => {
     try {
-      if (fs.existsSync(DB_FILE_PATH)) {
-        const buffer = await fs.promises.readFile(DB_FILE_PATH);
-        console.log(`Reading DB file, size: ${buffer.length} bytes.`);
-        return buffer;
+      const result = await dialog.showOpenDialog({
+        title: "Seleccionar archivo de base de datos de Aronium",
+        buttonLabel: "Abrir",
+        properties: ["openFile"],
+        filters: [{ name: "Database Files", extensions: ["db"] }],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        console.log("Selección de archivo cancelada.");
+        return null;
       }
-      console.warn(`Database file not found at: ${DB_FILE_PATH}`);
-      return null;
+
+      const filePath = result.filePaths[0];
+      const buffer = await fs.promises.readFile(filePath);
+      console.log(`Leyendo archivo DB, tamaño: ${buffer.length} bytes.`);
+      return buffer;
     } catch (error) {
-      console.error("Error reading database file:", error);
+      console.error("Error al leer el archivo de la base de datos:", error);
       return null;
     }
   });
 
   createWindow();
-  setupFileWatcher();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

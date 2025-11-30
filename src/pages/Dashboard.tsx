@@ -7,12 +7,22 @@ import { FlavorSpectrum } from "@/components/FlavorSpectrum";
 import { VarietyBalance } from "@/components/VarietyBalance";
 import { LoyaltyConstellation } from "@/components/LoyaltyConstellation";
 import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 
 type ViewMode = "meter" | "spectrum" | "balance" | "loyalty";
 
 const Dashboard = () => {
-  const { consumptionMetrics, flavorData, varietyMetrics, loyaltyMetrics, loading, error } = useDb();
+  const { consumptionMetrics, flavorData, varietyMetrics, loyaltyMetrics, loading, error, processData } = useDb();
   const [viewMode, setViewMode] = useState<ViewMode>("meter");
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  const handleFileUpload = async () => {
+    const dbBuffer = await window.electronAPI.openDbFile();
+    if (dbBuffer) {
+      await processData(dbBuffer);
+      setIsDataLoaded(true);
+    }
+  };
 
   const renderVisualization = () => {
     switch (viewMode) {
@@ -29,25 +39,47 @@ const Dashboard = () => {
     }
   };
 
+  if (!isDataLoaded) {
+    return (
+      <div className="w-screen h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold mb-4">Visualizador de Cervecería</h1>
+          <p className="text-xl text-gray-400 mb-8">Carga tu archivo de base de datos Aronium (.db) para comenzar.</p>
+          <Button onClick={handleFileUpload} size="lg" disabled={loading}>
+            {loading ? (
+              "Procesando..."
+            ) : (
+              <>
+                <Upload className="mr-2 h-5 w-5" />
+                Cargar Archivo .db
+              </>
+            )}
+          </Button>
+          {error && <p className="text-red-500 mt-4">Error: {error}</p>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-screen h-screen bg-gray-900 text-white flex flex-col">
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 p-2 bg-gray-800/50 rounded-lg flex gap-2">
         <Button onClick={() => setViewMode("meter")} variant={viewMode === "meter" ? "secondary" : "ghost"}>
-          Consumption Meter
+          Medidor de Consumo
         </Button>
         <Button onClick={() => setViewMode("spectrum")} variant={viewMode === "spectrum" ? "secondary" : "ghost"}>
-          Flavor Spectrum
+          Espectro de Sabor
         </Button>
         <Button onClick={() => setViewMode("balance")} variant={viewMode === "balance" ? "secondary" : "ghost"}>
-          Variety Balance
+          Balance de Variedad
         </Button>
         <Button onClick={() => setViewMode("loyalty")} variant={viewMode === "loyalty" ? "secondary" : "ghost"}>
-          Loyalty Constellation
+          Constelación de Lealtad
         </Button>
       </div>
 
       <div className="flex-grow">
-        {loading && <p className="text-xl text-center pt-40">Connecting to the brewery...</p>}
+        {loading && <p className="text-xl text-center pt-40">Analizando los datos...</p>}
         {error && <p className="text-xl text-red-500 text-center pt-40">Error: {error}</p>}
         {!loading && !error && (
           <Canvas shadows camera={{ position: [0, 1, 5], fov: 50 }}>

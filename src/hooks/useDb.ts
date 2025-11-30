@@ -1,10 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 
 interface IElectronAPI {
-  getDbBuffer: () => Promise<Uint8Array | null>;
-  onDbUpdate: (callback: () => void) => void;
-  removeDbUpdateListener: (callback: () => void) => void;
+  openDbFile: () => Promise<Uint8Array | null>;
 }
 
 declare global {
@@ -65,16 +63,14 @@ export function useDb() {
     varietyMetrics: { totalLiters: 0, uniqueProducts: 0 },
     loyaltyMetrics: { topCustomers: [] },
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const processData = useCallback(async () => {
+  const processData = useCallback(async (dbBuffer: Uint8Array) => {
+    setLoading(true);
+    setError(null);
     try {
-      setError(null);
       await initDb();
-      const dbBuffer = await window.electronAPI.getDbBuffer();
-      if (!dbBuffer) throw new Error("Database file not found or could not be read.");
-
       const db = loadDb(dbBuffer);
       const volumeData = queryData(db, VOLUME_QUERY);
       const spectrumData = queryData(db, SPECTRUM_QUERY);
@@ -139,14 +135,5 @@ export function useDb() {
     }
   }, []);
 
-  useEffect(() => {
-    processData();
-    const handleUpdate = () => processData();
-    window.electronAPI.onDbUpdate(handleUpdate);
-    return () => {
-      window.electronAPI.removeDbUpdateListener(handleUpdate);
-    };
-  }, [processData]);
-
-  return { ...data, loading, error };
+  return { ...data, loading, error, processData };
 }
