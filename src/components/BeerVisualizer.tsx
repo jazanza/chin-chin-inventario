@@ -98,7 +98,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
       <Text
         ref={textRef}
-        position={[0, bottomY + 0, 0]}
+        position={[0, bottomY - 0,5, 0]}
         fontSize={2}
         color="white"
         anchorX="center"
