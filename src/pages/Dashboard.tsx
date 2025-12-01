@@ -32,6 +32,7 @@ const SCENE_PLAYLIST: Scene[] = [
   { viewMode: "meter", rangeKey: "this_year", title: "LITROS DE CERVEZA" },
   { viewMode: "meter", rangeKey: "last_year", title: "LITROS DE CERVEZA" },
   { viewMode: "meter", rangeKey: "all_time", title: "LITROS DE CERVEZA" },
+  // Escenas de visualización que no son 'meter'
   { viewMode: "ranking", rangeKey: "all_time", title: "RANKING DE CERVEZAS" },
   { viewMode: "balance", rangeKey: "all_time", title: "BALANCE DE VARIEDAD" },
   { viewMode: "loyalty", rangeKey: "all_time", title: "CONSTELACIÓN DE LEALTAD" },
@@ -66,7 +67,7 @@ const Dashboard = () => {
   } = useDb();
   const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
-  const [previousViewMode, setPreviousViewMode] = useState<ViewMode | null>(null); // Nuevo estado para el modo de vista anterior
+  const [previousViewMode, setPreviousViewMode] = useState<ViewMode | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -79,7 +80,7 @@ const Dashboard = () => {
 
     let nextIndex: number;
     let attempts = 0;
-    const maxAttempts = 20; // Para evitar bucles infinitos
+    const maxAttempts = 20;
 
     // Comprobar si hay al menos una escena que no sea 'meter' en la playlist
     const hasNonMeterScenes = SCENE_PLAYLIST.some(s => s.viewMode !== "meter");
@@ -100,7 +101,7 @@ const Dashboard = () => {
     );
 
     setCurrentSceneIndex(nextIndex);
-    setPreviousViewMode(SCENE_PLAYLIST[nextIndex].viewMode); // Actualizar el modo de vista anterior
+    setPreviousViewMode(SCENE_PLAYLIST[nextIndex].viewMode);
   }, [currentSceneIndex, previousViewMode, SCENE_PLAYLIST.length]);
 
   // Efecto para inicializar la primera escena y el modo de vista anterior
