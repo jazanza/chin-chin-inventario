@@ -2,6 +2,7 @@ import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
+import { ZALANDO_FONT_URL } from "@/lib/constants";
 
 interface RankedBeer {
   name: string;
@@ -65,6 +66,7 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
       </points>
       <Text
         ref={textRef}
+        font={ZALANDO_FONT_URL}
         position={[0, 0.3, 0]}
         fontSize={0.2}
         color="white"

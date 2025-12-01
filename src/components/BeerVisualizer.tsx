@@ -2,6 +2,7 @@ import { useRef, useMemo, useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
+import { ZALANDO_FONT_URL } from "@/lib/constants";
 
 const PARTICLE_COUNT = 25000;
 const CYLINDER_RADIUS = 2.5; // Aumentado para ocupar más pantalla
@@ -98,6 +99,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
       <Text
         ref={textRef}
+        font={ZALANDO_FONT_URL}
         position={[0, bottomY + 0.3, 0]}
         fontSize={2}
         color="white"

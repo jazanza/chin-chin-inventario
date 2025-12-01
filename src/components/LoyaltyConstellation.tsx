@@ -3,6 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { Text, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { createNoise3D } from 'simplex-noise';
+import { ZALANDO_FONT_URL } from "@/lib/constants";
 
 interface Customer {
   name: string;
@@ -77,10 +78,10 @@ const CustomerCluster = ({ customer, sunPosition, isSun = false }: { customer: C
         </bufferGeometry>
         <pointsMaterial size={0.03} color={color} />
       </points>
-      <Text position={[0, clusterRadius + 0.2, 0]} fontSize={0.12} color="white" anchorX="center">
+      <Text font={ZALANDO_FONT_URL} position={[0, clusterRadius + 0.2, 0]} fontSize={0.12} color="white" anchorX="center">
         {customer.name}
       </Text>
-      <Text position={[0, -clusterRadius - 0.2, 0]} fontSize={0.1} color="white" anchorX="center">
+      <Text font={ZALANDO_FONT_URL} position={[0, -clusterRadius - 0.2, 0]} fontSize={0.1} color="white" anchorX="center">
         {`${customer.liters.toFixed(1)} L`}
       </Text>
       {!isSun && (
@@ -106,7 +107,7 @@ export function LoyaltyConstellation({ loyaltyMetrics, ...props }: { loyaltyMetr
 
   return (
     <group {...props}>
-      {!hasData && <Text position={[0, 0, 0]} fontSize={0.3} color="white">No customer data available</Text>}
+      {!hasData && <Text position={[0, 0, 0]} fontSize={0.3} color="white" font={ZALANDO_FONT_URL}>No customer data available</Text>}
       {sun && (
         <>
           <CustomerCluster customer={sun} sunPosition={sunPosition} isSun={true} />

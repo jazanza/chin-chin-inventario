@@ -113,7 +113,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-screen h-screen bg-black text-white flex flex-col font-mono relative">
+    <div className="w-screen h-screen bg-black text-white flex flex-col relative">
       <NarrativeOverlay
         key={currentSceneIndex}
         title={currentScene.title}
