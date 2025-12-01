@@ -4,7 +4,7 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { Download } from "lucide-react";
 import { useDb } from "@/hooks/useDb";
 import { BeerVisualizer } from "@/components/BeerVisualizer";
-import { FlavorSpectrum } from "@/components/FlavorSpectrum";
+import { ConsumptionRanking } from "@/components/ConsumptionRanking";
 import { VarietyBalance } from "@/components/VarietyBalance";
 import { LoyaltyConstellation } from "@/components/LoyaltyConstellation";
 import { CameraAnimator } from "@/components/CameraAnimator";
@@ -14,8 +14,8 @@ import { DateRangeSelector } from "@/components/DateRangeSelector";
 import { exportToExcel } from "@/lib/export";
 import { calculateDateRange } from "@/lib/dates";
 
-type ViewMode = "meter" | "spectrum" | "balance" | "loyalty";
-const VIEWS: ViewMode[] = ["meter", "spectrum", "balance", "loyalty"];
+type ViewMode = "meter" | "ranking" | "loyalty" | "balance";
+const VIEWS: ViewMode[] = ["meter", "ranking", "loyalty", "balance"];
 const VIEW_DURATION = 15000; // 15 seconds per view
 
 const Dashboard = () => {
@@ -31,7 +31,7 @@ const Dashboard = () => {
   } = useDb();
   const [viewMode, setViewMode] = useState<ViewMode>("meter");
   const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
-  const [rangeKey, setRangeKey] = useState<string>("last_3_months");
+  const [rangeKey, setRangeKey] = useState<string>("last_month");
 
   useEffect(() => {
     if (!dbBuffer || loading) return;
@@ -115,7 +115,7 @@ const Dashboard = () => {
             <fog attach="fog" args={["#101010", 5, 20]} />
             <Suspense fallback={null}>
               <BeerVisualizer {...consumptionMetrics} rankedBeers={rankedBeers} visible={viewMode === "meter"} />
-              <FlavorSpectrum flavorData={flavorData} visible={viewMode === "spectrum"} />
+              <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
               <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
               <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
               

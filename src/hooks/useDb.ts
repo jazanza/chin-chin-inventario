@@ -164,7 +164,7 @@ export function useDb() {
       const sortedCustomers = Object.entries(customerVolumes)
         .map(([name, ml]) => ({ name, liters: ml / 1000 }))
         .sort((a, b) => b.liters - a.liters);
-      const topCustomers = sortedCustomers.slice(0, 5);
+      const topCustomers = sortedCustomers.slice(0, 20);
 
       const rankedBeers = spectrumData
         .map(item => {
@@ -178,7 +178,7 @@ export function useDb() {
         })
         .filter(beer => beer.liters > 0.1)
         .sort((a, b) => b.liters - a.liters)
-        .slice(0, 7);
+        .slice(0, 10);
 
       setData({
         consumptionMetrics: { liters: totalLiters },

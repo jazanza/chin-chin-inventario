@@ -2,16 +2,16 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useMemo } from "react";
 
-type ViewMode = "meter" | "spectrum" | "balance" | "loyalty";
+type ViewMode = "meter" | "ranking" | "balance" | "loyalty";
 
 const CAMERA_PRESETS: { [key in ViewMode]: { position: THREE.Vector3; lookAt: THREE.Vector3 } } = {
   meter: {
     position: new THREE.Vector3(0, 1, 7),
     lookAt: new THREE.Vector3(0, 0, 0),
   },
-  spectrum: {
-    position: new THREE.Vector3(0, 4, 4),
-    lookAt: new THREE.Vector3(0, 0, 0),
+  ranking: {
+    position: new THREE.Vector3(0, 2, 10),
+    lookAt: new THREE.Vector3(0, 1, 0),
   },
   balance: {
     position: new THREE.Vector3(5, 1, 0),
