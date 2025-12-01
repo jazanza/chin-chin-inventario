@@ -3,9 +3,9 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
-const PARTICLE_COUNT = 100000;
-const CYLINDER_RADIUS = 5.0; // Aumentado para ocupar más pantalla
-const MAX_LITERS_FOR_SCALE = 1000;
+const PARTICLE_COUNT = 25000;
+const CYLINDER_RADIUS = 3.0; // Aumentado para ocupar más pantalla
+const MAX_LITERS_FOR_SCALE = 500;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
   const { viewport } = useThree();
@@ -47,13 +47,13 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   useFrame(({ clock }) => {
     if (!visible || !pointsRef.current) return;
 
-    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.01); // De 0.05 a 0.01
+    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.05);
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
     const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
     geometry.setDrawRange(0, targetParticleCount);
 
-    const time = clock.getElapsedTime() * 0.5; // Multiplicador reducido
+    const time = clock.getElapsedTime();
     const posAttr = geometry.attributes.position as THREE.BufferAttribute;
     const colors = geometry.attributes.color as THREE.BufferAttribute;
     const color = new THREE.Color();
@@ -62,8 +62,8 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       const y = positions[i * 3 + 1];
 
       // 🌊 Efecto Líquido Ondulante (Marea)
-      const waveX = Math.sin(y * 2 + time) * 0.2;
-      const waveZ = Math.cos(y * 2 + time) * 0.2;
+      const waveX = Math.sin(y * 2 + time) * 0.1;
+      const waveZ = Math.cos(y * 2 + time) * 0.1;
       
       // A. Calcular waveY
       const waveY = Math.sin(positions[i * 3] * 0.5 + time) * 0.1;
@@ -82,7 +82,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     if (textRef.current) {
       const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
       textRef.current.position.y = topOfLiquid + 1.75;
-      textRef.current.text = `${animatedLiters.current.toFixed(2)}`; // <--- ¡Sin ' L'!
+      textRef.current.text = `${animatedLiters.current.toFixed(2)} L`;
     }
   });
 
@@ -93,27 +93,20 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
-        <pointsMaterial
-          size={15.0}
-          sizeAttenuation={false}
-          vertexColors={true}
-          transparent={true}
-          opacity={0.7}
-        />
+        <pointsMaterial size={0.3} vertexColors={true} transparent={true} opacity={0.7} />
       </points>
 
       <Text
         ref={textRef}
         position={[0, bottomY + 0.3, 0]}
-        fontSize={0.5}
+        fontSize={2}
         color="white"
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.02}
         outlineColor="#000000"
-        font="https://fonts.gstatic.com/s/inter/v12/Uu9eNuAP25E6QpS9g5Y.woff"
       >
-        {`0.00`}
+        {`0.00 L`}
       </Text>
     </group>
   );
