@@ -3,8 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
-const PARTICLE_COUNT = 50000; // Reducido para mejorar el rendimiento
-const CYLINDER_RADIUS = 5.0;
+const PARTICLE_COUNT = 100000;
+const CYLINDER_RADIUS = 5.0; // Aumentado para ocupar más pantalla
 const MAX_LITERS_FOR_SCALE = 1000;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
@@ -62,11 +62,11 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       const y = positions[i * 3 + 1];
 
       // 🌊 Efecto Líquido Ondulante (Marea)
-      const waveX = Math.sin(y * 1 + time) * 0.1;
-      const waveZ = Math.cos(y * 1 + time) * 0.1;
+      const waveX = Math.sin(y * 2 + time) * 0.2;
+      const waveZ = Math.cos(y * 2 + time) * 0.2;
       
       // A. Calcular waveY
-      const waveY = Math.sin(i * 0.05 + time * 1) * 0.1;
+      const waveY = Math.sin(positions[i * 3] * 0.5 + time) * 0.1;
 
       // B. Aplicar waveY
       posAttr.setXYZ(i, positions[i * 3] + waveX, y + waveY, positions[i * 3 + 2] + waveZ);
@@ -87,13 +87,13 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   });
 
   return (
-    <group {...props} visible={visible} position={[0, viewport.height * 0.3, 0]}>
+    <group {...props} visible={visible}>
       <points ref={pointsRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
-        <pointsMaterial size={3.0} sizeAttenuation={false} vertexColors={true} transparent={true} opacity={0.7} />
+        <pointsMaterial size={0.3} vertexColors={true} transparent={true} opacity={0.7} />
       </points>
 
       <Text
