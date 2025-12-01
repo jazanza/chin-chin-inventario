@@ -1,26 +1,30 @@
-import { useThree } from "@react-three/fiber";
+import { useThree, extend } from "@react-three/fiber";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import { RenderPass } from "three-stdlib";
 import { useMemo } from "react";
 
-export const SceneEffects = () => {
-  const { gl, size } = useThree();
+// The @react-three/postprocessing library is a wrapper, but for this low-level fix,
+// we need to explicitly use the RenderPass from the underlying library and extend it
+// so that react-three-fiber can render it as a component.
+extend({ RenderPass });
 
-  // Siguiendo el diagnóstico del usuario: esta es la guardia crucial.
-  // No renderizamos el EffectComposer hasta que el contexto WebGL (gl) y
-  // un tamaño de lienzo válido (width > 0, height > 0) estén disponibles.
-  // Esto previene el intento de crear buffers de renderizado con tamaño 0x0, que es la causa del error.
-  if (!gl || size.width === 0 || size.height === 0) {
+export const SceneEffects = () => {
+  const { gl, scene, camera, size } = useThree();
+
+  // Your stricter guard condition: wait for the entire scene context to be ready.
+  if (!gl || !scene || !camera || size.width === 0 || size.height === 0) {
     return null;
   }
 
-  // Usamos una 'key' única basada en el tamaño. Esto fuerza a React a crear una
-  // nueva instancia del EffectComposer si el tamaño del lienzo cambia,
-  // asegurando que los buffers internos se re-inicialicen correctamente.
-  // Es una práctica robusta para la estabilidad en R3F.
   const key = useMemo(() => `${size.width}-${size.height}`, [size]);
 
   return (
     <EffectComposer key={key}>
+      {/* 1. EXPLICIT RENDER PASS: The core of your fix. */}
+      {/* This ensures the processing chain starts with a valid, initialized buffer. */}
+      <renderPass attach="passes" args={[scene, camera]} />
+
+      {/* 2. BLOOM EFFECT: Now added as the second pass in the chain. */}
       <Bloom
         mipmapBlur
         luminanceThreshold={1}
