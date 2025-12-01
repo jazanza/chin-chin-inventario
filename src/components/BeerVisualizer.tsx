@@ -7,7 +7,7 @@ const PARTICLE_COUNT = 100000; // Increased particle count for density
 const CYLINDER_RADIUS = 1.5;
 const MAX_LITERS_FOR_SCALE = 1000;
 
-export function BeerVisualizer({ liters, ...props }: { liters: number } & JSX.IntrinsicElements['group']) {
+export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
   const { viewport } = useThree();
   const pointsRef = useRef<THREE.Points>(null!);
   const textRef = useRef<any>(null!);
@@ -39,7 +39,16 @@ export function BeerVisualizer({ liters, ...props }: { liters: number } & JSX.In
     return [pos, col];
   }, [maxHeight, bottomY]);
 
+  // Reset animation when it becomes visible
+  useEffect(() => {
+    if (visible) {
+      animatedLiters.current = 0;
+    }
+  }, [visible, liters]); // Also reset if liters change while visible for consistency
+
   useFrame(() => {
+    if (!visible) return;
+
     animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.05);
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
@@ -50,14 +59,9 @@ export function BeerVisualizer({ liters, ...props }: { liters: number } & JSX.In
     if (textRef.current) {
       const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
       textRef.current.position.y = topOfLiquid + 0.3;
+      textRef.current.text = `${animatedLiters.current.toFixed(2)} L`;
     }
   });
-
-  useEffect(() => {
-    if (liters === 0) {
-      animatedLiters.current = 0;
-    }
-  }, [liters]);
 
   return (
     <group {...props}>
@@ -79,7 +83,7 @@ export function BeerVisualizer({ liters, ...props }: { liters: number } & JSX.In
         outlineWidth={0.02}
         outlineColor="#000000"
       >
-        {`${liters.toFixed(2)} L`}
+        {`0.00 L`}
       </Text>
     </group>
   );
