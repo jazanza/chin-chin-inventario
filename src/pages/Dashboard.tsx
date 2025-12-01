@@ -1,4 +1,4 @@
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense, useEffect, useCallback, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { useDb } from "@/hooks/useDb";
@@ -9,11 +9,28 @@ import { LoyaltyConstellation } from "@/components/LoyaltyConstellation";
 import { FlavorSpectrum } from "@/components/FlavorSpectrum";
 import { CameraAnimator } from "@/components/CameraAnimator";
 import { FileUploader } from "@/components/FileUploader";
-import { SceneEffects } from "@/components/SceneEffects";
+import { PostProcessingEffects } from "@/components/PostProcessingEffects";
+import { PlaybackControls } from "@/components/PlaybackControls";
 
 type ViewMode = "meter" | "ranking" | "loyalty" | "balance" | "spectrum";
-const VIEWS: ViewMode[] = ["meter", "ranking", "loyalty", "balance", "spectrum"];
-const VIEW_DURATION = 15000; // 15 seconds per view
+
+interface Scene {
+  viewMode: ViewMode;
+  rangeKey: string;
+  title: string;
+}
+
+const SCENE_PLAYLIST: Scene[] = [
+  { viewMode: "meter", rangeKey: "last_month", title: "Consumo Mensual" },
+  { viewMode: "ranking", rangeKey: "last_month", title: "Top 10 Mensual" },
+  { viewMode: "loyalty", rangeKey: "last_6_months", title: "Lealtad (6 Meses)" },
+  { viewMode: "balance", rangeKey: "all_time", title: "Balance Histórico" },
+  { viewMode: "spectrum", rangeKey: "last_1_year", title: "Espectro Anual" },
+  { viewMode: "ranking", rangeKey: "last_1_year", title: "Top 10 Anual" },
+  { viewMode: "loyalty", rangeKey: "all_time", title: "Lealtad Histórica" },
+];
+
+const VIEW_DURATION = 15000; // 15 seconds
 
 const Dashboard = () => {
   const {
@@ -26,28 +43,48 @@ const Dashboard = () => {
     error,
     processData,
   } = useDb();
-  const [viewMode, setViewMode] = useState<ViewMode>("meter");
   const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
-  const [rangeKey] = useState<string>("last_month"); // Hardcoded to last_month
+  const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const currentScene = SCENE_PLAYLIST[currentSceneIndex];
+  const { viewMode, rangeKey } = currentScene;
+
+  const advanceScene = useCallback((direction: 1 | -1) => {
+    setCurrentSceneIndex(prevIndex => {
+      const newIndex = prevIndex + direction;
+      if (newIndex >= SCENE_PLAYLIST.length) return 0;
+      if (newIndex < 0) return SCENE_PLAYLIST.length - 1;
+      return newIndex;
+    });
+  }, []);
 
   useEffect(() => {
-    if (!dbBuffer || loading) return;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (isPlaying && dbBuffer) {
+      intervalRef.current = setInterval(() => advanceScene(1), VIEW_DURATION);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isPlaying, dbBuffer, advanceScene, currentSceneIndex]);
 
-    const timer = setInterval(() => {
-      setViewMode((currentView) => {
-        const currentIndex = VIEWS.indexOf(currentView);
-        const nextIndex = (currentIndex + 1) % VIEWS.length;
-        return VIEWS[nextIndex];
-      });
-    }, VIEW_DURATION);
+  useEffect(() => {
+    if (dbBuffer) {
+      processData(dbBuffer, rangeKey);
+    }
+  }, [dbBuffer, rangeKey, processData]);
 
-    return () => clearInterval(timer);
-  }, [dbBuffer, loading]);
-
-  const handleFileLoaded = async (buffer: Uint8Array) => {
+  const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer);
-    await processData(buffer, rangeKey);
+    setCurrentSceneIndex(0);
+    setIsPlaying(true);
   };
+
+  const handlePlayPause = () => setIsPlaying(prev => !prev);
+  const handleNext = () => advanceScene(1);
+  const handlePrev = () => advanceScene(-1);
 
   if (!dbBuffer) {
     return (
@@ -65,7 +102,10 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-screen h-screen bg-black text-white flex flex-col font-mono">
+    <div className="w-screen h-screen bg-black text-white flex flex-col font-mono relative">
+      <div className="absolute top-4 left-4 text-lg z-10 p-2 bg-black/50 rounded">
+        <p>{currentScene.title}</p>
+      </div>
       <div className="flex-grow">
         <Canvas
           shadows
@@ -93,9 +133,15 @@ const Dashboard = () => {
           )}
 
           <CameraAnimator viewMode={viewMode} />
-          <SceneEffects />
+          <PostProcessingEffects />
         </Canvas>
       </div>
+      <PlaybackControls
+        isPlaying={isPlaying}
+        onPlayPause={handlePlayPause}
+        onNext={handleNext}
+        onPrev={handlePrev}
+      />
     </div>
   );
 };

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 
 extend({ RenderPass });
 
-export const SceneEffects = () => {
+export const PostProcessingEffects = () => {
   const { gl, scene, camera, size } = useThree();
 
   if (!gl || !scene || !camera || size.width === 0 || size.height === 0) {
@@ -20,12 +20,12 @@ export const SceneEffects = () => {
       <renderPass attach="passes" args={[scene, camera]} />
       <Bloom
         mipmapBlur
-        luminanceThreshold={0.1} // Lower threshold to make more things bloom
+        luminanceThreshold={0.1}
         luminanceSmoothing={0.025}
-        intensity={2.0} // Higher intensity
+        intensity={2.0}
       />
       <RGBShift
-        offset={new THREE.Vector2(0.001, 0.001)} // Subtle shift
+        offset={new THREE.Vector2(0.001, 0.001)}
       />
     </EffectComposer>
   );
