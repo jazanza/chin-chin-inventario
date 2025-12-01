@@ -94,12 +94,11 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial
-          size={2.0}
+          size={15.0}
           sizeAttenuation={false}
           vertexColors={true}
           transparent={true}
           opacity={0.7}
-          alphaTest={0.5}
         />
       </points>
 
