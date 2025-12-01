@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { DateRange } from "react-day-picker";
 import { subDays } from "date-fns";
+import { Download } from "lucide-react";
 import { useDb } from "@/hooks/useDb";
 import { BeerVisualizer } from "@/components/BeerVisualizer";
 import { FlavorSpectrum } from "@/components/FlavorSpectrum";
@@ -11,6 +12,7 @@ import { LoyaltyConstellation } from "@/components/LoyaltyConstellation";
 import { Button } from "@/components/ui/button";
 import { FileUploader } from "@/components/FileUploader";
 import { DatePickerWithRange } from "@/components/DatePicker";
+import { exportToExcel } from "@/lib/export";
 
 type ViewMode = "meter" | "spectrum" | "balance" | "loyalty";
 
@@ -32,6 +34,18 @@ const Dashboard = () => {
     if (dbBuffer) {
       processData(dbBuffer, date);
     }
+  };
+
+  const handleExport = () => {
+    if (!dbBuffer) return;
+    const dataToExport = {
+      consumptionMetrics,
+      flavorData,
+      varietyMetrics,
+      loyaltyMetrics,
+      rankedBeers,
+    };
+    exportToExcel(dataToExport, date);
   };
 
   const renderVisualization = () => {
@@ -68,6 +82,10 @@ const Dashboard = () => {
         <DatePickerWithRange date={date} setDate={setDate} />
         <Button onClick={handleAnalyze} disabled={loading}>
           Analizar Rango
+        </Button>
+        <Button onClick={handleExport} disabled={loading || !dbBuffer}>
+          <Download className="mr-2 h-4 w-4" />
+          Exportar
         </Button>
       </div>
 
