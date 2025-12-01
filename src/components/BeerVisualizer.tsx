@@ -4,7 +4,7 @@ import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 25000;
-const CYLINDER_RADIUS = 2.0; // Aumentado para ocupar más pantalla
+const CYLINDER_RADIUS = 2.5; // Aumentado para ocupar más pantalla
 const MAX_LITERS_FOR_SCALE = 500;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
