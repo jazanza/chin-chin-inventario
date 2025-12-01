@@ -12,6 +12,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   const pointsRef = useRef<THREE.Points>(null!);
   const textRef = useRef<any>(null!);
   const animatedLiters = useRef(0);
+  const animatedTextY = useRef(-viewport.height); // Inicia fuera de la pantalla
 
   const maxHeight = viewport.height * 1.2;
   const bottomY = -maxHeight / 2;
@@ -41,12 +42,15 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   useEffect(() => {
     if (visible) {
       animatedLiters.current = 0;
+      // Reinicia la posición del texto fuera de la pantalla para la animación de entrada
+      animatedTextY.current = -viewport.height / 2 - 2;
     }
-  }, [visible, liters]);
+  }, [visible, viewport.height]);
 
   useFrame(({ clock }) => {
     if (!visible || !pointsRef.current) return;
 
+    // Anima el número de litros
     animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.05);
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
@@ -60,18 +64,10 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
     for (let i = 0; i < targetParticleCount; i++) {
       const y = positions[i * 3 + 1];
-
-      // 🌊 Efecto Líquido Ondulante (Marea)
       const waveX = Math.sin(y * 2 + time) * 0.1;
       const waveZ = Math.cos(y * 2 + time) * 0.1;
-      
-      // A. Calcular waveY
       const waveY = Math.sin(positions[i * 3] * 0.5 + time) * 0.1;
-
-      // B. Aplicar waveY
       posAttr.setXYZ(i, positions[i * 3] + waveX, y + waveY, positions[i * 3 + 2] + waveZ);
-
-      // 🌈 Animación de Color Global
       const hue = (time * 0.1 + (y - bottomY) / maxHeight * 0.1) % 1;
       color.setHSL(hue, 1.0, 0.5);
       colors.setXYZ(i, color.r, color.g, color.b);
@@ -79,10 +75,12 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     posAttr.needsUpdate = true;
     colors.needsUpdate = true;
 
+    // Anima la posición Y del texto hacia el centro (y=0)
+    animatedTextY.current = THREE.MathUtils.lerp(animatedTextY.current, 0, 0.05);
+
     if (textRef.current) {
-      const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
-      textRef.current.position.y = topOfLiquid + 1.75;
-      textRef.current.text = `${animatedLiters.current.toFixed(2)} `;
+      textRef.current.position.y = animatedTextY.current; // Usa la posición Y animada
+      textRef.current.text = `${animatedLiters.current.toFixed(2)} L`;
     }
   });
 
@@ -98,7 +96,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
       <Text
         ref={textRef}
-        position={[0, bottomY + 0.3, 0]}
+        position={[0, -viewport.height, 0]} // Posición inicial fuera de la pantalla
         fontSize={2}
         color="white"
         anchorX="center"
