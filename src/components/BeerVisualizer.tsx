@@ -82,7 +82,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     if (textRef.current) {
       const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
       textRef.current.position.y = topOfLiquid + 1.75;
-      textRef.current.text = `${animatedLiters.current.toFixed(2)} L`;
+      textRef.current.text = `${animatedLiters.current.toFixed(2)} Litros`;
     }
   });
 
