@@ -28,7 +28,7 @@ const Dashboard = () => {
   } = useDb();
   const [viewMode, setViewMode] = useState<ViewMode>("meter");
   const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
-  const [rangeKey] = useState<string>("last_month");
+  const [rangeKey, setRangeKey] = useState<string>("last_month");
 
   useEffect(() => {
     if (!dbBuffer || loading) return;
@@ -49,6 +49,13 @@ const Dashboard = () => {
     await processData(buffer, rangeKey);
   };
 
+  const handleRangeChange = async (newRange: string) => {
+    setRangeKey(newRange);
+    if (dbBuffer) {
+      await processData(dbBuffer, newRange);
+    }
+  };
+
   if (!dbBuffer) {
     return (
       <div className="w-screen h-screen bg-black text-white flex flex-col items-center justify-center">
@@ -66,10 +73,10 @@ const Dashboard = () => {
 
   return (
     <div className="w-screen h-screen bg-black text-white flex flex-col font-mono">
-      <div className="absolute top-4 left-4 z-10 hidden">
+      <div className="absolute top-4 left-4 z-10">
         <DateRangeSelector
           selectedRange={rangeKey}
-          onRangeChange={() => {}}
+          onRangeChange={handleRangeChange}
         />
       </div>
 

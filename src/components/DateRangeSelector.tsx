@@ -22,7 +22,7 @@ export const DateRangeSelector = ({
   onRangeChange,
 }: DateRangeSelectorProps) => {
   return (
-    <div className="flex flex-wrap items-center gap-2 hidden"> {/* Añadir 'hidden' para ocultar */}
+    <div className="flex flex-wrap items-center gap-2">
       {DATE_RANGES.map((range) => (
         <Button
           key={range.value}

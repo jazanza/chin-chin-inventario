@@ -3,18 +3,19 @@ import { useThree } from "@react-three/fiber";
 import React from "react";
 
 export const SceneEffects = () => {
-  const { gl } = useThree();
+  const { gl, size } = useThree();
 
-  // Si el contexto GL no está disponible, no renderizamos.
-  if (!gl) {
+  // Si el contexto GL o el tamaño no están listos, no renderizamos.
+  if (!gl || size.width === 0 || size.height === 0) {
     return null;
   }
 
-  // Eliminamos skipRender y los props de tamaño.
-  // Esto permite que EffectComposer tome el control total del renderizado,
-  // lo que a menudo soluciona problemas de inicialización de buffers.
+  // Forzamos el re-montaje del EffectComposer cuando el tamaño del viewport cambia.
+  // Esto resuelve el error de ciclo de vida al asegurar que se inicializa con un estado válido.
+  const key = `${size.width}-${size.height}`;
+
   return (
-    <EffectComposer>
+    <EffectComposer key={key}>
       <Bloom
         mipmapBlur
         luminanceThreshold={1}
