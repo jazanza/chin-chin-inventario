@@ -7,13 +7,13 @@ export const NarrativeOverlay = ({ title, range }: NarrativeOverlayProps) => {
   return (
     <div className="absolute top-8 left-8 z-10 text-white pointer-events-none animate-text-glitch-in">
       <h1
-        className="text-[min(8vw,5rem)] font-bold text-[var(--primary-glitch-pink)] uppercase tracking-widest"
+        className="text-[min(6vw,3.5rem)] font-bold text-[var(--primary-glitch-pink)] uppercase tracking-widest"
         style={{ textShadow: "2px 2px var(--secondary-glitch-cyan)" }}
       >
         {title}
       </h1>
       <p
-        className="text-[min(4vw,2.5rem)] font-bold text-[var(--secondary-glitch-cyan)] uppercase tracking-wide"
+        className="text-[min(3vw,1.8rem)] font-bold text-[var(--secondary-glitch-cyan)] uppercase tracking-wide"
         style={{ textShadow: "1px 1px var(--primary-glitch-pink)" }}
       >
         {range}

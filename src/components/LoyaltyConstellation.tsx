@@ -1,5 +1,5 @@
 import { useRef, useMemo } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Text, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { createNoise3D } from 'simplex-noise';
@@ -10,8 +10,10 @@ interface Customer {
 }
 
 const noise3D = createNoise3D(Math.random);
+const BASE_TEXT_FONT_SIZE_NAME = 0.12;
+const BASE_TEXT_FONT_SIZE_LITERS = 0.1;
 
-const CustomerCluster = ({ customer, sunPosition, isSun = false }: { customer: Customer; sunPosition: THREE.Vector3; isSun?: boolean }) => {
+const CustomerCluster = ({ customer, sunPosition, isSun = false, responsiveScale }: { customer: Customer; sunPosition: THREE.Vector3; isSun?: boolean; responsiveScale: number }) => {
   const groupRef = useRef<THREE.Group>(null!);
   const lineRef = useRef<any>(null!);
   const velocity = useMemo(() => new THREE.Vector3(), []);
@@ -48,7 +50,7 @@ const CustomerCluster = ({ customer, sunPosition, isSun = false }: { customer: C
       }
       groupRef.current.position.copy(position);
 
-      // Organic wavy motion for particles
+      // Movimiento ondulado orgánico para las partículas
       const time = clock.getElapsedTime();
       const pointsGeom = (groupRef.current.children[0] as THREE.Points).geometry;
       const posAttr = pointsGeom.attributes.position;
@@ -77,10 +79,10 @@ const CustomerCluster = ({ customer, sunPosition, isSun = false }: { customer: C
         </bufferGeometry>
         <pointsMaterial size={0.03} color={color} />
       </points>
-      <Text position={[0, clusterRadius + 0.2, 0]} fontSize={0.12} color="white" anchorX="center">
+      <Text position={[0, clusterRadius + 0.2, 0]} fontSize={BASE_TEXT_FONT_SIZE_NAME * responsiveScale} color="white" anchorX="center">
         {customer.name}
       </Text>
-      <Text position={[0, -clusterRadius - 0.2, 0]} fontSize={0.1} color="white" anchorX="center">
+      <Text position={[0, -clusterRadius - 0.2, 0]} fontSize={BASE_TEXT_FONT_SIZE_LITERS * responsiveScale} color="white" anchorX="center">
         {`${customer.liters.toFixed(1)} L`}
       </Text>
       {!isSun && (
@@ -98,6 +100,10 @@ const CustomerCluster = ({ customer, sunPosition, isSun = false }: { customer: C
 };
 
 export function LoyaltyConstellation({ loyaltyMetrics, ...props }: { loyaltyMetrics: { topCustomers: Customer[] } } & JSX.IntrinsicElements['group']) {
+  const { viewport } = useThree(); // Obtener el viewport
+  const BASE_REFERENCE_WIDTH = 12; // Ancho de referencia para el escalado
+  const responsiveScale = Math.min(1, viewport.width / BASE_REFERENCE_WIDTH); // Calcular escala responsiva
+
   const { topCustomers } = loyaltyMetrics;
   const hasData = topCustomers && topCustomers.length > 0;
   const sun = hasData ? topCustomers[0] : null;
@@ -105,13 +111,13 @@ export function LoyaltyConstellation({ loyaltyMetrics, ...props }: { loyaltyMetr
   const sunPosition = useMemo(() => new THREE.Vector3(0, 0, 0), []);
 
   return (
-    <group {...props}>
-      {!hasData && <Text position={[0, 0, 0]} fontSize={0.3} color="white">No customer data available</Text>}
+    <group {...props} scale={responsiveScale}> {/* Aplicar escala responsiva */}
+      {!hasData && <Text position={[0, 0, 0]} fontSize={BASE_TEXT_FONT_SIZE_NAME * responsiveScale} color="white">No customer data available</Text>}
       {sun && (
         <>
-          <CustomerCluster customer={sun} sunPosition={sunPosition} isSun={true} />
+          <CustomerCluster customer={sun} sunPosition={sunPosition} isSun={true} responsiveScale={responsiveScale} />
           {planets.map((customer) => (
-            <CustomerCluster key={customer.name} customer={customer} sunPosition={sunPosition} />
+            <CustomerCluster key={customer.name} customer={customer} sunPosition={sunPosition} responsiveScale={responsiveScale} />
           ))}
         </>
       )}

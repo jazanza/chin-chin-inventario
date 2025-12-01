@@ -82,6 +82,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     if (textRef.current) {
       textRef.current.position.y = animatedTextY.current; // Usa la posición Y animada
       textRef.current.text = `${animatedLiters.current.toFixed(2)} L`;
+      textRef.current.fontSize = Math.min(2, viewport.width * 0.15); // Escala la fuente con el ancho del viewport, con un máximo de 2
     }
   });
 
@@ -98,7 +99,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       <Text
         ref={textRef}
         position={[0, -viewport.height, 0]} // Posición inicial fuera de la pantalla
-        fontSize={2}
+        fontSize={2} // Valor inicial, se actualizará en useFrame
         color="white"
         anchorX="center"
         anchorY="middle"

@@ -1,5 +1,5 @@
 import { useRef, useMemo } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -12,8 +12,9 @@ interface RankedBeer {
 const PARTICLE_COUNT_PER_COLUMN = 5000;
 const COLUMN_WIDTH = 0.8;
 const MAX_COLUMN_HEIGHT = 5;
+const BASE_TEXT_FONT_SIZE = 0.2; // Tamaño de fuente base para el texto
 
-const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: number; maxLiters: number }) => {
+const BeerColumn = ({ beer, index, maxLiters, responsiveScale }: { beer: RankedBeer; index: number; maxLiters: number; responsiveScale: number }) => {
   const pointsRef = useRef<THREE.Points>(null!);
   const textRef = useRef<any>(null!);
   const animatedHeight = useRef(0);
@@ -39,7 +40,7 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
       const geom = pointsRef.current.geometry as THREE.BufferGeometry;
       geom.setDrawRange(0, visibleParticles);
 
-      // Sinusoidal wave distortion
+      // Distorsión de onda sinusoidal
       const positions = geom.attributes.position.array as Float32Array;
       const time = clock.getElapsedTime();
       for (let i = 0; i < visibleParticles; i++) {
@@ -66,7 +67,7 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
       <Text
         ref={textRef}
         position={[0, 0.3, 0]}
-        fontSize={0.2}
+        fontSize={BASE_TEXT_FONT_SIZE * responsiveScale} // Aplicar responsiveScale
         color="white"
         anchorX="center"
         maxWidth={1}
@@ -79,12 +80,16 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
 };
 
 export function ConsumptionRanking({ rankedBeers, ...props }: { rankedBeers: RankedBeer[] } & JSX.IntrinsicElements['group']) {
+  const { viewport } = useThree(); // Obtener el viewport
+  const BASE_REFERENCE_WIDTH = 12; // Ancho de referencia para el escalado
+  const responsiveScale = Math.min(1, viewport.width / BASE_REFERENCE_WIDTH); // Calcular escala responsiva
+
   const maxLiters = Math.max(...rankedBeers.map(b => b.liters), 1);
 
   return (
-    <group {...props} position={[0, -2, 0]}>
+    <group {...props} position={[0, -2, 0]} scale={responsiveScale}> {/* Aplicar escala responsiva */}
       {rankedBeers.map((beer, index) => (
-        <BeerColumn key={beer.name} beer={beer} index={index} maxLiters={maxLiters} />
+        <BeerColumn key={beer.name} beer={beer} index={index} maxLiters={maxLiters} responsiveScale={responsiveScale} />
       ))}
     </group>
   );

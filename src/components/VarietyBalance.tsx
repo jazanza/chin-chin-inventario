@@ -1,5 +1,5 @@
 import { useRef, useMemo } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Torus, Cylinder, Text } from "@react-three/drei";
 import * as THREE from "three";
 
@@ -39,6 +39,10 @@ const PulsingParticles = ({ color, weight }: { color: string; weight: number }) 
 };
 
 export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: { totalLiters: number; uniqueProducts: number } } & JSX.IntrinsicElements['group']) {
+  const { viewport } = useThree(); // Obtener el viewport
+  const BASE_REFERENCE_WIDTH = 12; // Ancho de referencia para el escalado
+  const responsiveScale = Math.min(1, viewport.width / BASE_REFERENCE_WIDTH); // Calcular escala responsiva
+
   const balanceRef = useRef<THREE.Group>(null!);
   const { totalLiters, uniqueProducts } = varietyMetrics;
 
@@ -54,8 +58,8 @@ export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: {
   });
 
   return (
-    <group position={[0, -1, 0]} {...props}>
-      <Cylinder args={[0.2, 0.2, 2, 8]} position={[0, 1, 0]}>
+    <group position={[0, -1, 0]} {...props} scale={responsiveScale}> {/* Aplicar escala responsiva */}
+      <Cylinder args={[0.2, 0.2, 2, 8]}>
         <meshBasicMaterial color="gray" wireframe={true} />
       </Cylinder>
       <Cylinder args={[1, 1, 0.1, 16]}>
@@ -69,16 +73,16 @@ export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: {
 
         <group position={[-2, 0.5, 0]}>
           <PulsingParticles color="var(--primary-glitch-pink)" weight={totalLiters} />
-          <Text position={[0, -0.8, 0]} fontSize={0.2} color="white">Volume</Text>
-          <Text position={[0, -1.1, 0]} fontSize={0.15} color="white">{`${totalLiters.toFixed(1)} L`}</Text>
+          <Text position={[0, -0.8, 0]} fontSize={0.2 * responsiveScale} color="white">Volume</Text>
+          <Text position={[0, -1.1, 0]} fontSize={0.15 * responsiveScale} color="white">{`${totalLiters.toFixed(1)} L`}</Text>
         </group>
 
         <group position={[2, 0.5, 0]}>
           <Torus args={[0.5, 0.1, 8, 32]}>
             <meshBasicMaterial color="var(--secondary-glitch-cyan)" wireframe={true} />
           </Torus>
-          <Text position={[0, -0.8, 0]} fontSize={0.2} color="white">Variety</Text>
-          <Text position={[0, -1.1, 0]} fontSize={0.15} color="white">{`${uniqueProducts} Products`}</Text>
+          <Text position={[0, -0.8, 0]} fontSize={0.2 * responsiveScale} color="white">Variety</Text>
+          <Text position={[0, -1.1, 0]} fontSize={0.15 * responsiveScale} color="white">{`${uniqueProducts} Products`}</Text>
         </group>
       </group>
     </group>

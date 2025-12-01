@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
+import { useThree } from "@react-three/fiber";
 
 const COLORS: { [key: string]: string } = {
   IPA: "var(--primary-glitch-pink)",
@@ -15,6 +16,8 @@ const COLORS: { [key: string]: string } = {
 const PARTICLE_COUNT_PER_SEGMENT = 2000;
 const INNER_RADIUS = 1.5;
 const OUTER_RADIUS = 2.0;
+const BASE_TEXT_FONT_SIZE_LARGE = 0.3; // Para "No data"
+const BASE_TEXT_FONT_SIZE_SMALL = 0.15; // Para etiquetas de categoría
 
 const FlavorSegment = ({ startAngle, angle, color }: { startAngle: number; angle: number; color: string }) => {
   const points = useMemo(() => {
@@ -24,7 +27,7 @@ const FlavorSegment = ({ startAngle, angle, color }: { startAngle: number; angle
       const radius = INNER_RADIUS + Math.random() * (OUTER_RADIUS - INNER_RADIUS);
       p[i * 3] = Math.cos(currentAngle) * radius;
       p[i * 3 + 1] = Math.sin(currentAngle) * radius;
-      p[i * 3 + 2] = (Math.random() - 0.5) * 0.2; // Give it some depth
+      p[i * 3 + 2] = (Math.random() - 0.5) * 0.2; // Darle algo de profundidad
     }
     return p;
   }, [startAngle, angle]);
@@ -40,12 +43,16 @@ const FlavorSegment = ({ startAngle, angle, color }: { startAngle: number; angle
 };
 
 export function FlavorSpectrum({ flavorData, ...props }: { flavorData: { [key: string]: number } } & JSX.IntrinsicElements['group']) {
+  const { viewport } = useThree(); // Obtener el viewport
+  const BASE_REFERENCE_WIDTH = 12; // Ancho de referencia para el escalado
+  const responsiveScale = Math.min(1, viewport.width / BASE_REFERENCE_WIDTH); // Calcular escala responsiva
+
   const totalMl = useMemo(() => Object.values(flavorData).reduce((sum, v) => sum + v, 0), [flavorData]);
 
   if (totalMl === 0) {
     return (
-      <group {...props}>
-        <Text position={[0, 0, 0]} fontSize={0.3} color="white">No flavor data available</Text>
+      <group {...props} scale={responsiveScale}> {/* Aplicar escala responsiva */}
+        <Text position={[0, 0, 0]} fontSize={BASE_TEXT_FONT_SIZE_LARGE * responsiveScale} color="white">No flavor data available</Text>
       </group>
     );
   }
@@ -53,7 +60,7 @@ export function FlavorSpectrum({ flavorData, ...props }: { flavorData: { [key: s
   let accumulatedAngle = 0;
 
   return (
-    <group {...props}>
+    <group {...props} scale={responsiveScale}> {/* Aplicar escala responsiva */}
       {Object.entries(flavorData).map(([category, ml]) => {
         const percentage = ml / totalMl;
         const angle = percentage * Math.PI * 2;
@@ -73,7 +80,7 @@ export function FlavorSpectrum({ flavorData, ...props }: { flavorData: { [key: s
         return (
           <group key={`group-${category}`}>
             {segment}
-            <Text position={[textX, textY, 0]} fontSize={0.15} color="white">
+            <Text position={[textX, textY, 0]} fontSize={BASE_TEXT_FONT_SIZE_SMALL * responsiveScale} color="white"> {/* Aplicar responsiveScale */}
               {`${category} (${(percentage * 100).toFixed(1)}%)`}
             </Text>
           </group>
