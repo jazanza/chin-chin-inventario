@@ -1,6 +1,6 @@
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Sphere, Text } from "@react-three/drei";
+import { Sphere, Text, Line } from "@react-three/drei"; // Importar Line
 import * as THREE from "three";
 
 interface Customer {
@@ -26,8 +26,6 @@ const Planet = ({ customer, index, sunPosition }: { customer: Customer; index: n
       velocity.add(attractionForce.multiplyScalar(delta));
 
       // Repulsion from other planets (simplified for performance)
-      // For a more accurate simulation, iterate over all other planets
-      // For now, a general repulsion from the center if too close
       const distanceToCenter = position.length();
       if (distanceToCenter < 1.5) {
         const repulsionForce = position.clone().normalize().multiplyScalar(-0.01 * mass);
@@ -54,7 +52,7 @@ const Planet = ({ customer, index, sunPosition }: { customer: Customer; index: n
   return (
     <group ref={ref}>
       <Sphere args={[0.1 + customer.liters * 0.01, 32, 32]}>
-        <meshStandardMaterial color="lightblue" />
+        <meshBasicMaterial color="var(--secondary-glitch-cyan)" /> {/* MeshBasicMaterial */}
       </Sphere>
       <Text position={[0, 0.3, 0]} fontSize={0.15} color="white" anchorX="center">
         {customer.name}
@@ -81,7 +79,7 @@ export function LoyaltyConstellation({ loyaltyMetrics, ...props }: { loyaltyMetr
         <>
           {/* Sun - Top Customer */}
           <Sphere args={[0.5 + sun.liters * 0.01, 32, 32]}>
-            <meshStandardMaterial color="gold" emissive="orange" emissiveIntensity={0.6} />
+            <meshBasicMaterial color="var(--primary-glitch-pink)" emissive="var(--primary-glitch-pink)" emissiveIntensity={0.8} /> {/* MeshBasicMaterial */}
           </Sphere>
           <Text position={[0, 0.8, 0]} fontSize={0.2} color="white" anchorX="center">
             {sun.name}
@@ -94,6 +92,23 @@ export function LoyaltyConstellation({ loyaltyMetrics, ...props }: { loyaltyMetr
           {planets.map((customer, index) => (
             <Planet key={customer.name} customer={customer} index={index} sunPosition={sunPosition} />
           ))}
+
+          {/* Líneas de conexión del sol a los planetas */}
+          {planets.map((customer, index) => {
+            const planetPosition = new THREE.Vector3(
+              (Math.random() - 0.5) * 4,
+              (Math.random() - 0.5) * 4,
+              (Math.random() - 0.5) * 4
+            ); // Esto debería ser la posición real del planeta, pero para el wireframe inicial, usamos un placeholder
+            return (
+              <Line
+                key={`line-${customer.name}`}
+                points={[sunPosition, planetPosition]}
+                color="var(--primary-glitch-pink)"
+                lineWidth={2}
+              />
+            );
+          })}
         </>
       )}
     </group>

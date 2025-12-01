@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Cylinder, Text } from "@react-three/drei";
+import { Box, Text } from "@react-three/drei"; // Usar Box en lugar de Cylinder
 import * as THREE from "three";
 
 interface RankedBeer {
@@ -13,14 +13,19 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
   const ref = useRef<THREE.Group>(null!);
   const targetHeight = maxLiters > 0 ? (beer.liters / maxLiters) * 5 : 0.1;
   const currentHeight = useRef(0);
+  const initialY = useRef(0); // Para la vibración
 
-  useFrame(() => {
+  const color = index % 2 === 0 ? "var(--primary-glitch-pink)" : "var(--secondary-glitch-cyan)";
+
+  useFrame(({ clock }) => {
     if (ref.current) {
       currentHeight.current = THREE.MathUtils.lerp(currentHeight.current, targetHeight, 0.05);
-      const cylinder = ref.current.children[0] as THREE.Mesh;
-      if (cylinder) {
-        cylinder.scale.y = currentHeight.current;
-        cylinder.position.y = currentHeight.current / 2;
+      const box = ref.current.children[0] as THREE.Mesh;
+      if (box) {
+        box.scale.y = currentHeight.current;
+        box.position.y = currentHeight.current / 2;
+        // Vibración vertical sutil
+        box.position.y += Math.sin(clock.getElapsedTime() * 5 + index) * 0.05;
       }
       const text = ref.current.children[1] as THREE.Object3D;
       if (text) {
@@ -29,18 +34,14 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
     }
   });
 
-  const isTopBeer = index === 0;
-
   return (
     <group ref={ref} position={[(index - 4.5) * 1.2, 0, 0]}>
-      <Cylinder args={[0.4, 0.4, 1, 32]} scale-y={0}>
-        <meshStandardMaterial
-          color={beer.color}
-          emissive={beer.color}
-          emissiveIntensity={isTopBeer ? 1.5 : 0.7}
-          toneMapped={false}
+      <Box args={[0.8, 1, 0.8]} scale-y={0}> {/* Usar Box */}
+        <meshBasicMaterial
+          color={color}
+          wireframe={true} // Wireframe
         />
-      </Cylinder>
+      </Box>
       <Text
         position={[0, 0.3, 0]}
         fontSize={0.2}

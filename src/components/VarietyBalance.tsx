@@ -7,8 +7,6 @@ export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: {
   const balanceRef = useRef<THREE.Group>(null!);
   const { totalLiters, uniqueProducts } = varietyMetrics;
 
-  // Normalize and weigh the values to create a sensible tilt.
-  // These factors can be tweaked for aesthetic balance.
   const volumeWeight = totalLiters * 0.1;
   const varietyWeight = uniqueProducts * 1.0;
   const totalWeight = volumeWeight + varietyWeight;
@@ -24,22 +22,22 @@ export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: {
     <group position={[0, -1, 0]} {...props}>
       {/* Base */}
       <Cylinder args={[0.2, 0.2, 2, 32]} position={[0, 1, 0]}>
-        <meshStandardMaterial color="gray" />
+        <meshBasicMaterial color="gray" wireframe={true} /> {/* Wireframe */}
       </Cylinder>
       <Cylinder args={[1, 1, 0.1, 32]}>
-        <meshStandardMaterial color="darkgray" />
+        <meshBasicMaterial color="darkgray" wireframe={true} /> {/* Wireframe */}
       </Cylinder>
 
       {/* Balance Beam */}
       <group ref={balanceRef} position={[0, 2.1, 0]}>
         <Box args={[4, 0.1, 0.1]}>
-          <meshStandardMaterial color="silver" />
+          <meshBasicMaterial color="silver" wireframe={true} /> {/* Wireframe */}
         </Box>
 
         {/* Left Side: Volume */}
         <group position={[-2, 0.5, 0]}>
           <Box args={[0.8, 0.8, 0.8]}>
-            <meshStandardMaterial color="#FFA82E" />
+            <meshBasicMaterial color="var(--primary-glitch-pink)" wireframe={true} /> {/* Wireframe */}
           </Box>
           <Text position={[0, -0.8, 0]} fontSize={0.2} color="white">
             Volume
@@ -52,7 +50,7 @@ export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: {
         {/* Right Side: Variety */}
         <group position={[2, 0.5, 0]}>
           <Sphere args={[0.5, 32, 32]}>
-            <meshStandardMaterial color="#4169E1" />
+            <meshBasicMaterial color="var(--secondary-glitch-cyan)" wireframe={true} /> {/* Wireframe */}
           </Sphere>
           <Text position={[0, -0.8, 0]} fontSize={0.2} color="white">
             Variety

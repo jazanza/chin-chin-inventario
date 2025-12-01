@@ -1,37 +1,42 @@
 import { useMemo } from "react";
-import { Text } from "@react-three/drei";
+import { Text, Box } from "@react-three/drei"; // Usar Box en lugar de Cylinder
 import * as THREE from "three";
 
 const COLORS: { [key: string]: string } = {
-  IPA: "#FF6347",
-  Lager: "#FFD700",
-  Stout: "#4B0082",
-  Porter: "#8B4513",
-  Pilsner: "#F0E68C",
-  Ale: "#D2691E",
-  Other: "#A9A9A9",
+  IPA: "var(--primary-glitch-pink)",
+  Lager: "var(--secondary-glitch-cyan)",
+  Stout: "#8B008B", // Un tono de púrpura para contraste
+  Porter: "#FF4500", // Naranja rojizo
+  Pilsner: "#00FF00", // Verde brillante
+  Ale: "#FFFF00", // Amarillo brillante
+  Other: "#FFFFFF", // Blanco puro
 };
 
-export function FlavorSpectrum({ flavorData }: { flavorData: { [key: string]: number } }) {
+export function FlavorSpectrum({ flavorData, ...props }: { flavorData: { [key: string]: number } } & JSX.IntrinsicElements['group']) {
   const totalMl = useMemo(() => Object.values(flavorData).reduce((sum, v) => sum + v, 0), [flavorData]);
 
   if (totalMl === 0) {
-    return <Text position={[0, 0, 0]} fontSize={0.3} color="white">No flavor data available</Text>;
+    return (
+      <group {...props}>
+        <Text position={[0, 0, 0]} fontSize={0.3} color="white">No flavor data available</Text>
+      </group>
+    );
   }
 
   let accumulatedAngle = 0;
 
   return (
-    <group rotation={[Math.PI / 4, 0, 0]}>
+    <group rotation={[Math.PI / 4, 0, 0]} {...props}>
       {Object.entries(flavorData).map(([category, ml]) => {
         const percentage = ml / totalMl;
         const angle = percentage * Math.PI * 2;
         const color = COLORS[category] || COLORS["Other"];
 
+        // Usar BoxGeometry para un look brutalista
         const segment = (
-          <mesh key={category} rotation={[0, 0, accumulatedAngle]}>
-            <torusGeometry args={[1.5, 0.4, 16, 100, angle]} />
-            <meshStandardMaterial color={color} metalness={0.5} roughness={0.3} />
+          <mesh key={category} rotation={[0, 0, accumulatedAngle]} position={[0, 0, 0]}>
+            <boxGeometry args={[1.5, 0.4, 0.4]} /> {/* Un prisma rectangular */}
+            <meshBasicMaterial color={color} wireframe={true} /> {/* Wireframe */}
           </mesh>
         );
 

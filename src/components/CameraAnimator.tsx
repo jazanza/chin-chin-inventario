@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useMemo } from "react";
 
-type ViewMode = "meter" | "ranking" | "balance" | "loyalty";
+type ViewMode = "meter" | "ranking" | "balance" | "loyalty" | "spectrum"; // Añadir 'spectrum'
 
 const CAMERA_PRESETS: { [key in ViewMode]: { position: THREE.Vector3; lookAt: THREE.Vector3 } } = {
   meter: {
@@ -19,6 +19,10 @@ const CAMERA_PRESETS: { [key in ViewMode]: { position: THREE.Vector3; lookAt: TH
   },
   loyalty: {
     position: new THREE.Vector3(0, 3, 8),
+    lookAt: new THREE.Vector3(0, 0, 0),
+  },
+  spectrum: { // Nueva preset para FlavorSpectrum
+    position: new THREE.Vector3(0, 0, 5),
     lookAt: new THREE.Vector3(0, 0, 0),
   },
 };
@@ -40,11 +44,11 @@ export function CameraAnimator({ viewMode }: { viewMode: ViewMode }) {
       targetPosition.y = 3 + Math.sin(time * 0.5);
     }
 
-    // Smoothly interpolate camera position
-    camera.position.lerp(targetPosition, 0.03);
+    // Smoothly interpolate camera position (slightly faster lerp for "rudo" feel)
+    camera.position.lerp(targetPosition, 0.1); // Aumentar lerp para transiciones más abruptas
 
-    // Smoothly interpolate lookAt target
-    currentLookAt.lerp(targetLookAt, 0.03);
+    // Directly set lookAt for abrupt changes, or a very fast lerp
+    currentLookAt.copy(targetLookAt); // Asignación directa para saltos abruptos
     camera.lookAt(currentLookAt);
   });
 

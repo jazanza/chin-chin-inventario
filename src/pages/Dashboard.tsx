@@ -1,22 +1,19 @@
 import { useState, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
-import { Download } from "lucide-react";
 import { useDb } from "@/hooks/useDb";
 import { BeerVisualizer } from "@/components/BeerVisualizer";
 import { ConsumptionRanking } from "@/components/ConsumptionRanking";
 import { VarietyBalance } from "@/components/VarietyBalance";
 import { LoyaltyConstellation } from "@/components/LoyaltyConstellation";
+import { FlavorSpectrum } from "@/components/FlavorSpectrum"; // Importar FlavorSpectrum
 import { CameraAnimator } from "@/components/CameraAnimator";
-import { Button } from "@/components/ui/button";
 import { FileUploader } from "@/components/FileUploader";
-import { DateRangeSelector } from "@/components/DateRangeSelector";
-import { exportToExcel } from "@/lib/export";
-import { calculateDateRange } from "@/lib/dates";
+import { DateRangeSelector } from "@/components/DateRangeSelector"; // Mantener import para ocultar
 
-type ViewMode = "meter" | "ranking" | "loyalty" | "balance";
-const VIEWS: ViewMode[] = ["meter", "ranking", "loyalty", "balance"];
-const VIEW_DURATION = 15000; // 15 seconds per view
+type ViewMode = "meter" | "ranking" | "loyalty" | "balance" | "spectrum"; // Añadir 'spectrum'
+const VIEWS: ViewMode[] = ["meter", "ranking", "loyalty", "balance", "spectrum"]; // Actualizar VIEWS
+const VIEW_DURATION = 15000; // 15 segundos por vista
 
 const Dashboard = () => {
   const {
@@ -31,7 +28,7 @@ const Dashboard = () => {
   } = useDb();
   const [viewMode, setViewMode] = useState<ViewMode>("meter");
   const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
-  const [rangeKey, setRangeKey] = useState<string>("last_month");
+  const [rangeKey] = useState<string>("last_month"); // Rango por defecto 'last_month' sin UI
 
   useEffect(() => {
     if (!dbBuffer || loading) return;
@@ -52,29 +49,11 @@ const Dashboard = () => {
     await processData(buffer, rangeKey);
   };
 
-  const handleRangeChange = (newRangeKey: string) => {
-    setRangeKey(newRangeKey);
-    if (dbBuffer) {
-      processData(dbBuffer, newRangeKey);
-    }
-  };
-
-  const handleExport = () => {
-    if (!dbBuffer) return;
-    const dataToExport = {
-      consumptionMetrics,
-      flavorData,
-      varietyMetrics,
-      loyaltyMetrics,
-      rankedBeers,
-    };
-    const dateRange = calculateDateRange(rangeKey);
-    exportToExcel(dataToExport, dateRange);
-  };
+  // handleRangeChange y handleExport eliminados ya que la UI y la funcionalidad no son pasivas.
 
   if (!dbBuffer) {
     return (
-      <div className="w-screen h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
+      <div className="w-screen h-screen bg-black text-white flex flex-col items-center justify-center">
         <div className="text-center">
           <h1 className="text-4xl font-bold mb-4">Visualizador de Cervecería</h1>
           <p className="text-xl text-gray-400 mb-8">
@@ -88,16 +67,13 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-screen h-screen bg-gray-900 text-white flex flex-col">
-      <div className="absolute top-4 left-4 z-10 flex items-start gap-4 flex-col">
+    <div className="w-screen h-screen bg-black text-white flex flex-col font-mono">
+      {/* Ocultar la UI de selección de fechas y el botón de exportar */}
+      <div className="absolute top-4 left-4 z-10 hidden">
         <DateRangeSelector
           selectedRange={rangeKey}
-          onRangeChange={handleRangeChange}
+          onRangeChange={() => {}} // No-op ya que la UI está oculta
         />
-        <Button onClick={handleExport} disabled={loading || !dbBuffer}>
-          <Download className="mr-2 h-4 w-4" />
-          Exportar
-        </Button>
       </div>
 
       <div className="flex-grow">
@@ -111,13 +87,14 @@ const Dashboard = () => {
         )}
         {!loading && !error && (
           <Canvas shadows camera={{ position: [0, 1, 7], fov: 50 }}>
-            <color attach="background" args={["#101010"]} />
-            <fog attach="fog" args={["#101010", 5, 20]} />
+            <color attach="background" args={["#000000"]} /> {/* Fondo negro absoluto */}
+            <fog attach="fog" args={["#000000", 5, 20]} />
             <Suspense fallback={null}>
               <BeerVisualizer {...consumptionMetrics} rankedBeers={rankedBeers} visible={viewMode === "meter"} />
               <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
               <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
               <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
+              <FlavorSpectrum flavorData={flavorData} visible={viewMode === "spectrum"} /> {/* Añadir FlavorSpectrum */}
               
               <CameraAnimator viewMode={viewMode} />
               
@@ -126,7 +103,7 @@ const Dashboard = () => {
                   mipmapBlur
                   luminanceThreshold={0.8}
                   luminanceSmoothing={0.025}
-                  intensity={1.2}
+                  intensity={1.5} // Aumentar intensidad para efecto glitch
                 />
               </EffectComposer>
             </Suspense>
