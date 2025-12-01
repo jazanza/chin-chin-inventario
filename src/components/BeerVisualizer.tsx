@@ -4,7 +4,7 @@ import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 100000;
-const CYLINDER_RADIUS = 5.0; // Aumentado para ocupar más pantalla
+const CYLINDER_RADIUS = 5.0;
 const MAX_LITERS_FOR_SCALE = 1000;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
@@ -47,30 +47,30 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   useFrame(({ clock }) => {
     if (!visible || !pointsRef.current) return;
 
-    // 🔄 Rotación Lenta
     pointsRef.current.rotation.y += 0.001;
 
-    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.05);
+    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.02); // Llenado más lento
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
     const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
     geometry.setDrawRange(0, targetParticleCount);
 
-    const time = clock.getElapsedTime();
+    const time = clock.getElapsedTime() * 0.5; // Tiempo general más lento
     const posAttr = geometry.attributes.position as THREE.BufferAttribute;
     const colors = geometry.attributes.color as THREE.BufferAttribute;
     const color = new THREE.Color();
 
     for (let i = 0; i < targetParticleCount; i++) {
-      const y = positions[i * 3 + 1];
+      const originalY = positions[i * 3 + 1];
+      
+      // 〰️ Ondulación Vertical Suave
+      const verticalWave = Math.sin(time + i * 0.1) * 0.05;
+      const newY = originalY + verticalWave;
+      
+      posAttr.setXYZ(i, positions[i * 3], newY, positions[i * 3 + 2]);
 
-      // 🌊 Efecto Líquido Ondulante (Marea)
-      const waveX = Math.sin(y * 2 + time) * 0.2;
-      const waveZ = Math.cos(y * 2 + time) * 0.2;
-      posAttr.setXYZ(i, positions[i * 3] + waveX, y, positions[i * 3 + 2] + waveZ);
-
-      // 🌈 Animación de Color Global
-      const hue = (time * 0.1 + (y - bottomY) / maxHeight * 0.1) % 1;
+      // 🌈 Animación de Color Global más lenta
+      const hue = (time * 0.1 + (originalY - bottomY) / maxHeight * 0.1) % 1;
       color.setHSL(hue, 1.0, 0.5);
       colors.setXYZ(i, color.r, color.g, color.b);
     }
@@ -85,14 +85,15 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   });
 
   return (
-    <group {...props} visible={visible} position={[0, viewport.height * 0.1, 0]}>
+    <group {...props} visible={visible} position={[0, viewport.height * 0.4, 0]}>
       <points ref={pointsRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial
-          size={0.3}
+          size={0.5}
+          sizeAttenuation={false}
           vertexColors={true}
           transparent={true}
           opacity={0.7}
