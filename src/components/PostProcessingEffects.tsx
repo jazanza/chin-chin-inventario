@@ -1,16 +1,13 @@
-import { useThree, extend } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
 import { EffectComposer, Bloom, Glitch } from "@react-three/postprocessing";
-import { RenderPass } from "three-stdlib";
 import { useMemo } from "react";
 import * as THREE from 'three';
 import { GlitchMode } from 'postprocessing';
 
-extend({ RenderPass });
-
 export const PostProcessingEffects = () => {
-  const { gl, scene, camera, size } = useThree();
+  const { size } = useThree();
 
-  if (!gl || !scene || !camera || size.width === 0 || size.height === 0) {
+  if (size.width === 0 || size.height === 0) {
     return null;
   }
 
@@ -18,7 +15,6 @@ export const PostProcessingEffects = () => {
 
   return (
     <EffectComposer key={key}>
-      <renderPass attachArray="passes" args={[scene, camera]} />
       <Bloom
         mipmapBlur
         luminanceThreshold={0.1}
