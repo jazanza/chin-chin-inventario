@@ -79,21 +79,16 @@ const Dashboard = () => {
     if (!SCENE_PLAYLIST.length) return;
 
     let nextIndex: number;
+    let nextSceneViewMode: ViewMode; // Declarada aquí para que esté en el ámbito correcto
     let attempts = 0;
     const maxAttempts = 20;
 
-    // Comprobar si hay al menos una escena que no sea 'meter' en la playlist
     const hasNonMeterScenes = SCENE_PLAYLIST.some(s => s.viewMode !== "meter");
 
     do {
       nextIndex = Math.floor(Math.random() * SCENE_PLAYLIST.length);
+      nextSceneViewMode = SCENE_PLAYLIST[nextIndex].viewMode; // Asignada aquí
       attempts++;
-      const nextSceneViewMode = SCENE_PLAYLIST[nextIndex].viewMode;
-
-      // Condiciones para volver a intentar:
-      // 1. Si la siguiente escena es la misma que la actual (y hay otras opciones)
-      // 2. Si tanto la escena anterior como la siguiente son de tipo 'meter',
-      //    Y hay otras escenas que no son 'meter' disponibles para elegir.
     } while (
       attempts < maxAttempts &&
       (nextIndex === currentSceneIndex ||
