@@ -1,6 +1,6 @@
 import { useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Sphere, Text, Line } from "@drei";
+import { Sphere, Text, Line } from "@react-three/drei";
 import * as THREE from "three";
 
 interface Customer {
