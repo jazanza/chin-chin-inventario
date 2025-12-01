@@ -4,8 +4,8 @@ import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 50000;
-const CYLINDER_RADIUS = 6.0; // Aumentado para ocupar más pantalla
-const MAX_LITERS_FOR_SCALE = 500;
+const CYLINDER_RADIUS = 5.0; // Aumentado para ocupar más pantalla
+const MAX_LITERS_FOR_SCALE = 1000;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
   const { viewport } = useThree();
@@ -62,8 +62,8 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       const y = positions[i * 3 + 1];
 
       // 🌊 Efecto Líquido Ondulante (Marea)
-      const waveX = Math.sin(y * 2 + time) * 0.1;
-      const waveZ = Math.cos(y * 2 + time) * 0.1;
+      const waveX = Math.sin(y * 2 + time) * 0.2;
+      const waveZ = Math.cos(y * 2 + time) * 0.2;
       
       // A. Calcular waveY
       const waveY = Math.sin(positions[i * 3] * 0.5 + time) * 0.1;
@@ -98,15 +98,15 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
       <Text
         ref={textRef}
-        position={[0, bottomY + 0.3, 0]}
-        fontSize={0.5}
+        position={[0, bottomY + 0.5, 0]}
+        fontSize={3}
         color="white"
         anchorX="center"
         anchorY="middle"
         outlineWidth={0.02}
         outlineColor="#000000"
       >
-        {`0.00 L`}
+        {`0.00 Litros`}
       </Text>
     </group>
   );
