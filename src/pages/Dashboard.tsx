@@ -1,5 +1,6 @@
 import { useState, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import { useDb } from "@/hooks/useDb";
 import { BeerVisualizer } from "@/components/BeerVisualizer";
 import { ConsumptionRanking } from "@/components/ConsumptionRanking";
@@ -81,33 +82,35 @@ const Dashboard = () => {
       </div>
 
       <div className="flex-grow">
-        {loading && (
-          <p className="text-xl text-center pt-40">Analizando los datos...</p>
-        )}
-        {error && (
-          <p className="text-xl text-red-500 text-center pt-40">
-            Error: {error}
-          </p>
-        )}
-        {!loading && !error && (
-          <Canvas
-            shadows
-            camera={{ position: [0, 1, 7], fov: 50 }}
-          >
-            <color attach="background" args={["#000000"]} />
-            <fog attach="fog" args={["#000000", 5, 20]} />
-            <Suspense fallback={null}>
-              <BeerVisualizer {...consumptionMetrics} rankedBeers={rankedBeers} visible={viewMode === "meter"} />
-              <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
-              <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
-              <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
-              <FlavorSpectrum flavorData={flavorData} visible={viewMode === "spectrum"} />
-            </Suspense>
-            
-            <CameraAnimator viewMode={viewMode} />
-            <SceneEffects />
-          </Canvas>
-        )}
+        <Canvas
+          shadows
+          camera={{ position: [0, 1, 7], fov: 50 }}
+        >
+          <color attach="background" args={["#000000"]} />
+          <fog attach="fog" args={["#000000", 5, 20]} />
+          
+          {loading ? (
+            <Html center>
+              <p className="text-xl text-center">Analizando los datos...</p>
+            </Html>
+          ) : error ? (
+            <Html center>
+              <p className="text-xl text-red-500 text-center">Error: {error}</p>
+            </Html>
+          ) : (
+            <>
+              <Suspense fallback={null}>
+                <BeerVisualizer {...consumptionMetrics} rankedBeers={rankedBeers} visible={viewMode === "meter"} />
+                <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
+                <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
+                <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
+                <FlavorSpectrum flavorData={flavorData} visible={viewMode === "spectrum"} />
+              </Suspense>
+              <CameraAnimator viewMode={viewMode} />
+              <SceneEffects />
+            </>
+          )}
+        </Canvas>
       </div>
     </div>
   );
