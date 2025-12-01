@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { DateRange } from "react-day-picker";
 import { format } from "date-fns";
 import { initDb, loadDb, queryData } from "@/lib/db";
+import { calculateDateRange } from "@/lib/dates";
 
 interface IElectronAPI {
   openDbFile: () => Promise<Uint8Array | null>;
@@ -19,7 +20,7 @@ const createQuery = (baseQuery: string, dateRange?: DateRange): string => {
     const fromDate = format(dateRange.from, "yyyy-MM-dd 00:00:00");
     const toDate = dateRange.to
       ? format(dateRange.to, "yyyy-MM-dd 23:59:59")
-      : format(dateRange.from, "yyyy-MM-dd 23:59:59");
+      : format(new Date(), "yyyy-MM-dd 23:59:59");
     whereClause += ` AND T3.DateCreated BETWEEN '${fromDate}' AND '${toDate}'`;
   }
   return baseQuery.replace("{{WHERE_CLAUSE}}", whereClause);
@@ -113,14 +114,16 @@ export function useDb() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const processData = useCallback(async (dbBuffer: Uint8Array, dateRange?: DateRange) => {
+  const processData = useCallback(async (dbBuffer: Uint8Array, rangeKey: string) => {
     setLoading(true);
     setError(null);
-    console.log("Starting database processing with date range:", dateRange);
+    console.log("Starting database processing with date range:", rangeKey);
     try {
       await initDb();
       const db = loadDb(dbBuffer);
       
+      const dateRange = calculateDateRange(rangeKey);
+
       const VOLUME_QUERY = createQuery(VOLUME_QUERY_BASE, dateRange);
       const SPECTRUM_QUERY = createQuery(SPECTRUM_QUERY_BASE, dateRange);
       const LOYALTY_QUERY = createQuery(LOYALTY_QUERY_BASE, dateRange);
@@ -129,10 +132,6 @@ export function useDb() {
       const spectrumData = queryData(db, SPECTRUM_QUERY);
       const loyaltyData = queryData(db, LOYALTY_QUERY);
       db.close();
-
-      console.log("Raw Volume Data:", volumeData);
-      console.log("Raw Spectrum Data:", spectrumData);
-      console.log("Raw Loyalty Data:", loyaltyData);
 
       let totalMl = 0;
       for (const item of volumeData) {
