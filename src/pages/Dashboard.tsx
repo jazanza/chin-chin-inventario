@@ -12,8 +12,6 @@ import { FileUploader } from "@/components/FileUploader";
 import { PostProcessingEffects } from "@/components/PostProcessingEffects";
 import { PlaybackControls } from "@/components/PlaybackControls";
 import { NarrativeOverlay } from "@/components/NarrativeOverlay";
-import { Lights } from "@/components/Lights";
-import { SceneBackground } from "@/components/SceneBackground";
 
 type ViewMode = "meter" | "ranking" | "loyalty" | "balance" | "spectrum";
 
@@ -21,17 +19,16 @@ interface Scene {
   viewMode: ViewMode;
   rangeKey: string;
   title: string;
-  bgColor: string;
 }
 
 const SCENE_PLAYLIST: Scene[] = [
-  { viewMode: "meter", rangeKey: "last_month", title: "LITROS TOTALES", bgColor: "#1a2a6c" },
-  { viewMode: "ranking", rangeKey: "last_month", title: "TOP 10 CERVEZAS", bgColor: "#b21f1f" },
-  { viewMode: "loyalty", rangeKey: "last_6_months", title: "CLIENTES LEALES", bgColor: "#fdbb2d" },
-  { viewMode: "balance", rangeKey: "all_time", title: "BALANCE: VOLUMEN VS VARIEDAD", bgColor: "#22c1c3" },
-  { viewMode: "spectrum", rangeKey: "last_1_year", title: "ESPECTRO DE SABOR", bgColor: "#8e44ad" },
-  { viewMode: "ranking", rangeKey: "last_1_year", title: "TOP 10 ANUAL", bgColor: "#c33764" },
-  { viewMode: "loyalty", rangeKey: "all_time", title: "LEALTAD HISTÓRICA", bgColor: "#1d2b64" },
+  { viewMode: "meter", rangeKey: "last_month", title: "LITROS TOTALES" },
+  { viewMode: "ranking", rangeKey: "last_month", title: "TOP 10 CERVEZAS" },
+  { viewMode: "loyalty", rangeKey: "last_6_months", title: "CLIENTES LEALES" },
+  { viewMode: "balance", rangeKey: "all_time", title: "BALANCE: VOLUMEN VS VARIEDAD" },
+  { viewMode: "spectrum", rangeKey: "last_1_year", title: "ESPECTRO DE SABOR" },
+  { viewMode: "ranking", rangeKey: "last_1_year", title: "TOP 10 ANUAL" },
+  { viewMode: "loyalty", rangeKey: "all_time", title: "LEALTAD HISTÓRICA" },
 ];
 
 const RANGE_MAP: { [key: string]: string } = {
@@ -46,7 +43,7 @@ const RANGE_MAP: { [key: string]: string } = {
   all_time: "HISTÓRICO",
 };
 
-const VIEW_DURATION = 15000;
+const VIEW_DURATION = 15000; // 15 seconds
 
 const Dashboard = () => {
   const {
@@ -65,7 +62,7 @@ const Dashboard = () => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentScene = SCENE_PLAYLIST[currentSceneIndex];
-  const { viewMode, rangeKey, bgColor } = currentScene;
+  const { viewMode, rangeKey } = currentScene;
 
   const advanceScene = useCallback((direction: 1 | -1) => {
     setCurrentSceneIndex(prevIndex => {
@@ -84,7 +81,7 @@ const Dashboard = () => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isPlaying, dbBuffer, advanceScene]);
+  }, [isPlaying, dbBuffer, advanceScene, currentSceneIndex]);
 
   useEffect(() => {
     if (dbBuffer) {
@@ -104,7 +101,7 @@ const Dashboard = () => {
 
   if (!dbBuffer) {
     return (
-      <div className="w-screen h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
+      <div className="w-screen h-screen bg-black text-white flex flex-col items-center justify-center">
         <div className="text-center">
           <h1 className="text-4xl font-bold mb-4">Visualizador de Cervecería</h1>
           <p className="text-xl text-gray-400 mb-8">
@@ -118,16 +115,19 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-screen h-screen bg-gray-900 text-white flex flex-col font-sans relative">
+    <div className="w-screen h-screen bg-black text-white flex flex-col font-mono relative">
       <NarrativeOverlay
         key={currentSceneIndex}
         title={currentScene.title}
         range={RANGE_MAP[currentScene.rangeKey] || ""}
       />
       <div className="flex-grow">
-        <Canvas shadows camera={{ position: [0, 1, 7], fov: 50 }}>
-          <SceneBackground color={bgColor} />
-          <Lights />
+        <Canvas
+          shadows
+          camera={{ position: [0, 1, 7], fov: 50 }}
+        >
+          <color attach="background" args={["#000000"]} />
+          <fog attach="fog" args={["#000000", 5, 20]} />
           
           {loading ? (
             <Html center>
@@ -139,11 +139,11 @@ const Dashboard = () => {
             </Html>
           ) : (
             <Suspense fallback={null}>
-              {viewMode === "meter" && <BeerVisualizer {...consumptionMetrics} />}
-              {viewMode === "ranking" && <ConsumptionRanking rankedBeers={rankedBeers} />}
-              {viewMode === "balance" && <VarietyBalance varietyMetrics={varietyMetrics} />}
-              {viewMode === "loyalty" && <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} />}
-              {viewMode === "spectrum" && <FlavorSpectrum flavorData={flavorData} />}
+              <BeerVisualizer {...consumptionMetrics} visible={viewMode === "meter"} />
+              <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
+              <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
+              <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
+              <FlavorSpectrum flavorData={flavorData} visible={viewMode === "spectrum"} />
             </Suspense>
           )}
 

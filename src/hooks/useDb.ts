@@ -97,12 +97,6 @@ const BEER_CATEGORY_COLORS: { [key: string]: string } = {
   Other: "#A9A9A9",
 };
 
-const isBeer = (itemName: string): boolean => {
-    const lowerItemName = itemName.toLowerCase();
-    const beerKeywords = ["ipa", "lager", "stout", "porter", "pilsner", "ale", "beer", "cerveza"];
-    return beerKeywords.some(keyword => lowerItemName.includes(keyword));
-}
-
 export function useDb() {
   const [data, setData] = useState<{
     consumptionMetrics: { liters: number };
@@ -173,7 +167,6 @@ export function useDb() {
       const topCustomers = sortedCustomers.slice(0, 20);
 
       const rankedBeers = spectrumData
-        .filter(item => isBeer(item.ItemName)) // <-- FILTRO AÑADIDO AQUÍ
         .map(item => {
           const volume = extractVolumeMl(item.ItemName, item.ItemDescription);
           const category = categorizeBeer(item.ItemName);

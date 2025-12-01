@@ -5,18 +5,17 @@ interface NarrativeOverlayProps {
 
 export const NarrativeOverlay = ({ title, range }: NarrativeOverlayProps) => {
   return (
-    <div 
-      className="absolute top-8 left-8 z-10 p-6 rounded-2xl"
-      style={{
-        background: 'rgba(0, 0, 0, 0.2)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-      }}
-    >
-      <h1 className="text-5xl font-bold text-white uppercase tracking-widest">
+    <div className="absolute top-8 left-8 z-10 text-white pointer-events-none animate-text-glitch-in">
+      <h1
+        className="text-5xl font-bold text-[var(--primary-glitch-pink)] uppercase tracking-widest"
+        style={{ textShadow: "2px 2px var(--secondary-glitch-cyan)" }}
+      >
         {title}
       </h1>
-      <p className="text-2xl font-bold text-white/80 uppercase tracking-wide mt-2">
+      <p
+        className="text-2xl font-bold text-[var(--secondary-glitch-cyan)] uppercase tracking-wide"
+        style={{ textShadow: "1px 1px var(--primary-glitch-pink)" }}
+      >
         {range}
       </p>
     </div>
