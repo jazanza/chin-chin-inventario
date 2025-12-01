@@ -3,8 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
-const PARTICLE_COUNT = 100000; // Increased particle count for density
-const CYLINDER_RADIUS = 1.5;
+const PARTICLE_COUNT = 100000;
+const CYLINDER_RADIUS = 3.0; // Aumentado para hacerlo más ancho
 const MAX_LITERS_FOR_SCALE = 1000;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
@@ -13,10 +13,10 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   const textRef = useRef<any>(null!);
   const animatedLiters = useRef(0);
 
-  const maxHeight = viewport.height * 1.2; // Increased height for dominance
-  const bottomY = -maxHeight / 2; // Centering the visualizer vertically
+  const maxHeight = viewport.height * 1.2;
+  const bottomY = -maxHeight / 2;
 
-  const [positions, colors] = useMemo(() => {
+  const [positions, initialColors] = useMemo(() => {
     const pos = new Float32Array(PARTICLE_COUNT * 3);
     const col = new Float32Array(PARTICLE_COUNT * 3);
     const color = new THREE.Color();
@@ -30,7 +30,6 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       pos[i * 3 + 1] = y;
       pos[i * 3 + 2] = Math.sin(angle) * radius;
 
-      // Rainbow gradient based on height (Y)
       color.setHSL((y - bottomY) / maxHeight, 1.0, 0.5);
       col[i * 3] = color.r;
       col[i * 3 + 1] = color.g;
@@ -39,22 +38,33 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     return [pos, col];
   }, [maxHeight, bottomY]);
 
-  // Reset animation when it becomes visible
   useEffect(() => {
     if (visible) {
       animatedLiters.current = 0;
     }
-  }, [visible, liters]); // Also reset if liters change while visible for consistency
+  }, [visible, liters]);
 
-  useFrame(() => {
-    if (!visible) return;
+  useFrame(({ clock }) => {
+    if (!visible || !pointsRef.current) return;
 
     animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.05);
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
-    if (pointsRef.current) {
-      (pointsRef.current.geometry as THREE.BufferGeometry).setDrawRange(0, targetParticleCount);
+    const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
+    geometry.setDrawRange(0, targetParticleCount);
+
+    // Animación de color dinámica
+    const time = clock.getElapsedTime() * 0.5;
+    const colors = geometry.attributes.color as THREE.BufferAttribute;
+    const color = new THREE.Color();
+
+    for (let i = 0; i < targetParticleCount; i++) {
+      const y = positions[i * 3 + 1];
+      const hue = ((y - bottomY) / maxHeight + time) % 1;
+      color.setHSL(hue, 1.0, 0.5);
+      colors.setXYZ(i, color.r, color.g, color.b);
     }
+    colors.needsUpdate = true;
 
     if (textRef.current) {
       const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
@@ -68,9 +78,9 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       <points ref={pointsRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
-          <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={colors} itemSize={3} />
+          <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
-        <pointsMaterial size={0.02} vertexColors={true} transparent={true} opacity={0.7} />
+        <pointsMaterial size={0.03} vertexColors={true} transparent={true} opacity={0.7} />
       </points>
 
       <Text
