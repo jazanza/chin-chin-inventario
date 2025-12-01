@@ -3,7 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
-const PARTICLE_COUNT = 100000;
+// 1. Reducción de Densidad
+const PARTICLE_COUNT = 50000;
 const CYLINDER_RADIUS = 5.0;
 const MAX_LITERS_FOR_SCALE = 1000;
 
@@ -19,7 +20,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   const [positions, initialColors] = useMemo(() => {
     const pos = new Float32Array(PARTICLE_COUNT * 3);
     const col = new Float32Array(PARTICLE_COUNT * 3);
-    const color = new THREE.Color();
+    const color = new THREE.Color(0x00ffff); // Start with base color
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const y = bottomY + (i / PARTICLE_COUNT) * maxHeight;
@@ -30,7 +31,6 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       pos[i * 3 + 1] = y;
       pos[i * 3 + 2] = Math.sin(angle) * radius;
 
-      color.setHSL((y - bottomY) / maxHeight, 1.0, 0.5);
       col[i * 3] = color.r;
       col[i * 3 + 1] = color.g;
       col[i * 3 + 2] = color.b;
@@ -49,29 +49,34 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
     pointsRef.current.rotation.y += 0.001;
 
-    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.02); // Llenado más lento
+    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.02);
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
     const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
     geometry.setDrawRange(0, targetParticleCount);
 
-    const time = clock.getElapsedTime() * 0.5; // Tiempo general más lento
+    const time = clock.getElapsedTime() * 0.5;
     const posAttr = geometry.attributes.position as THREE.BufferAttribute;
     const colors = geometry.attributes.color as THREE.BufferAttribute;
     const color = new THREE.Color();
 
+    // 3. Color Monocromático Animado
+    const baseHue = 0.5; // Cyan
+    const baseSaturation = 1.0;
+    const animatedLuminosity = 0.4 + Math.sin(time * 2) * 0.3; // Pulses between 0.1 and 0.7
+
     for (let i = 0; i < targetParticleCount; i++) {
       const originalY = positions[i * 3 + 1];
+      const originalX = positions[i * 3];
       
-      // 〰️ Ondulación Vertical Suave
-      const verticalWave = Math.sin(time + i * 0.1) * 0.05;
+      // 2. Movimiento de Líquido Dramático y Orgánico
+      const verticalWave = Math.sin(time + originalX * 0.5) * 0.8;
       const newY = originalY + verticalWave;
       
       posAttr.setXYZ(i, positions[i * 3], newY, positions[i * 3 + 2]);
 
-      // 🌈 Animación de Color Global más lenta
-      const hue = (time * 0.1 + (originalY - bottomY) / maxHeight * 0.1) % 1;
-      color.setHSL(hue, 1.0, 0.5);
+      // Animar Brillo
+      color.setHSL(baseHue, baseSaturation, animatedLuminosity);
       colors.setXYZ(i, color.r, color.g, color.b);
     }
     posAttr.needsUpdate = true;
@@ -92,7 +97,8 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial
-          size={0.5}
+          // 1. Tamaño Máximo
+          size={1.0}
           sizeAttenuation={false}
           vertexColors={true}
           transparent={true}
