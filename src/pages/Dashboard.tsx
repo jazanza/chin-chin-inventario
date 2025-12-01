@@ -1,6 +1,7 @@
 import { useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { Download } from "lucide-react";
 import { useDb } from "@/hooks/useDb";
 import { BeerVisualizer } from "@/components/BeerVisualizer";
@@ -142,6 +143,14 @@ const Dashboard = () => {
             <fog attach="fog" args={["#101010", 5, 15]} />
             <Suspense fallback={null}>{renderVisualization()}</Suspense>
             <OrbitControls enableZoom={true} />
+            <EffectComposer>
+              <Bloom
+                mipmapBlur
+                luminanceThreshold={0.8}
+                luminanceSmoothing={0.025}
+                intensity={1.2}
+              />
+            </EffectComposer>
           </Canvas>
         )}
       </div>
