@@ -39,7 +39,7 @@ const RANGE_MAP: { [key: string]: string } = {
   last_3_months: "ÚLTIMOS 3 MESES",
   last_6_months: "ÚLTIMOS 6 MESES",
   last_1_year: "ÚLTIMO AÑO",
-  this_year: "AÑO ACTUAL",
+  this_year: "ESTE AÑO",
   last_year: "AÑO PASADO",
   all_time: "HISTÓRICO",
 };
