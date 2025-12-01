@@ -1,4 +1,4 @@
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { Download } from "lucide-react";
@@ -15,6 +15,8 @@ import { exportToExcel } from "@/lib/export";
 import { calculateDateRange } from "@/lib/dates";
 
 type ViewMode = "meter" | "spectrum" | "balance" | "loyalty";
+const VIEWS: ViewMode[] = ["meter", "spectrum", "balance", "loyalty"];
+const VIEW_DURATION = 15000; // 15 seconds per view
 
 const Dashboard = () => {
   const {
@@ -30,6 +32,20 @@ const Dashboard = () => {
   const [viewMode, setViewMode] = useState<ViewMode>("meter");
   const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
   const [rangeKey, setRangeKey] = useState<string>("last_3_months");
+
+  useEffect(() => {
+    if (!dbBuffer || loading) return;
+
+    const timer = setInterval(() => {
+      setViewMode((currentView) => {
+        const currentIndex = VIEWS.indexOf(currentView);
+        const nextIndex = (currentIndex + 1) % VIEWS.length;
+        return VIEWS[nextIndex];
+      });
+    }, VIEW_DURATION);
+
+    return () => clearInterval(timer);
+  }, [dbBuffer, loading]);
 
   const handleFileLoaded = async (buffer: Uint8Array) => {
     setDbBuffer(buffer);
@@ -54,23 +70,6 @@ const Dashboard = () => {
     };
     const dateRange = calculateDateRange(rangeKey);
     exportToExcel(dataToExport, dateRange);
-  };
-
-  const renderVisualization = () => {
-    switch (viewMode) {
-      case "meter":
-        return (
-          <BeerVisualizer {...consumptionMetrics} rankedBeers={rankedBeers} />
-        );
-      case "spectrum":
-        return <FlavorSpectrum flavorData={flavorData} />;
-      case "balance":
-        return <VarietyBalance varietyMetrics={varietyMetrics} />;
-      case "loyalty":
-        return <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} />;
-      default:
-        return null;
-    }
   };
 
   if (!dbBuffer) {
@@ -101,34 +100,7 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      <div className="absolute top-4 right-4 z-10 p-2 bg-gray-800/50 rounded-lg flex gap-2">
-        <Button
-          onClick={() => setViewMode("meter")}
-          variant={viewMode === "meter" ? "secondary" : "ghost"}
-        >
-          Consumo
-        </Button>
-        <Button
-          onClick={() => setViewMode("spectrum")}
-          variant={viewMode === "spectrum" ? "secondary" : "ghost"}
-        >
-          Sabor
-        </Button>
-        <Button
-          onClick={() => setViewMode("balance")}
-          variant={viewMode === "balance" ? "secondary" : "ghost"}
-        >
-          Variedad
-        </Button>
-        <Button
-          onClick={() => setViewMode("loyalty")}
-          variant={viewMode === "loyalty" ? "secondary" : "ghost"}
-        >
-          Lealtad
-        </Button>
-      </div>
-
-      <div className="flex-grow pt-20">
+      <div className="flex-grow">
         {loading && (
           <p className="text-xl text-center pt-40">Analizando los datos...</p>
         )}
@@ -142,8 +114,11 @@ const Dashboard = () => {
             <color attach="background" args={["#101010"]} />
             <fog attach="fog" args={["#101010", 5, 20]} />
             <Suspense fallback={null}>
-              {renderVisualization()}
-              <CameraAnimator />
+              {viewMode === "meter" && <BeerVisualizer {...consumptionMetrics} rankedBeers={rankedBeers} />}
+              {viewMode === "spectrum" && <FlavorSpectrum flavorData={flavorData} />}
+              {viewMode === "balance" && <VarietyBalance varietyMetrics={varietyMetrics} />}
+              {viewMode === "loyalty" && <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} />}
+              <CameraAnimator viewMode={viewMode} />
             </Suspense>
             <EffectComposer>
               <Bloom
