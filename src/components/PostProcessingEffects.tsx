@@ -18,7 +18,7 @@ export const PostProcessingEffects = () => {
 
   return (
     <EffectComposer key={key}>
-      <renderPass attach="passes" args={[scene, camera]} />
+      <renderPass attachArray="passes" args={[scene, camera]} />
       <Bloom
         mipmapBlur
         luminanceThreshold={0.1}
