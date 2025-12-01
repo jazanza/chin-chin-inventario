@@ -74,7 +74,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   });
 
   return (
-    <group {...props}>
+    <group {...props} visible={visible}>
       <points ref={pointsRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
