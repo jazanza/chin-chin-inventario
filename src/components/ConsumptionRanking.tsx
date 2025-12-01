@@ -9,21 +9,9 @@ interface RankedBeer {
 }
 
 const MAX_COLUMN_HEIGHT = 5;
+const lightColor = new THREE.Color("#00ffff");
 
-const glassMaterial = (
-  <meshPhysicalMaterial
-    transmission={0.9}
-    opacity={1}
-    metalness={0}
-    roughness={0.2}
-    ior={1.5}
-    thickness={0.5}
-    clearcoat={1}
-    clearcoatRoughness={0}
-  />
-);
-
-const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: number; maxLiters: number }) => {
+const LightColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: number; maxLiters: number }) => {
   const meshRef = useRef<THREE.Mesh>(null!);
   const textRef = useRef<any>(null!);
   
@@ -42,8 +30,13 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
   return (
     <group position={[(index - 4.5) * 1.2, 0, 0]}>
       <mesh ref={meshRef} scale={[1, 0.01, 1]}>
-        <boxGeometry args={[0.8, 1, 0.8]} />
-        {glassMaterial}
+        <cylinderGeometry args={[0.1, 0.1, 1, 16]} />
+        <meshStandardMaterial
+          color={lightColor}
+          emissive={lightColor}
+          emissiveIntensity={3}
+          toneMapped={false}
+        />
       </mesh>
       <Text
         ref={textRef}
@@ -60,13 +53,13 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
   );
 };
 
-export function ConsumptionRanking({ rankedBeers, ...props }: { rankedBeers: RankedBeer[] } & JSX.IntrinsicElements['group']) {
+export function ConsumptionRanking({ rankedBeers }: { rankedBeers: RankedBeer[] }) {
   const maxLiters = Math.max(...rankedBeers.map(b => b.liters), 1);
 
   return (
-    <group {...props} position={[0, -2.5, 0]}>
+    <group position={[0, -2.5, 0]}>
       {rankedBeers.map((beer, index) => (
-        <BeerColumn key={beer.name} beer={beer} index={index} maxLiters={maxLiters} />
+        <LightColumn key={beer.name} beer={beer} index={index} maxLiters={maxLiters} />
       ))}
     </group>
   );

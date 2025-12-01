@@ -139,11 +139,11 @@ const Dashboard = () => {
             </Html>
           ) : (
             <Suspense fallback={null}>
-              <BeerVisualizer {...consumptionMetrics} visible={viewMode === "meter"} />
-              <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
-              <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
-              <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
-              <FlavorSpectrum flavorData={flavorData} visible={viewMode === "spectrum"} />
+              {viewMode === "meter" && <BeerVisualizer {...consumptionMetrics} />}
+              {viewMode === "ranking" && <ConsumptionRanking rankedBeers={rankedBeers} />}
+              {viewMode === "balance" && <VarietyBalance varietyMetrics={varietyMetrics} />}
+              {viewMode === "loyalty" && <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} />}
+              {viewMode === "spectrum" && <FlavorSpectrum flavorData={flavorData} />}
             </Suspense>
           )}
 
