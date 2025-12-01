@@ -117,12 +117,14 @@ export function useDb() {
     varietyMetrics: { totalLiters: number; uniqueProducts: number };
     loyaltyMetrics: { topCustomers: { name: string; liters: number }[] };
     rankedBeers: { name: string; liters: number; color: string }[];
+    maxLitersScale: number;
   }>({
     consumptionMetrics: { liters: 0 },
     flavorData: {},
     varietyMetrics: { totalLiters: 0, uniqueProducts: 0 },
     loyaltyMetrics: { topCustomers: [] },
     rankedBeers: [],
+    maxLitersScale: 1000,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,10 +142,12 @@ export function useDb() {
       const VOLUME_QUERY = createQuery(VOLUME_QUERY_BASE, dateRange);
       const SPECTRUM_QUERY = createQuery(SPECTRUM_QUERY_BASE, dateRange);
       const LOYALTY_QUERY = createQuery(LOYALTY_QUERY_BASE, dateRange);
+      const ALL_TIME_VOLUME_QUERY = createQuery(VOLUME_QUERY_BASE, calculateDateRange("all_time"));
 
       const volumeData = queryData(db, VOLUME_QUERY);
       const spectrumData = queryData(db, SPECTRUM_QUERY);
       const loyaltyData = queryData(db, LOYALTY_QUERY);
+      const allTimeVolumeData = queryData(db, ALL_TIME_VOLUME_QUERY);
       db.close();
 
       let totalMl = 0;
@@ -152,6 +156,13 @@ export function useDb() {
         totalMl += item.Quantity * volume;
       }
       const totalLiters = totalMl / 1000;
+
+      let allTimeTotalMl = 0;
+      for (const item of allTimeVolumeData) {
+        const volume = extractVolumeMl(item.ItemName, item.ItemDescription);
+        allTimeTotalMl += item.Quantity * volume;
+      }
+      const maxLitersScale = (allTimeTotalMl / 1000) * 1.1;
 
       const flavorMl: { [key: string]: number } = {};
       for (const item of spectrumData) {
@@ -200,6 +211,7 @@ export function useDb() {
         varietyMetrics,
         loyaltyMetrics: { topCustomers },
         rankedBeers,
+        maxLitersScale,
       });
     } catch (e: any) {
       console.error("Error processing database:", e);

@@ -50,6 +50,7 @@ const Dashboard = () => {
     varietyMetrics,
     loyaltyMetrics,
     rankedBeers,
+    maxLitersScale,
     loading,
     error,
     processData,
@@ -137,7 +138,11 @@ const Dashboard = () => {
             </Html>
           ) : (
             <Suspense fallback={null}>
-              <BeerVisualizer {...consumptionMetrics} visible={viewMode === "meter"} />
+              <BeerVisualizer
+                liters={consumptionMetrics.liters}
+                maxLitersScale={maxLitersScale}
+                visible={viewMode === "meter"}
+              />
               <ConsumptionRanking rankedBeers={rankedBeers} visible={viewMode === "ranking"} />
               <VarietyBalance varietyMetrics={varietyMetrics} visible={viewMode === "balance"} />
               <LoyaltyConstellation loyaltyMetrics={loyaltyMetrics} visible={viewMode === "loyalty"} />
