@@ -3,10 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
-// Partículas reducidas para mejor rendimiento y estética de burbujas grandes.
 const PARTICLE_COUNT = 25000;
-// Mantener constantes rígidas por preferencia del usuario, pero se recomienda calcularlas dinámicamente.
-const CYLINDER_RADIUS = 3.0;
+const CYLINDER_RADIUS = 3.0; // Aumentado para ocupar más pantalla
 const MAX_LITERS_FOR_SCALE = 500;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
@@ -15,7 +13,6 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   const textRef = useRef<any>(null!);
   const animatedLiters = useRef(0);
 
-  // La altura máxima está basada en el viewport para ocupar gran parte de la pantalla.
   const maxHeight = viewport.height * 1.2;
   const bottomY = -maxHeight / 2;
 
@@ -29,12 +26,10 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.sqrt(Math.random()) * CYLINDER_RADIUS;
       
-      // Coordenadas cilíndricas: X, Y (altura), Z
       pos[i * 3] = Math.cos(angle) * radius;
       pos[i * 3 + 1] = y;
       pos[i * 3 + 2] = Math.sin(angle) * radius;
 
-      // Color inicial (degradado arcoíris/HSL)
       color.setHSL((y - bottomY) / maxHeight, 1.0, 0.5);
       col[i * 3] = color.r;
       col[i * 3 + 1] = color.g;
@@ -45,7 +40,6 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
 
   useEffect(() => {
     if (visible) {
-      // Reiniciar la animación al inicio
       animatedLiters.current = 0;
     }
   }, [visible, liters]);
@@ -53,10 +47,67 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
   useFrame(({ clock }) => {
     if (!visible || !pointsRef.current) return;
 
-    // 2. Animación de llenado más lenta (duración de 20+ segundos)
-    // Reducido de 0.05 a 0.01 para un llenado muy gradual.
-    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.01); 
+    animatedLiters.current = THREE.MathUtils.lerp(animatedLiters.current, liters, 0.05);
     const targetParticleCount = Math.floor((animatedLiters.current / MAX_LITERS_FOR_SCALE) * PARTICLE_COUNT);
 
     const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
-    geometry
+    geometry.setDrawRange(0, targetParticleCount);
+
+    const time = clock.getElapsedTime();
+    const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+    const colors = geometry.attributes.color as THREE.BufferAttribute;
+    const color = new THREE.Color();
+
+    for (let i = 0; i < targetParticleCount; i++) {
+      const y = positions[i * 3 + 1];
+
+      // 🌊 Efecto Líquido Ondulante (Marea)
+      const waveX = Math.sin(y * 2 + time) * 0.1;
+      const waveZ = Math.cos(y * 2 + time) * 0.1;
+      
+      // A. Calcular waveY
+      const waveY = Math.sin(positions[i * 3] * 0.5 + time) * 0.1;
+
+      // B. Aplicar waveY
+      posAttr.setXYZ(i, positions[i * 3] + waveX, y + waveY, positions[i * 3 + 2] + waveZ);
+
+      // 🌈 Animación de Color Global
+      const hue = (time * 0.1 + (y - bottomY) / maxHeight * 0.1) % 1;
+      color.setHSL(hue, 1.0, 0.5);
+      colors.setXYZ(i, color.r, color.g, color.b);
+    }
+    posAttr.needsUpdate = true;
+    colors.needsUpdate = true;
+
+    if (textRef.current) {
+      const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
+      textRef.current.position.y = topOfLiquid + 1.75;
+      textRef.current.text = `${animatedLiters.current.toFixed(2)} L`;
+    }
+  });
+
+  return (
+    <group {...props} visible={visible}>
+      <points ref={pointsRef} frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
+          <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial size={0.3} vertexColors={true} transparent={true} opacity={0.7} />
+      </points>
+
+      <Text
+        ref={textRef}
+        position={[0, bottomY + 0.3, 0]}
+        fontSize={2}
+        color="white"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.02}
+        outlineColor="#000000"
+      >
+        {`0.00 L`}
+      </Text>
+    </group>
+  );
+}
