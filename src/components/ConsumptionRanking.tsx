@@ -10,15 +10,27 @@ interface RankedBeer {
 
 const MAX_COLUMN_HEIGHT = 5;
 
+const glassMaterial = (
+  <meshPhysicalMaterial
+    transmission={0.9}
+    opacity={1}
+    metalness={0}
+    roughness={0.2}
+    ior={1.5}
+    thickness={0.5}
+    clearcoat={1}
+    clearcoatRoughness={0}
+  />
+);
+
 const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: number; maxLiters: number }) => {
   const meshRef = useRef<THREE.Mesh>(null!);
   const textRef = useRef<any>(null!);
   
-  const targetHeight = maxLiters > 0 ? (beer.liters / maxLiters) * MAX_COLUMN_HEIGHT : 0;
+  const targetHeight = maxLiters > 0 ? (beer.liters / maxLiters) * MAX_COLUMN_HEIGHT : 0.01;
 
   useFrame(() => {
     if (meshRef.current) {
-      // Animate height smoothly
       meshRef.current.scale.y = THREE.MathUtils.lerp(meshRef.current.scale.y, targetHeight, 0.1);
       meshRef.current.position.y = meshRef.current.scale.y / 2;
     }
@@ -29,15 +41,15 @@ const BeerColumn = ({ beer, index, maxLiters }: { beer: RankedBeer; index: numbe
 
   return (
     <group position={[(index - 4.5) * 1.2, 0, 0]}>
-      <mesh ref={meshRef} scale={[1, 0, 1]}>
+      <mesh ref={meshRef} scale={[1, 0.01, 1]}>
         <boxGeometry args={[0.8, 1, 0.8]} />
-        <meshStandardMaterial color={index % 2 === 0 ? "#2196F3" : "#4CAF50"} />
+        {glassMaterial}
       </mesh>
       <Text
         ref={textRef}
         position={[0, 0.3, 0]}
         fontSize={0.2}
-        color="#333"
+        color="white"
         anchorX="center"
         maxWidth={1.1}
         textAlign="center"
