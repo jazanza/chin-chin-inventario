@@ -4,7 +4,7 @@ import { Text } from "@react-three/drei";
 import * as THREE from "three";
 
 const PARTICLE_COUNT = 100000;
-const CYLINDER_RADIUS = 3.0; // Aumentado para hacerlo más ancho
+const CYLINDER_RADIUS = 5.0; // Aumentado para ocupar más pantalla
 const MAX_LITERS_FOR_SCALE = 1000;
 
 export function BeerVisualizer({ liters, visible, ...props }: { liters: number; visible: boolean } & JSX.IntrinsicElements['group']) {
@@ -53,17 +53,25 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
     geometry.setDrawRange(0, targetParticleCount);
 
-    // Animación de color dinámica
-    const time = clock.getElapsedTime() * 0.5;
+    const time = clock.getElapsedTime();
+    const posAttr = geometry.attributes.position as THREE.BufferAttribute;
     const colors = geometry.attributes.color as THREE.BufferAttribute;
     const color = new THREE.Color();
 
     for (let i = 0; i < targetParticleCount; i++) {
       const y = positions[i * 3 + 1];
-      const hue = ((y - bottomY) / maxHeight + time) % 1;
+
+      // 🌊 Efecto Líquido Ondulante (Marea)
+      const waveX = Math.sin(y * 2 + time) * 0.2;
+      const waveZ = Math.cos(y * 2 + time) * 0.2;
+      posAttr.setXYZ(i, positions[i * 3] + waveX, y, positions[i * 3 + 2] + waveZ);
+
+      // 🌈 Animación de Color Global
+      const hue = (time * 0.1 + (y - bottomY) / maxHeight * 0.1) % 1;
       color.setHSL(hue, 1.0, 0.5);
       colors.setXYZ(i, color.r, color.g, color.b);
     }
+    posAttr.needsUpdate = true;
     colors.needsUpdate = true;
 
     if (textRef.current) {
@@ -80,7 +88,7 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNT} array={positions} itemSize={3} />
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNT} array={initialColors} itemSize={3} />
         </bufferGeometry>
-        <pointsMaterial size={0.03} vertexColors={true} transparent={true} opacity={0.7} />
+        <pointsMaterial size={0.3} vertexColors={true} transparent={true} opacity={0.7} />
       </points>
 
       <Text
