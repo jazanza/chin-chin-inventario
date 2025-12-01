@@ -20,7 +20,6 @@ export function BeerVisualizer({
   const textRef = useRef<any>(null!);
   const animatedLiters = useRef(0);
 
-  // 1. Cálculo Dinámico de Constantes
   const cylinderRadius = viewport.width * 0.25;
   const maxHeight = viewport.height * 1.2;
   const bottomY = -maxHeight / 2;
@@ -37,7 +36,6 @@ export function BeerVisualizer({
 
       pos[i * 3] = Math.cos(angle) * radius;
       pos[i * 3 + 1] = y;
-      // 2. Profundidad Inicial
       pos[i * 3 + 2] = Math.sin(angle) * radius;
 
       col[i * 3] = color.r;
@@ -87,11 +85,9 @@ export function BeerVisualizer({
       const verticalWave = Math.sin(time + originalX * 0.5) * 0.8;
       const newY = originalY + verticalWave;
 
-      // 2. Movimiento en Z (Parallax)
       const zWave = Math.cos(time + originalX * 0.5) * 0.2;
       const newZ = originalZ + zWave;
 
-      // 3. Animación de Color y Profundidad
       const depthFactor = 1 - Math.abs(originalZ) / cylinderRadius;
       const finalLuminosity =
         (0.4 + Math.sin(time * 2) * 0.3) * (0.5 + depthFactor * 0.5);
@@ -130,7 +126,7 @@ export function BeerVisualizer({
           />
         </bufferGeometry>
         <pointsMaterial
-          size={1.0}
+          size={5.0}
           sizeAttenuation={false}
           vertexColors={true}
           transparent={true}
