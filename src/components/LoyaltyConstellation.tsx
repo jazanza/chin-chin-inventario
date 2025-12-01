@@ -36,37 +36,34 @@ const Planet = ({ customer, index }: { customer: Customer; index: number }) => {
   );
 };
 
-export function LoyaltyConstellation({ loyaltyMetrics }: { loyaltyMetrics: { topCustomers: Customer[] } }) {
+export function LoyaltyConstellation({ loyaltyMetrics, ...props }: { loyaltyMetrics: { topCustomers: Customer[] } } & JSX.IntrinsicElements['group']) {
   const { topCustomers } = loyaltyMetrics;
-
-  if (!topCustomers || topCustomers.length === 0) {
-    return <Text position={[0, 0, 0]} fontSize={0.3} color="white">No customer data available</Text>;
-  }
-
-  const [sun, ...planets] = topCustomers;
-
-  // Defensive check in case the first element is unexpectedly undefined
-  if (!sun) {
-    return <Text position={[0, 0, 0]} fontSize={0.3} color="white">No top customer data available</Text>;
-  }
+  const hasData = topCustomers && topCustomers.length > 0;
+  const sun = hasData ? topCustomers[0] : null;
+  const planets = hasData ? topCustomers.slice(1) : [];
 
   return (
-    <group>
-      {/* Sun - Top Customer */}
-      <Sphere args={[0.5 + sun.liters * 0.01, 32, 32]}>
-        <meshStandardMaterial color="gold" emissive="orange" emissiveIntensity={0.6} />
-      </Sphere>
-      <Text position={[0, 0.8, 0]} fontSize={0.2} color="white" anchorX="center">
-        {sun.name}
-      </Text>
-      <Text position={[0, -0.8, 0]} fontSize={0.15} color="white" anchorX="center">
-        {`${sun.liters.toFixed(1)} L`}
-      </Text>
+    <group {...props}>
+      {!hasData && <Text position={[0, 0, 0]} fontSize={0.3} color="white">No customer data available</Text>}
+      {sun && (
+        <>
+          {/* Sun - Top Customer */}
+          <Sphere args={[0.5 + sun.liters * 0.01, 32, 32]}>
+            <meshStandardMaterial color="gold" emissive="orange" emissiveIntensity={0.6} />
+          </Sphere>
+          <Text position={[0, 0.8, 0]} fontSize={0.2} color="white" anchorX="center">
+            {sun.name}
+          </Text>
+          <Text position={[0, -0.8, 0]} fontSize={0.15} color="white" anchorX="center">
+            {`${sun.liters.toFixed(1)} L`}
+          </Text>
 
-      {/* Planets - Other Top Customers */}
-      {planets.map((customer, index) => (
-        <Planet key={customer.name} customer={customer} index={index} />
-      ))}
+          {/* Planets - Other Top Customers */}
+          {planets.map((customer, index) => (
+            <Planet key={customer.name} customer={customer} index={index} />
+          ))}
+        </>
+      )}
     </group>
   );
 }

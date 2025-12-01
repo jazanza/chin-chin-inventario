@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { Box, Sphere, Cylinder, Text } from "@react-three/drei";
 import * as THREE from "three";
 
-export function VarietyBalance({ varietyMetrics }: { varietyMetrics: { totalLiters: number; uniqueProducts: number } }) {
+export function VarietyBalance({ varietyMetrics, ...props }: { varietyMetrics: { totalLiters: number; uniqueProducts: number } } & JSX.IntrinsicElements['group']) {
   const balanceRef = useRef<THREE.Group>(null!);
   const { totalLiters, uniqueProducts } = varietyMetrics;
 
@@ -21,7 +21,7 @@ export function VarietyBalance({ varietyMetrics }: { varietyMetrics: { totalLite
   });
 
   return (
-    <group position={[0, -1, 0]}>
+    <group position={[0, -1, 0]} {...props}>
       {/* Base */}
       <Cylinder args={[0.2, 0.2, 2, 32]} position={[0, 1, 0]}>
         <meshStandardMaterial color="gray" />
