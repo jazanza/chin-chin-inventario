@@ -79,13 +79,6 @@ export function BeerVisualizer({ liters, visible, ...props }: { liters: number; 
     posAttr.needsUpdate = true;
     colors.needsUpdate = true;
 
-    if (textRef.current) {
-      const topOfLiquid = bottomY + (targetParticleCount / PARTICLE_COUNT) * maxHeight;
-      textRef.current.position.y = topOfLiquid + 1.75;
-      textRef.current.text = `${animatedLiters.current.toFixed(2)} lt.`;
-    }
-  });
-
   return (
     <group {...props} visible={visible}>
       <points ref={pointsRef} frustumCulled={false}>
