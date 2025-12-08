@@ -54,5 +54,821 @@
     "supplier": "Proveedor D",
     "averageSales": 300,
     "multiple": 1
+  },
+  {
+    "productId": 8,
+    "productName": "1664 Blanc - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 7,
+    "multiple": 1
+  },
+  {
+    "productId": 9,
+    "productName": "1906 Black Coupage - 330ml",
+    "category": "Cervezas Españolas",
+    "supplier": "Proveedor C",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 10,
+    "productName": "1906 Red Vintage - 330ml",
+    "category": "Cervezas Españolas",
+    "supplier": "Proveedor C",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 11,
+    "productName": "1906 Reserva Especial - 330ml",
+    "category": "Cervezas Españolas",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 12,
+    "productName": "Belhaven Black Stout - 440ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 13,
+    "productName": "Belhaven Original Best - 440ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 14,
+    "productName": "Blue Moon - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 15,
+    "productName": "Carlsberg - 330 ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor C",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 16,
+    "productName": "Corona - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 17,
+    "productName": "Cusqueña Negra - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor D",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 18,
+    "productName": "Estrella Galicia - 330ml",
+    "category": "Cervezas Españolas",
+    "supplier": "Proveedor C",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 19,
+    "productName": "Guinness Stout",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 20,
+    "productName": "Heineken 0 Alcohol",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor B",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 21,
+    "productName": "Hobgoblin Gold - 500ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 22,
+    "productName": "Hobgoblin Ruby - 500ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 23,
+    "productName": "Ladenburger Super Forte - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 24,
+    "productName": "Mahou 5 Estrellas - 330ml",
+    "category": "Cervezas Españolas",
+    "supplier": "Proveedor C",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 25,
+    "productName": "Mahou IPA (Botella) - 330ml",
+    "category": "Cervezas Españolas",
+    "supplier": "Proveedor C",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 26,
+    "productName": "Maisel & Friends IPA - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 27,
+    "productName": "Modelo - 355ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor B",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 28,
+    "productName": "Monastére Blonde - 500ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 29,
+    "productName": "Monastére Double - 500ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 30,
+    "productName": "OHara's Red - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 31,
+    "productName": "OHara's Stout - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 32,
+    "productName": "Royal Dutch Premium Strong - 250ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 33,
+    "productName": "5.0 Negra 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 34,
+    "productName": "9.0 Strong 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 35,
+    "productName": "Benediktiner Hell - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 36,
+    "productName": "Benediktiner Weissbier - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 37,
+    "productName": "Bitburger Botella - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 38,
+    "productName": "DAB Dark - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 39,
+    "productName": "DAB Dortmunder - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor A",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 40,
+    "productName": "DAB Maibock - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 41,
+    "productName": "DAB Radler - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 42,
+    "productName": "Erdinger Dunkel - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 43,
+    "productName": "Erdinger Pikantus - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 44,
+    "productName": "Erdinger Weissbier - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 45,
+    "productName": "Flensburger Dunkel - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 46,
+    "productName": "Flensburger Gold - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 47,
+    "productName": "Flensburger Pilsener -330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 48,
+    "productName": "Flensburger Weizen - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 49,
+    "productName": "Hofbrau Dunkel - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 50,
+    "productName": "Hofbrau Original - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 51,
+    "productName": "Maisel & Friends Pale Ale - 330ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 52,
+    "productName": "Maisel Weisse - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 53,
+    "productName": "Oettinger Schwarz - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 54,
+    "productName": "Oettinger Super Fuerte 500 Ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 55,
+    "productName": "Oettinger Weissbier 500 Ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor C",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 56,
+    "productName": "Paulaner Dunkel - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 57,
+    "productName": "Paulaner Munchen Hell - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 58,
+    "productName": "Paulaner Oktoberfest - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 59,
+    "productName": "Paulaner Weissbier - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 60,
+    "productName": "Paulaner sin Alcohol - 500 ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 61,
+    "productName": "Schofferhofer Grapefruit - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 62,
+    "productName": "Schofferhofer Weizen - 500ml",
+    "category": "Cervezas Alemanas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 63,
+    "productName": "Augustijn Blond - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 64,
+    "productName": "Augustijn Donker - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 65,
+    "productName": "Baptist Wit - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 66,
+    "productName": "Brugse Zot - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 67,
+    "productName": "Bush Caractère - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 68,
+    "productName": "Bush Frambuesa - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 69,
+    "productName": "Bush Noel - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 70,
+    "productName": "Bush Peche Mel - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 71,
+    "productName": "Cherry Chouffe - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 8,
+    "multiple": 1
+  },
+  {
+    "productId": 72,
+    "productName": "Chimay Azul - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 73,
+    "productName": "Chimay Roja - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 74,
+    "productName": "Chimay Tripel - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 75,
+    "productName": "Cuvee des Trolls - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 76,
+    "productName": "Delirium Argentum - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 77,
+    "productName": "Delirium Christmas Ale - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 0,
+    "multiple": 1
+  },
+  {
+    "productId": 78,
+    "productName": "Delirium Nocturnum - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 79,
+    "productName": "Delirium Red - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 80,
+    "productName": "Delirium Tremens - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 81,
+    "productName": "Duchesse Cherry - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 82,
+    "productName": "Duchesse Chocolate Cherry - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 83,
+    "productName": "Duchesse de Bourgogne - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 84,
+    "productName": "Duvel - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 85,
+    "productName": "Duvel Triple Hop Citra - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 86,
+    "productName": "Gruut Bruin - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 87,
+    "productName": "Gruut Wit - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 88,
+    "productName": "Gulden Draak 9000 - 300ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 89,
+    "productName": "Gulden Draak Brewmaster - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 90,
+    "productName": "Gulden Draak Classic - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 91,
+    "productName": "Gulden Draak Smoked - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 92,
+    "productName": "La Chouffe - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 93,
+    "productName": "Lindemans Cassis - 250ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 6,
+    "multiple": 1
+  },
+  {
+    "productId": 94,
+    "productName": "Lindemans Framboise - 250ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 6,
+    "multiple": 1
+  },
+  {
+    "productId": 95,
+    "productName": "Lindemans Geuze - 250ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 96,
+    "productName": "Lindemans Kriek - 250ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 6,
+    "multiple": 1
+  },
+  {
+    "productId": 97,
+    "productName": "Mc Chouffe -330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 98,
+    "productName": "Petrus Nitro Cherry - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 5,
+    "multiple": 1
+  },
+  {
+    "productId": 99,
+    "productName": "Petrus Red - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 100,
+    "productName": "Piraat Clasica - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 101,
+    "productName": "Piraat Red - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 6,
+    "multiple": 1
+  },
+  {
+    "productId": 102,
+    "productName": "Piraat Triple Hop - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 103,
+    "productName": "St Bernardus Abt 12 - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 104,
+    "productName": "St Bernardus Christmas Ale - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 105,
+    "productName": "St Bernardus Tripel - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 1,
+    "multiple": 1
+  },
+  {
+    "productId": 106,
+    "productName": "Straffe Hendrick Tripel - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor A",
+    "averageSales": 3,
+    "multiple": 1
+  },
+  {
+    "productId": 107,
+    "productName": "Trappistes Rochefort 6 - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 2,
+    "multiple": 1
+  },
+  {
+    "productId": 108,
+    "productName": "Trappistes Rochefort 8 - 330ml",
+    "category": "Cervezas Belgas",
+    "supplier": "Proveedor B",
+    "averageSales": 4,
+    "multiple": 1
+  },
+  {
+    "productId": 109,
+    "productName": "Heidrun - Canelazo - 330ml",
+    "category": "Cervezas Del Mundo",
+    "supplier": "Proveedor D",
+    "averageSales": 4,
+    "multiple": 1
   }
 ]
