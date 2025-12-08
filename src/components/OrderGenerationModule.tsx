@@ -82,10 +82,10 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
   return (
     <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
+      <h2 className="text-xl sm:text-2xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
 
-      <div className="mb-4 flex items-center gap-4">
-        <label htmlFor="targetWeeks" className="text-lg">Semanas de Stock Objetivo:</label>
+      <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
+        <label htmlFor="targetWeeks" className="text-base sm:text-lg">Semanas de Stock Objetivo:</label>
         <Input
           id="targetWeeks"
           type="number"
@@ -105,49 +105,51 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
               <TabsTrigger
                 key={supplier}
                 value={supplier}
-                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:font-bold text-gray-700 hover:bg-gray-200"
+                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:font-bold text-gray-700 hover:bg-gray-200 text-sm sm:text-base"
               >
                 {supplier}
               </TabsTrigger>
             ))}
           </TabsList>
-          {suppliers.map(supplier => (
-            <TabsContent key={supplier} value={supplier} className="mt-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-gray-900">{`Pedido para ${supplier}`}</h3>
-                <Button
-                  onClick={() => exportOrder(supplier)}
-                  variant="outline"
-                  size="sm"
-                  className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white"
-                >
-                  <Download className="h-4 w-4 mr-1" /> Exportar Pedido
-                </Button>
-              </div>
-              <div className="overflow-x-auto custom-scrollbar">
-                <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
-                  <TableHeader>
-                    <TableRow className="border-b border-gray-200">
-                      <TableHead className="text-gray-700">Producto</TableHead>
-                      <TableHead className="text-gray-700">Cant. Original</TableHead>
-                      <TableHead className="text-gray-700">Cant. Ajustada</TableHead>
-                      <TableHead className="text-gray-700">Cajas/Unidades</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ordersBySupplier[supplier].map((order, idx) => (
-                      <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
-                        <TableCell className="py-2 px-4">{order.product}</TableCell>
-                        <TableCell className="py-2 px-4">{order.quantityToOrder}</TableCell>
-                        <TableCell className="py-2 px-4">{order.adjustedQuantity}</TableCell>
-                        <TableCell className="py-2 px-4">{order.boxes}</TableCell>
+          <TabsContent key={suppliers[0]} value={suppliers[0]} className="mt-4"> {/* Default to first supplier */}
+            {suppliers.map(supplier => (
+              <TabsContent key={supplier} value={supplier} className="mt-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                  <h3 className="text-lg sm:text-xl font-semibold text-gray-900">{`Pedido para ${supplier}`}</h3>
+                  <Button
+                    onClick={() => exportOrder(supplier)}
+                    variant="outline"
+                    size="sm"
+                    className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white"
+                  >
+                    <Download className="h-4 w-4 mr-1" /> Exportar Pedido
+                  </Button>
+                </div>
+                <div className="overflow-x-auto custom-scrollbar">
+                  <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
+                    <TableHeader>
+                      <TableRow className="border-b border-gray-200">
+                        <TableHead className="text-gray-700">Producto</TableHead>
+                        <TableHead className="text-gray-700">Cant. Original</TableHead>
+                        <TableHead className="text-gray-700">Cant. Ajustada</TableHead>
+                        <TableHead className="text-gray-700">Cajas/Unidades</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-          ))}
+                    </TableHeader>
+                    <TableBody>
+                      {ordersBySupplier[supplier].map((order, idx) => (
+                        <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
+                          <TableCell className="py-2 px-4">{order.product}</TableCell>
+                          <TableCell className="py-2 px-4">{order.quantityToOrder}</TableCell>
+                          <TableCell className="py-2 px-4">{order.adjustedQuantity}</TableCell>
+                          <TableCell className="py-2 px-4">{order.boxes}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+            ))}
+          </TabsContent>
         </Tabs>
       )}
     </div>

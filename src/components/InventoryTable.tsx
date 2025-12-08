@@ -2,8 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowUp, ArrowDown, Download, Minus, Plus } from "lucide-react"; // Importar Minus y Plus
-import { showSuccess, showError } from "@/utils/toast";
+import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react"; // 'Download' eliminado
 
 export interface InventoryItem {
   productId: number;
@@ -64,26 +63,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
   };
 
-  const generateCorrectionDocument = (item: InventoryItem) => {
-    const difference = item.physicalQuantity - item.systemQuantity;
-    if (difference === 0) {
-      showError(`No hay desacierto para ${item.productName}.`);
-      return;
-    }
-
-    const correctionType = difference > 0 ? "Entrada" : "Salida";
-    const fileName = `Correccion_${item.productName.replace(/\s/g, "_")}.txt`;
-    const content = `Producto: ${item.productName}\nCategoría: ${item.category}\nTipo de Corrección: ${correctionType}\nCantidad: ${Math.abs(difference)}\nStock Sistema: ${item.systemQuantity}\nStock Físico: ${item.physicalQuantity}`;
-
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showSuccess(`Documento de corrección para ${item.productName} generado.`);
-  };
+  // La función generateCorrectionDocument ha sido eliminada ya que la columna 'Acción' no se usa.
 
   return (
     <div className="overflow-x-auto w-full max-h-[70vh] custom-scrollbar">
@@ -96,7 +76,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             <TableHead className="text-gray-700">Cant. Física Real</TableHead>
             <TableHead className="text-gray-700">Acierto / Desacierto</TableHead>
             <TableHead className="text-gray-700">Promedio Ventas</TableHead>
-            <TableHead className="text-gray-700">Acción</TableHead>
+            {/* Columna 'Acción' eliminada */}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -116,7 +96,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       variant="outline"
                       size="icon"
                       onClick={() => handleDecrementPhysicalQuantity(index)}
-                      disabled={item.physicalQuantity <= 0} // Deshabilitar si es 0 o menos
+                      disabled={item.physicalQuantity <= 0}
                       className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                     >
                       <Minus className="h-4 w-4" />
@@ -125,8 +105,8 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       type="number"
                       value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
                       onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
-                      className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center"
-                      min="0" // Asegurar que el input HTML no permita negativos
+                      className="w-full max-w-[6rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center"
+                      min="0"
                     />
                     <Button
                       variant="outline"
@@ -148,21 +128,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     type="number"
                     value={item.averageSales === 0 ? "" : item.averageSales}
                     onChange={(e) => handleAverageSalesChange(index, e.target.value)}
-                    className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
+                    className="w-full max-w-[6rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
                   />
                 </TableCell>
-                <TableCell className="py-2 px-4">
-                  {!isMatch && (
-                    <Button
-                      onClick={() => generateCorrectionDocument(item)}
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
-                    >
-                      <Download className="h-4 w-4 mr-1" /> Corrección
-                    </Button>
-                  )}
-                </TableCell>
+                {/* Celda de 'Acción' eliminada */}
               </TableRow>
             );
           })}
