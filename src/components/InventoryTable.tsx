@@ -70,7 +70,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
         <TableHeader className="sticky top-0 bg-white z-10">
           <TableRow className="border-b border-gray-200">
             <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Producto</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Real</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead>
@@ -81,11 +81,15 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             const isMatch = item.systemQuantity === item.physicalQuantity;
             const isExcess = item.physicalQuantity > item.systemQuantity;
             const isDeficit = item.physicalQuantity < item.systemQuantity;
+            // Mostrar check verde si coincide o si no se ha editado aún (valores iniciales iguales)
+            const showCheck = isMatch || !item.hasBeenEdited;
+            // Mostrar flechas solo si se ha editado y hay diferencia
+            const showArrows = item.hasBeenEdited && (isExcess || isDeficit);
 
             return (
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
                 <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle">{item.category}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle font-bold">{formatProductName(item.productName, item.category)}</TableCell> {/* Añadido font-bold aquí */}
+                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle font-bold">{formatProductName(item.productName, item.category)}</TableCell>
                 <TableCell className="py-2 px-2 text-xs sm:text-sm text-center align-middle">{item.systemQuantity}</TableCell>
                 <TableCell className="py-2 px-2 align-middle">
                   <div className="flex items-center space-x-1">
@@ -119,9 +123,9 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                   </div>
                 </TableCell>
                 <TableCell className="py-2 px-2 flex items-center justify-center align-middle">
-                  {item.hasBeenEdited && (
+                  {showCheck && <Check className="h-4 w-4 text-green-500" />}
+                  {showArrows && (
                     <>
-                      {isMatch && <Check className="h-4 w-4 text-green-500" />}
                       {isExcess && <ArrowUp className="h-4 w-4 text-red-500" />}
                       {isDeficit && <ArrowDown className="h-4 w-4 text-red-500" />}
                     </>

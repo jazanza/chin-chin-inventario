@@ -1,10 +1,4 @@
-import React, {
-  createContext,
-  useState,
-  useContext,
-  useCallback,
-  useEffect,
-} from "react";
+import React, { createContext, useState, useContext, useCallback, useEffect, } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
 
@@ -56,78 +50,37 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
-    SELECT
-      PG.Name AS Categoria,
-      P.Name AS Producto,
-      S.Quantity AS Stock_Actual
+    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual
     FROM Stock S
     JOIN Product P ON P.Id = S.ProductId
     JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE
-      PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
-      AND PG.Name IN (
-        'Cervezas',
-        'Mixers',
-        'Cigarrillos y Vapes',
-        'Snacks',
-        'Six Packs',
-        'Conservas y Embutidos',
-        'Cervezas Belgas',
-        'Cervezas Alemanas',
-        'Cervezas Españolas',
-        'Cervezas Del Mundo',
-        'Cervezas 750ml',
-        'Vapes',
-        'Tabacos',
-        'Comida'
-      )
-      AND P.IsEnabled = 1
-    ORDER BY
-      PG.Name ASC,
-      P.Name ASC;
+    WHERE PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
+    AND PG.Name IN (
+      'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
+      'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
+      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes',
+      'Tabacos', 'Comida'
+    )
+    AND P.IsEnabled = 1
+    ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
   const MONTHLY_INVENTORY_QUERY = `
-    SELECT
-      PG.Name AS Categoria,
-      P.Name AS Producto,
-      S.Quantity AS Stock_Actual
+    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual
     FROM Stock S
     JOIN Product P ON P.Id = S.ProductId
     JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE
-      PG.Id IN (
-        4, 5, 6, 7, 8, 9, 10, 11, 12,
-        13, 14, 16, 20, 22, 23, 27,
-        34, 36, 37, 38, 43
-      )
-      AND PG.Name IN (
-        'Vinos',
-        'Espumantes',
-        'Whisky',
-        'Vodka',
-        'Ron',
-        'Gin',
-        'Aguardientes',
-        'Tequilas',
-        'Aperitivos',
-        'Cervezas',
-        'Mixers',
-        'Cigarrillos y Vapes',
-        'Snacks',
-        'Personales',
-        'Six Packs',
-        'Conservas y Embutidos',
-        'Cervezas Belgas',
-        'Cervezas Alemanas',
-        'Vapes',
-        'Tabacos',
-        'Comida'
-      )
-      AND P.IsEnabled = 1
-    ORDER BY
-      PG.Name ASC,
-      P.Name ASC;
+    WHERE PG.Id IN (
+      4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
+    )
+    AND PG.Name IN (
+      'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes',
+      'Tequilas', 'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes',
+      'Snacks', 'Personales', 'Six Packs', 'Conservas y Embutidos',
+      'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
+    )
+    AND P.IsEnabled = 1
+    ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
   const processInventoryData = useCallback(
@@ -135,11 +88,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       setLoading(true);
       setError(null);
       console.log(`Starting database processing for ${type} inventory.`);
+
       try {
         await initDb();
         const db = loadDb(buffer);
-
         let inventoryQuery: string;
+
         if (type === "weekly") {
           inventoryQuery = WEEKLY_INVENTORY_QUERY;
         } else {
@@ -156,12 +110,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           const matchedProduct = productData.find(
             (p) => p.productName === dbItem.Producto
           );
+
           return {
             productId: matchedProduct?.productId || 0,
             productName: dbItem.Producto,
             category: dbItem.Categoria,
             systemQuantity: dbItem.Stock_Actual,
-            physicalQuantity: 0, // Inicializar con 0
+            physicalQuantity: dbItem.Stock_Actual, // Inicializar con el mismo valor que systemQuantity
             averageSales: matchedProduct?.averageSales || 0,
             supplier: matchedProduct?.supplier || "Desconocido",
             multiple: matchedProduct?.multiple || 1,
