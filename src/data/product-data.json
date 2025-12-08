@@ -1,0 +1,58 @@
+[
+  {
+    "productId": 1,
+    "productName": "IPA Artesanal",
+    "category": "Cerveza",
+    "supplier": "Proveedor A",
+    "averageSales": 100,
+    "multiple": 1
+  },
+  {
+    "productId": 2,
+    "productName": "Lager Clásica",
+    "category": "Cerveza",
+    "supplier": "Proveedor B",
+    "averageSales": 150,
+    "multiple": 24
+  },
+  {
+    "productId": 3,
+    "productName": "Stout Oscura",
+    "category": "Cerveza",
+    "supplier": "Proveedor A",
+    "averageSales": 80,
+    "multiple": 1
+  },
+  {
+    "productId": 4,
+    "productName": "Pilsner Ligera",
+    "category": "Cerveza",
+    "supplier": "Proveedor C",
+    "averageSales": 120,
+    "multiple": 12
+  },
+  {
+    "productId": 5,
+    "productName": "Cerveza de Trigo",
+    "category": "Cerveza",
+    "supplier": "Proveedor B",
+    "averageSales": 90,
+    "multiple": 24
+  },
+  {
+    "productId": 6,
+    "productName": "Refresco Cola",
+    "category": "Refresco",
+    "supplier": "Proveedor D",
+    "averageSales": 200,
+    "multiple": 6
+  },
+  {
+    "productId": 7,
+    "productName": "Agua Mineral",
+    "category": "Refresco",
+    "supplier": "Proveedor D",
+    "averageSales": 300,
+    "multiple": 1
+  }
+]
