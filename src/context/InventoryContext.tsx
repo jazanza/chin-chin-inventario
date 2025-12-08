@@ -146,6 +146,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             averageSales: matchedProduct?.averageSales || 0,
             supplier: matchedProduct?.supplier || "Desconocido",
             multiple: matchedProduct?.multiple || 1,
+            hasBeenEdited: false, // Nueva propiedad inicializada a false
           };
         });
 

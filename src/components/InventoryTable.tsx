@@ -14,6 +14,7 @@ export interface InventoryItem {
   averageSales: number;
   supplier: string;
   multiple: number;
+  hasBeenEdited?: boolean; // Nueva propiedad
 }
 
 interface InventoryTableProps {
@@ -28,13 +29,15 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
-  const updateInventoryItem = (index: number, key: keyof InventoryItem, value: number) => {
+  const updateInventoryItem = (index: number, key: keyof InventoryItem, value: number | boolean) => {
     const updatedData = [...editableInventory];
-    // Asegurarse de que la cantidad física nunca sea menor que cero
     if (key === "physicalQuantity") {
-      updatedData[index][key] = Math.max(0, value);
-    } else {
-      updatedData[index][key] = value;
+      updatedData[index][key] = Math.max(0, value as number);
+      updatedData[index].hasBeenEdited = true; // Marcar como editado
+    } else if (key === "averageSales") {
+      updatedData[index][key] = value as number;
+    } else if (key === "hasBeenEdited") {
+      updatedData[index][key] = value as boolean;
     }
     setEditableInventory(updatedData);
     onInventoryChange(updatedData);
@@ -42,7 +45,6 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
 
   const handlePhysicalQuantityChange = (index: number, value: string) => {
     const newQuantity = parseInt(value, 10);
-    // Si el valor es una cadena vacía, se interpreta como 0 para el estado, pero se muestra como vacío si es 0 y no hay systemQuantity
     updateInventoryItem(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
   };
 
@@ -96,7 +98,6 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     >
                       <Minus className="h-3 w-3" />
                     </Button>
-                    {/* Siempre muestra el valor, incluyendo 0 */}
                     <Input
                       type="number"
                       value={item.physicalQuantity}
@@ -118,9 +119,13 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                   </div>
                 </TableCell>
                 <TableCell className="py-2 px-2 flex items-center justify-center"> {/* Centrado */}
-                  {isMatch && <Check className="h-4 w-4 text-green-500" />}
-                  {isExcess && <ArrowUp className="h-4 w-4 text-red-500" />}
-                  {isDeficit && <ArrowDown className="h-4 w-4 text-red-500" />}
+                  {item.hasBeenEdited && (
+                    <>
+                      {isMatch && <Check className="h-4 w-4 text-green-500" />}
+                      {isExcess && <ArrowUp className="h-4 w-4 text-red-500" />}
+                      {isDeficit && <ArrowDown className="h-4 w-4 text-red-500" />}
+                    </>
+                  )}
                 </TableCell>
                 {/* <TableCell className="py-2 px-2"> */} {/* Columna oculta */}
                   {/* <Input
