@@ -16,7 +16,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null); // Estado para gestionar el proveedor seleccionado
 
   const ordersBySupplier = useMemo(() => {
-    const orders: { [supplier: string]: { product: string; quantityToOrder: number; adjustedQuantity: number }[] } = {}; // Eliminado 'boxes'
+    const orders: { [supplier: string]: { product: string; quantityToOrder: number; adjustedQuantity: number }[] } = {};
 
     inventoryData.forEach(item => {
       if (!item.supplier) return;
@@ -62,6 +62,25 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return orders;
   }, [inventoryData]);
 
+  // Lógica para el resumen de cajas de Belbier
+  const belbierSummary = useMemo(() => {
+    if (selectedSupplier === "Belbier" && ordersBySupplier["Belbier"]) {
+      const totalAdjustedQuantity = ordersBySupplier["Belbier"].reduce((sum, order) => sum + order.adjustedQuantity, 0);
+      const unitsPerBox = 24;
+      const totalBoxes = Math.floor(totalAdjustedQuantity / unitsPerBox);
+      const remainingUnits = totalAdjustedQuantity % unitsPerBox;
+      const missingUnits = remainingUnits > 0 ? unitsPerBox - remainingUnits : 0;
+
+      return {
+        totalAdjustedQuantity,
+        totalBoxes,
+        remainingUnits,
+        missingUnits,
+      };
+    }
+    return null;
+  }, [selectedSupplier, ordersBySupplier]);
+
   const copyOrderToClipboard = async (supplier: string) => {
     const supplierOrders = ordersBySupplier[supplier];
     if (!supplierOrders || supplierOrders.length === 0) {
@@ -74,6 +93,17 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       orderText += `- ${order.product} x ${order.adjustedQuantity} u.\n`;
     });
     orderText += "\nMuchas gracias.";
+
+    // Añadir el resumen de Belbier al texto copiado si es el proveedor seleccionado
+    if (supplier === "Belbier" && belbierSummary) {
+      orderText += `\n--- Resumen Belbier ---\n`;
+      orderText += `Total de unidades a pedir: ${belbierSummary.totalAdjustedQuantity}\n`;
+      orderText += `Equivalente a: ${belbierSummary.totalBoxes} cajas completas.\n`;
+      if (belbierSummary.missingUnits > 0) {
+        orderText += `¡Atención! Faltan ${belbierSummary.missingUnits} unidades para completar la siguiente caja de 24.\n`;
+      }
+      orderText += `-----------------------\n`;
+    }
 
     try {
       await navigator.clipboard.writeText(orderText);
@@ -143,7 +173,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                       <TableRow className="border-b border-gray-200">
                         <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                         <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
-                        {/* <TableHead className="text-xs sm:text-sm text-gray-700">Cajas/Unidades</TableHead> */}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -151,12 +180,25 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                         <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.adjustedQuantity}</TableCell>
-                          {/* <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.boxes}</TableCell> */}
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
+
+                {/* Leyenda especial para Belbier */}
+                {selectedSupplier === "Belbier" && belbierSummary && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800">
+                    <p className="font-semibold">Resumen para Belbier:</p>
+                    <p>Total de unidades a pedir: {belbierSummary.totalAdjustedQuantity}</p>
+                    <p>Equivalente a: {belbierSummary.totalBoxes} cajas completas.</p>
+                    {belbierSummary.missingUnits > 0 && (
+                      <p className="text-red-600">
+                        ¡Atención! Faltan {belbierSummary.missingUnits} unidades para completar la siguiente caja de 24.
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
