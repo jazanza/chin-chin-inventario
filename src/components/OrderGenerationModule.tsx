@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download } from "lucide-react";
-import { InventoryItem } from "./InventoryTable";
+import { InventoryItem } from "@/context/InventoryContext"; // Corregida la importación
 import { showSuccess } from "@/utils/toast";
 
 interface OrderGenerationModuleProps {
@@ -22,7 +22,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
       const targetStock = item.averageSales * targetWeeksOfStock;
       let quantityToOrder = targetStock - item.physicalQuantity;
-
       if (quantityToOrder < 0) quantityToOrder = 0; // Don't order if already over stock
 
       let adjustedQuantity = quantityToOrder;
@@ -83,7 +82,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   return (
     <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
       <h2 className="text-lg sm:text-xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
-
+      
       <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
         <label htmlFor="targetWeeks" className="text-sm sm:text-base">Semanas de Stock Objetivo:</label>
         <Input
@@ -111,6 +110,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
               </TabsTrigger>
             ))}
           </TabsList>
+          
           <TabsContent key={suppliers[0]} value={suppliers[0]} className="mt-4">
             {suppliers.map(supplier => (
               <TabsContent key={supplier} value={supplier} className="mt-4">
@@ -122,9 +122,11 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                     size="sm"
                     className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm"
                   >
-                    <Download className="h-4 w-4 mr-1" /> Exportar Pedido
+                    <Download className="h-4 w-4 mr-1" />
+                    Exportar Pedido
                   </Button>
                 </div>
+                
                 <div className="overflow-x-auto custom-scrollbar">
                   <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
                     <TableHeader>
