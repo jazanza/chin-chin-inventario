@@ -58,7 +58,8 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
       'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml'
     ];
     if (beerCategories.includes(category)) {
-      return productName.replace(/ - (750ml|330ml|250ml|500ml|440ml|355ml)$/i, '');
+      // Regex para eliminar cualquier cantidad de ml (con o sin espacio), "6 Pack" o "125gr" al final del nombre
+      return productName.replace(/ - ((\d+ ?ml)|(6 Pack)|(125gr))$/i, '');
     }
     return productName;
   };
