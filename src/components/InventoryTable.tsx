@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react"; // 'Download' eliminado
+import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
 
 export interface InventoryItem {
   productId: number;
@@ -63,20 +63,17 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
   };
 
-  // La función generateCorrectionDocument ha sido eliminada ya que la columna 'Acción' no se usa.
-
   return (
     <div className="overflow-x-auto w-full max-h-[70vh] custom-scrollbar">
       <Table className="min-w-full bg-white text-gray-900 border-collapse">
         <TableHeader className="sticky top-0 bg-white z-10">
           <TableRow className="border-b border-gray-200">
-            <TableHead className="text-gray-700">Categoría</TableHead>
-            <TableHead className="text-gray-700">Producto</TableHead>
-            <TableHead className="text-gray-700">Cant. Sistema</TableHead>
-            <TableHead className="text-gray-700">Cant. Física Real</TableHead>
-            <TableHead className="text-gray-700">Acierto / Desacierto</TableHead>
-            <TableHead className="text-gray-700">Promedio Ventas</TableHead>
-            {/* Columna 'Acción' eliminada */}
+            <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Sistema</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Física Real</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700">Acierto / Desacierto</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700">Promedio Ventas</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -87,51 +84,50 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
 
             return (
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
-                <TableCell className="py-2 px-4">{item.category}</TableCell>
-                <TableCell className="py-2 px-4">{item.productName}</TableCell>
-                <TableCell className="py-2 px-4">{item.systemQuantity}</TableCell>
-                <TableCell className="py-2 px-4">
+                <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.category}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.productName}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.systemQuantity}</TableCell>
+                <TableCell className="py-2 px-2">
                   <div className="flex items-center space-x-1">
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => handleDecrementPhysicalQuantity(index)}
                       disabled={item.physicalQuantity <= 0}
-                      className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                      className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                     >
-                      <Minus className="h-4 w-4" />
+                      <Minus className="h-3 w-3" />
                     </Button>
                     <Input
                       type="number"
                       value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
                       onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
-                      className="w-full max-w-[6rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center"
+                      className="w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm"
                       min="0"
                     />
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => handleIncrementPhysicalQuantity(index)}
-                      className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                      className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Plus className="h-3 w-3" />
                     </Button>
                   </div>
                 </TableCell>
-                <TableCell className="py-2 px-4">
-                  {isMatch && <Check className="h-5 w-5 text-green-500" />}
-                  {isExcess && <ArrowUp className="h-5 w-5 text-red-500" />}
-                  {isDeficit && <ArrowDown className="h-5 w-5 text-red-500" />}
+                <TableCell className="py-2 px-2">
+                  {isMatch && <Check className="h-4 w-4 text-green-500" />}
+                  {isExcess && <ArrowUp className="h-4 w-4 text-red-500" />}
+                  {isDeficit && <ArrowDown className="h-4 w-4 text-red-500" />}
                 </TableCell>
-                <TableCell className="py-2 px-4">
+                <TableCell className="py-2 px-2">
                   <Input
                     type="number"
                     value={item.averageSales === 0 ? "" : item.averageSales}
                     onChange={(e) => handleAverageSalesChange(index, e.target.value)}
-                    className="w-full max-w-[6rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
+                    className="w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-xs sm:text-sm"
                   />
                 </TableCell>
-                {/* Celda de 'Acción' eliminada */}
               </TableRow>
             );
           })}

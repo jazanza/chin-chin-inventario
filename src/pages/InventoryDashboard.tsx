@@ -45,9 +45,9 @@ const InventoryDashboard = () => {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <div className="text-center">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 text-gray-900">Chin Chin Inventarios y Pedidos</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 text-gray-900">Chin Chin Inventarios y Pedidos</h1>
           <FileUploader onFileLoaded={handleFileLoaded} loading={loading} />
-          {error && <p className="text-red-500 mt-4">Error: {error}</p>}
+          {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
         </div>
       </div>
     );
@@ -57,21 +57,21 @@ const InventoryDashboard = () => {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <InventoryTypeSelector onSelect={handleInventoryTypeSelect} loading={loading} />
-        {error && <p className="text-red-500 mt-4">Error: {error}</p>}
+        {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col p-4">
-      <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-6 text-center text-gray-900">
+      <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-6 text-center text-gray-900">
         Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
       </h1>
       
       {loading ? (
-        <p className="text-xl text-center text-gray-700">Analizando los datos...</p>
+        <p className="text-base sm:text-lg text-center text-gray-700">Analizando los datos...</p>
       ) : error ? (
-        <p className="text-xl text-red-500 text-center">Error: {error}</p>
+        <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
       ) : (
         <>
           <InventoryTable inventoryData={currentInventoryData} onInventoryChange={handleInventoryChange} />
