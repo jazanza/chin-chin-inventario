@@ -85,7 +85,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             return (
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
                 <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle">{item.category}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle">{formatProductName(item.productName, item.category)}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle font-bold">{formatProductName(item.productName, item.category)}</TableCell> {/* Añadido font-bold aquí */}
                 <TableCell className="py-2 px-2 text-xs sm:text-sm text-center align-middle">{item.systemQuantity}</TableCell>
                 <TableCell className="py-2 px-2 align-middle">
                   <div className="flex items-center space-x-1">
