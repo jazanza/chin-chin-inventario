@@ -3,7 +3,7 @@ import { useDb } from "@/hooks/useDb";
 import { FileUploader } from "@/components/FileUploader";
 import { InventoryTypeSelector } from "@/components/InventoryTypeSelector";
 import { InventoryTable, InventoryItem } from "@/components/InventoryTable";
-import { OrderGenerationModule } from "@/components/OrderGenerationModule";
+// OrderGenerationModule ya no se importa aquí
 
 const InventoryDashboard = () => {
   const {
@@ -75,7 +75,7 @@ const InventoryDashboard = () => {
       ) : (
         <>
           <InventoryTable inventoryData={currentInventoryData} onInventoryChange={handleInventoryChange} />
-          <OrderGenerationModule inventoryData={currentInventoryData} />
+          {/* OrderGenerationModule ya no se renderiza aquí */}
         </>
       )}
     </div>

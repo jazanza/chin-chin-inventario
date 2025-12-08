@@ -1,7 +1,7 @@
-import InventoryDashboard from "./InventoryDashboard";
+import { Navigate } from "react-router-dom";
 
 const Index = () => {
-  return <InventoryDashboard />;
+  return <Navigate to="/inventario" replace />;
 };
 
 export default Index;
