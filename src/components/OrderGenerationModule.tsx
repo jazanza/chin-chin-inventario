@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { TabsList, TabsTrigger } from "@/components/ui/tabs"; // Solo necesitamos TabsList y TabsTrigger
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Importar Tabs completo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Copy } from "lucide-react";
 import { InventoryItem } from "@/context/InventoryContext";
@@ -93,7 +93,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       {suppliers.length === 0 ? (
         <p className="text-gray-500 text-sm sm:text-base">No hay pedidos generados para ningún proveedor.</p>
       ) : (
-        <>
+        <Tabs value={selectedSupplier || suppliers[0]} onValueChange={setSelectedSupplier} className="w-full">
           {/* Caja para los botones de proveedores */}
           <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-sm">
             <CardHeader>
@@ -105,10 +105,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                   <TabsTrigger
                     key={supplier}
                     value={supplier}
-                    onClick={() => setSelectedSupplier(supplier)} // Actualiza el estado al hacer clic
-                    className={`text-gray-700 hover:bg-gray-200 text-xs sm:text-sm ${
-                      selectedSupplier === supplier ? "bg-blue-600 text-white font-bold" : ""
-                    }`}
+                    className="text-gray-700 hover:bg-gray-200 text-xs sm:text-sm data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:font-bold"
                   >
                     {supplier}
                   </TabsTrigger>
@@ -124,43 +121,45 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                 <CardTitle className="text-base sm:text-lg font-semibold text-gray-900">Detalle del Pedido</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex-1 min-w-0 break-words">{`Pedido para ${selectedSupplier}`}</h3>
-                  <Button
-                    onClick={() => copyOrderToClipboard(selectedSupplier)}
-                    variant="outline"
-                    size="sm"
-                    className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm flex-shrink-0"
-                  >
-                    <Copy className="h-4 w-4 mr-1" />
-                    Copiar Pedido
-                  </Button>
-                </div>
-                
-                <div className="overflow-x-auto custom-scrollbar">
-                  <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
-                    <TableHeader>
-                      <TableRow className="border-b border-gray-200">
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Cajas/Unidades</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ordersBySupplier[selectedSupplier].map((order, idx) => (
-                        <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.adjustedQuantity}</TableCell>
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.boxes}</TableCell>
+                <TabsContent value={selectedSupplier} className="mt-0"> {/* mt-0 para evitar doble margen */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex-1 min-w-0 break-words">{`Pedido para ${selectedSupplier}`}</h3>
+                    <Button
+                      onClick={() => copyOrderToClipboard(selectedSupplier)}
+                      variant="outline"
+                      size="sm"
+                      className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm flex-shrink-0"
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copiar Pedido
+                    </Button>
+                  </div>
+                  
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
+                      <TableHeader>
+                        <TableRow className="border-b border-gray-200">
+                          <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
+                          <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
+                          <TableHead className="text-xs sm:text-sm text-gray-700">Cajas/Unidades</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {ordersBySupplier[selectedSupplier].map((order, idx) => (
+                          <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
+                            <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
+                            <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.adjustedQuantity}</TableCell>
+                            <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.boxes}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </TabsContent>
               </CardContent>
             </Card>
           )}
-        </>
+        </Tabs>
       )}
     </div>
   );
