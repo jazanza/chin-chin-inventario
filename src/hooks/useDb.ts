@@ -47,7 +47,6 @@ const INVENTORY_QUERY_BASE = `
     P.Name AS ProductName,
     P.Description AS ProductDescription
   FROM Product AS P
-  WHERE P.IsDeleted = 0 -- Assuming active products
   ORDER BY P.Name;
 `;
 
@@ -74,7 +73,9 @@ export function useDb() {
       // For now, INVENTORY_QUERY_BASE doesn't use dateRange, but it could be extended.
       const dateRange = inventoryType === "weekly" ? calculateDateRange("this_week") : calculateDateRange("this_month");
 
-      const INVENTORY_QUERY = createQuery(INVENTORY_QUERY_BASE, dateRange); // Date range not used in current INVENTORY_QUERY_BASE
+      // The INVENTORY_QUERY_BASE no longer uses the dateRange, so createQuery is not strictly needed here for it.
+      // However, keeping createQuery for consistency if other queries are added later that do use it.
+      const INVENTORY_QUERY = INVENTORY_QUERY_BASE; 
       const rawInventoryItems: InventoryItemFromDB[] = queryData(db, INVENTORY_QUERY);
       db.close();
 
