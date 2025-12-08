@@ -1,32 +1,25 @@
 import { useState, useEffect } from "react";
-import { useDb } from "@/hooks/useDb";
+import { useDb } from "@/hooks/useDb"; // Ahora useDb usa el contexto
 import { FileUploader } from "@/components/FileUploader";
 import { InventoryTypeSelector } from "@/components/InventoryTypeSelector";
 import { InventoryTable, InventoryItem } from "@/components/InventoryTable";
-// OrderGenerationModule ya no se importa aquí
+import { useInventoryContext } from "@/context/InventoryContext"; // Importar el contexto directamente
 
 const InventoryDashboard = () => {
   const {
-    inventoryData: initialInventoryData,
+    dbBuffer,
+    inventoryType,
+    inventoryData,
     loading,
     error,
+    setDbBuffer,
+    setInventoryType,
+    setInventoryData,
     processInventoryData,
-  } = useDb();
-  const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
-  const [inventoryType, setInventoryType] = useState<"weekly" | "monthly" | null>(null);
-  const [currentInventoryData, setCurrentInventoryData] = useState<InventoryItem[]>([]);
+  } = useInventoryContext(); // Usar el contexto directamente
 
-  useEffect(() => {
-    if (initialInventoryData) {
-      setCurrentInventoryData(initialInventoryData);
-    }
-  }, [initialInventoryData]);
-
-  useEffect(() => {
-    if (dbBuffer && inventoryType) {
-      processInventoryData(dbBuffer, inventoryType);
-    }
-  }, [dbBuffer, inventoryType, processInventoryData]);
+  // No necesitamos un estado local para currentInventoryData aquí, ya viene del contexto
+  // y se actualiza a través de setInventoryData.
 
   const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer);
@@ -38,8 +31,11 @@ const InventoryDashboard = () => {
   };
 
   const handleInventoryChange = (updatedData: InventoryItem[]) => {
-    setCurrentInventoryData(updatedData);
+    setInventoryData(updatedData); // Actualizar el estado global del inventario
   };
+
+  // El useEffect para procesar los datos ahora está en InventoryContext.tsx
+  // Este componente solo reacciona a los cambios en el contexto.
 
   if (!dbBuffer) {
     return (
@@ -73,10 +69,7 @@ const InventoryDashboard = () => {
       ) : error ? (
         <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
       ) : (
-        <>
-          <InventoryTable inventoryData={currentInventoryData} onInventoryChange={handleInventoryChange} />
-          {/* OrderGenerationModule ya no se renderiza aquí */}
-        </>
+        <InventoryTable inventoryData={inventoryData} onInventoryChange={handleInventoryChange} />
       )}
     </div>
   );
