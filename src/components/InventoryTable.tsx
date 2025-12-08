@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowUp, ArrowDown, Download } from "lucide-react";
+import { Check, ArrowUp, ArrowDown, Download, Minus, Plus } from "lucide-react"; // Importar Minus y Plus
 import { showSuccess, showError } from "@/utils/toast";
 
 export interface InventoryItem {
@@ -28,24 +28,40 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
+  const updateInventoryItem = (index: number, key: keyof InventoryItem, value: number) => {
+    const updatedData = [...editableInventory];
+    // Asegurarse de que la cantidad física nunca sea menor que cero
+    if (key === "physicalQuantity") {
+      updatedData[index][key] = Math.max(0, value);
+    } else {
+      updatedData[index][key] = value;
+    }
+    setEditableInventory(updatedData);
+    onInventoryChange(updatedData);
+  };
+
   const handlePhysicalQuantityChange = (index: number, value: string) => {
     const newQuantity = parseInt(value, 10);
     if (!isNaN(newQuantity) || value === "") {
-      const updatedData = [...editableInventory];
-      updatedData[index].physicalQuantity = value === "" ? 0 : newQuantity;
-      setEditableInventory(updatedData);
-      onInventoryChange(updatedData);
+      updateInventoryItem(index, "physicalQuantity", value === "" ? 0 : newQuantity);
     }
   };
 
   const handleAverageSalesChange = (index: number, value: string) => {
     const newAverage = parseInt(value, 10);
     if (!isNaN(newAverage) || value === "") {
-      const updatedData = [...editableInventory];
-      updatedData[index].averageSales = value === "" ? 0 : newAverage;
-      setEditableInventory(updatedData);
-      onInventoryChange(updatedData);
+      updateInventoryItem(index, "averageSales", value === "" ? 0 : newAverage);
     }
+  };
+
+  const handleIncrementPhysicalQuantity = (index: number) => {
+    const currentQuantity = editableInventory[index].physicalQuantity;
+    updateInventoryItem(index, "physicalQuantity", currentQuantity + 1);
+  };
+
+  const handleDecrementPhysicalQuantity = (index: number) => {
+    const currentQuantity = editableInventory[index].physicalQuantity;
+    updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
   };
 
   const generateCorrectionDocument = (item: InventoryItem) => {
@@ -95,16 +111,36 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                 <TableCell className="py-2 px-4">{item.productName}</TableCell>
                 <TableCell className="py-2 px-4">{item.systemQuantity}</TableCell>
                 <TableCell className="py-2 px-4">
-                  <Input
-                    type="number"
-                    value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
-                    onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
-                    className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
-                  />
+                  <div className="flex items-center space-x-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleDecrementPhysicalQuantity(index)}
+                      disabled={item.physicalQuantity <= 0} // Deshabilitar si es 0 o menos
+                      className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                    <Input
+                      type="number"
+                      value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
+                      onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
+                      className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center"
+                      min="0" // Asegurar que el input HTML no permita negativos
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleIncrementPhysicalQuantity(index)}
+                      className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
                 <TableCell className="py-2 px-4">
                   {isMatch && <Check className="h-5 w-5 text-green-500" />}
-                  {isExcess && <ArrowUp className="h-5 w-5 text-red-500" />} {/* Cambiado a rojo */}
+                  {isExcess && <ArrowUp className="h-5 w-5 text-red-500" />}
                   {isDeficit && <ArrowDown className="h-5 w-5 text-red-500" />}
                 </TableCell>
                 <TableCell className="py-2 px-4">
