@@ -16,7 +16,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null); // Estado para gestionar el proveedor seleccionado
 
   const ordersBySupplier = useMemo(() => {
-    const orders: { [supplier: string]: { product: string; quantityToOrder: number; adjustedQuantity: number; boxes: number }[] } = {};
+    const orders: { [supplier: string]: { product: string; quantityToOrder: number; adjustedQuantity: number }[] } = {}; // Eliminado 'boxes'
 
     inventoryData.forEach(item => {
       if (!item.supplier) return;
@@ -33,13 +33,13 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       if (quantityToOrder < 0) quantityToOrder = 0;
 
       let adjustedQuantity = quantityToOrder;
-      let boxes = 0;
+      // let boxes = 0; // Eliminado
 
       if (item.multiple && item.multiple > 1) {
         adjustedQuantity = Math.ceil(quantityToOrder / item.multiple) * item.multiple;
-        boxes = adjustedQuantity / item.multiple;
+        // boxes = adjustedQuantity / item.multiple; // Eliminado
       } else {
-        boxes = adjustedQuantity;
+        // boxes = adjustedQuantity; // Eliminado
       }
 
       if (adjustedQuantity > 0) {
@@ -50,7 +50,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           product: item.productName,
           quantityToOrder: Math.round(quantityToOrder),
           adjustedQuantity: Math.round(adjustedQuantity),
-          boxes: Math.round(boxes)
+          // boxes: Math.round(boxes) // Eliminado
         });
       }
     });
@@ -143,7 +143,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                       <TableRow className="border-b border-gray-200">
                         <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                         <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Cajas/Unidades</TableHead>
+                        {/* <TableHead className="text-xs sm:text-sm text-gray-700">Cajas/Unidades</TableHead> */}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -151,7 +151,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                         <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.adjustedQuantity}</TableCell>
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.boxes}</TableCell>
+                          {/* <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.boxes}</TableCell> */}
                         </TableRow>
                       ))}
                     </TableBody>
