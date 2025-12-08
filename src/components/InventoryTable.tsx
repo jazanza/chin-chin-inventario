@@ -52,6 +52,17 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
   };
 
+  const formatProductName = (productName: string, category: string) => {
+    const beerCategories = [
+      'Cervezas', 'Cervezas Belgas', 'Cervezas Alemanas',
+      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml'
+    ];
+    if (beerCategories.includes(category)) {
+      return productName.replace(/ - (750ml|330ml|250ml|500ml|440ml|355ml)$/i, '');
+    }
+    return productName;
+  };
+
   return (
     <div className="overflow-x-auto w-full max-h-[70vh] custom-scrollbar">
       <Table className="min-w-full bg-white text-gray-900 border-collapse">
@@ -59,10 +70,9 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
           <TableRow className="border-b border-gray-200">
             <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead> {/* Renombrado y centrado */}
+            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Física Real</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead> {/* Centrado */}
-            {/* <TableHead className="text-xs sm:text-sm text-gray-700">Promedio Ventas</TableHead> */} {/* Columna oculta */}
+            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -74,8 +84,8 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             return (
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
                 <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.category}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.productName}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{item.systemQuantity}</TableCell> {/* Centrado */}
+                <TableCell className="py-2 px-2 text-xs sm:text-sm">{formatProductName(item.productName, item.category)}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{item.systemQuantity}</TableCell>
                 <TableCell className="py-2 px-2">
                   <div className="flex items-center space-x-1">
                     <Button
@@ -101,13 +111,13 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       variant="outline"
                       size="icon"
                       onClick={() => handleIncrementPhysicalQuantity(index)}
-                      className="h-7 w-7 p-0 text-gray-700 border-gray-700 hover:bg-gray-100"
+                      className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                     >
                       <Plus className="h-3 w-3" />
                     </Button>
                   </div>
                 </TableCell>
-                <TableCell className="py-2 px-2 flex items-center justify-center"> {/* Centrado */}
+                <TableCell className="py-2 px-2 flex items-center justify-center">
                   {item.hasBeenEdited && (
                     <>
                       {isMatch && <Check className="h-4 w-4 text-green-500" />}
@@ -116,14 +126,6 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     </>
                   )}
                 </TableCell>
-                {/* <TableCell className="py-2 px-2"> */} {/* Columna oculta */}
-                  {/* <Input
-                    type="number"
-                    value={item.averageSales} // Siempre muestra el valor, incluyendo 0
-                    onChange={(e) => handleAverageSalesChange(index, e.target.value)}
-                    className="w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-xs sm:text-sm"
-                  /> */}
-                {/* </TableCell> */}
               </TableRow>
             );
           })}
