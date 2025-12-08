@@ -3,8 +3,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
-import { cn } from "@/lib/utils"; // Importar cn para combinar clases
-import { InventoryItem } from "@/context/InventoryContext"; // Importar InventoryItem desde el contexto
+import { cn } from "@/lib/utils";
+import { InventoryItem } from "@/context/InventoryContext";
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
@@ -22,7 +22,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     const updatedData = [...editableInventory];
     if (key === "physicalQuantity") {
       updatedData[index][key] = Math.max(0, value as number);
-      updatedData[index].hasBeenEdited = true; // Marcar como editado
+      updatedData[index].hasBeenEdited = true;
     } else if (key === "averageSales") {
       updatedData[index][key] = value as number;
     } else if (key === "hasBeenEdited") {
@@ -52,15 +52,8 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
   };
 
-  const formatProductName = (productName: string, category: string) => {
-    const beerCategories = [
-      'Cervezas', 'Cervezas Belgas', 'Cervezas Alemanas',
-      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml'
-    ];
-    if (beerCategories.includes(category)) {
-      // Regex para eliminar cualquier cantidad de ml (con o sin espacio), "6 Pack" o "125gr" al final del nombre
-      return productName.replace(/ - ((\d+ ?ml)|(6 Pack)|(125gr))$/i, '');
-    }
+  // Modificación: Ahora simplemente devuelve el nombre del producto sin procesar
+  const formatProductName = (productName: string) => {
     return productName;
   };
 
@@ -69,7 +62,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
       <Table className="min-w-full bg-white text-gray-900 border-collapse">
         <TableHeader className="sticky top-0 bg-white z-10">
           <TableRow className="border-b border-gray-200">
-            <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
+            {/* Columna 'Categoría' eliminada */}
             <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Producto</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Real</TableHead>
@@ -81,15 +74,13 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             const isMatch = item.systemQuantity === item.physicalQuantity;
             const isExcess = item.physicalQuantity > item.systemQuantity;
             const isDeficit = item.physicalQuantity < item.systemQuantity;
-            // Mostrar check verde si coincide o si no se ha editado aún (valores iniciales iguales)
             const showCheck = isMatch || !item.hasBeenEdited;
-            // Mostrar flechas solo si se ha editado y hay diferencia
             const showArrows = item.hasBeenEdited && (isExcess || isDeficit);
 
             return (
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
-                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle">{item.category}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle font-bold">{formatProductName(item.productName, item.category)}</TableCell>
+                {/* Celda 'Categoría' eliminada */}
+                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle font-bold">{formatProductName(item.productName)}</TableCell>
                 <TableCell className="py-2 px-2 text-xs sm:text-sm text-center align-middle">{item.systemQuantity}</TableCell>
                 <TableCell className="py-2 px-2 align-middle">
                   <div className="flex items-center space-x-1">
