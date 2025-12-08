@@ -142,7 +142,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             productName: dbItem.Producto,
             category: dbItem.Categoria,
             systemQuantity: dbItem.Stock_Actual,
-            physicalQuantity: dbItem.Stock_Actual, // Inicializar con la cantidad del sistema
+            physicalQuantity: 0, // Inicializar con 0
             averageSales: matchedProduct?.averageSales || 0,
             supplier: matchedProduct?.supplier || "Desconocido",
             multiple: matchedProduct?.multiple || 1,
