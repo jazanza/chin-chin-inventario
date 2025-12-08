@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
+import { cn } from "@/lib/utils"; // Importar cn para combinar clases
 
 export interface InventoryItem {
   productId: number;
@@ -102,7 +103,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       type="number"
                       value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
                       onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
-                      className="w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm"
+                      className={cn(
+                        "w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm",
+                        "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      )}
                       min="0"
                     />
                     <Button
