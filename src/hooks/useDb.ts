@@ -1,13 +1,8 @@
-import { useState, useCallback } from "react";
 import { DateRange } from "react-day-picker";
 import { format } from "date-fns";
-import { initDb, loadDb, queryData } from "@/lib/db";
-import { calculateDateRange } from "@/lib/dates";
-import productData from "@/data/product-data.json"; // Importar los datos de productos
-import { useInventoryContext } from "@/context/InventoryContext"; // Importar el contexto
 
 interface IElectronAPI {
-  openDbFile: () => Promise<Uint8Array | null>;
+  openDbFile: (): Promise<Uint8Array | null>;
 }
 
 declare global {
@@ -17,25 +12,6 @@ declare global {
 }
 
 const EXCLUDED_CUSTOMERS = ["Maria Fernanda Azanza Arias", "Jose Azanza Arias", "Enrique Cobo", "Juan Francisco Perez", "Islas Boutique"];
-
-// Interfaz para los datos de inventario tal como vienen de la DB
-export interface InventoryItemFromDB {
-  Categoria: string;
-  Producto: string;
-  Stock_Actual: number;
-}
-
-// Interfaz para los datos de inventario procesados
-export interface InventoryItem {
-  productId: number;
-  productName: string;
-  category: string;
-  systemQuantity: number;
-  physicalQuantity: number;
-  averageSales: number;
-  supplier: string;
-  multiple: number;
-}
 
 // La función createQuery se mantiene por si se usa para otras consultas, pero no para las de inventario actuales.
 const createQuery = (baseQuery: string, dateRange?: DateRange): string => {
@@ -59,29 +35,5 @@ const createQuery = (baseQuery: string, dateRange?: DateRange): string => {
   return baseQuery.replace("{{WHERE_CLAUSE}}", whereClause);
 };
 
-
-export function useDb() {
-  const {
-    dbBuffer,
-    inventoryType,
-    inventoryData,
-    loading,
-    error,
-    setDbBuffer,
-    setInventoryType,
-    setInventoryData,
-    processInventoryData,
-  } = useInventoryContext();
-
-  return {
-    dbBuffer,
-    inventoryType,
-    inventoryData,
-    loading,
-    error,
-    setDbBuffer,
-    setInventoryType,
-    setInventoryData,
-    processInventoryData,
-  };
-}
+// El hook useDb ha sido eliminado ya que su funcionalidad ahora se maneja directamente con useInventoryContext.
+// Las interfaces InventoryItem e InventoryItemFromDB se han movido a src/context/InventoryContext.tsx.

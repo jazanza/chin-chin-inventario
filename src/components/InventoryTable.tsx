@@ -4,18 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils"; // Importar cn para combinar clases
-
-export interface InventoryItem {
-  productId: number;
-  productName: string;
-  category: string;
-  systemQuantity: number;
-  physicalQuantity: number;
-  averageSales: number;
-  supplier: string;
-  multiple: number;
-  hasBeenEdited?: boolean; // Nueva propiedad
-}
+import { InventoryItem } from "@/context/InventoryContext"; // Importar InventoryItem desde el contexto
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];

@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { useDb } from "@/hooks/useDb"; // Ahora useDb usa el contexto
 import { FileUploader } from "@/components/FileUploader";
 import { InventoryTypeSelector } from "@/components/InventoryTypeSelector";
-import { InventoryTable, InventoryItem } from "@/components/InventoryTable";
-import { useInventoryContext } from "@/context/InventoryContext"; // Importar el contexto directamente
+import { InventoryTable } from "@/components/InventoryTable";
+import { useInventoryContext, InventoryItem } from "@/context/InventoryContext"; // Importar el contexto y la interfaz directamente
 
 const InventoryDashboard = () => {
   const {
@@ -18,9 +17,6 @@ const InventoryDashboard = () => {
     processInventoryData,
   } = useInventoryContext(); // Usar el contexto directamente
 
-  // No necesitamos un estado local para currentInventoryData aquí, ya viene del contexto
-  // y se actualiza a través de setInventoryData.
-
   const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer);
     setInventoryType(null); // Reset inventory type selection
@@ -33,9 +29,6 @@ const InventoryDashboard = () => {
   const handleInventoryChange = (updatedData: InventoryItem[]) => {
     setInventoryData(updatedData); // Actualizar el estado global del inventario
   };
-
-  // El useEffect para procesar los datos ahora está en InventoryContext.tsx
-  // Este componente solo reacciona a los cambios en el contexto.
 
   if (!dbBuffer) {
     return (

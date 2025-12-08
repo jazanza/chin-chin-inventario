@@ -7,7 +7,26 @@ import React, {
 } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
-import { InventoryItem, InventoryItemFromDB } from "@/hooks/useDb"; // Reutilizar interfaces
+
+// Interfaz para los datos de inventario tal como vienen de la DB
+export interface InventoryItemFromDB {
+  Categoria: string;
+  Producto: string;
+  Stock_Actual: number;
+}
+
+// Interfaz para los datos de inventario procesados
+export interface InventoryItem {
+  productId: number;
+  productName: string;
+  category: string;
+  systemQuantity: number;
+  physicalQuantity: number;
+  averageSales: number;
+  supplier: string;
+  multiple: number;
+  hasBeenEdited?: boolean; // Nueva propiedad
+}
 
 interface InventoryContextType {
   dbBuffer: Uint8Array | null;
