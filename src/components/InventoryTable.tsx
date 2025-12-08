@@ -101,7 +101,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       variant="outline"
                       size="icon"
                       onClick={() => handleIncrementPhysicalQuantity(index)}
-                      className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                      className="h-7 w-7 p-0 text-gray-700 border-gray-700 hover:bg-gray-100"
                     >
                       <Plus className="h-3 w-3" />
                     </Button>
