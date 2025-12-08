@@ -152,6 +152,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             (p) => p.productName === dbItem.Producto
           );
 
+          let supplierName = dbItem.SupplierName;
+          // Remapear "Finca Yaruqui" a "Elbe"
+          if (supplierName === "Finca Yaruqui") {
+            supplierName = "Elbe";
+          }
+
           return {
             productId: matchedProduct?.productId || 0,
             productName: dbItem.Producto,
@@ -159,7 +165,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             systemQuantity: dbItem.Stock_Actual,
             physicalQuantity: dbItem.Stock_Actual, // Inicializar con el mismo valor que systemQuantity
             averageSales: matchedProduct?.averageSales || 0,
-            supplier: dbItem.SupplierName, // Usar el nombre del proveedor de la DB
+            supplier: supplierName, // Usar el nombre del proveedor (posiblemente remapeado)
             multiple: matchedProduct?.multiple || 1,
             hasBeenEdited: false, // Nueva propiedad inicializada a false
           };

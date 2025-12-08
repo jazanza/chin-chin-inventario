@@ -2,9 +2,9 @@ import React, { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy } from "lucide-react"; // Cambiado de Download a Copy
+import { Copy } from "lucide-react";
 import { InventoryItem } from "@/context/InventoryContext";
-import { showSuccess, showError } from "@/utils/toast"; // Importar showError
+import { showSuccess, showError } from "@/utils/toast";
 import { productOrderRules } from "@/lib/order-rules";
 
 interface OrderGenerationModuleProps {
@@ -106,12 +106,12 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           {suppliers.map(supplier => (
             <TabsContent key={supplier} value={supplier} className="mt-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900">{`Pedido para ${supplier}`}</h3>
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex-1 min-w-0 break-words">{`Pedido para ${supplier}`}</h3>
                 <Button
                   onClick={() => copyOrderToClipboard(supplier)}
                   variant="outline"
                   size="sm"
-                  className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm"
+                  className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm flex-shrink-0"
                 >
                   <Copy className="h-4 w-4 mr-1" />
                   Copiar Pedido
