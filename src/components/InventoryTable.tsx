@@ -71,16 +71,16 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
 
   return (
     <div className="overflow-x-auto w-full max-h-[70vh] custom-scrollbar">
-      <Table className="min-w-full bg-black text-white border-collapse">
-        <TableHeader className="sticky top-0 bg-black z-10">
-          <TableRow className="border-b border-primary-glitch-pink">
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Categoría</TableHead>
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Producto</TableHead>
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Cant. Sistema</TableHead>
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Cant. Física Real</TableHead>
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Acierto / Desacierto</TableHead>
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Promedio Ventas</TableHead>
-            <TableHead className="text-[var(--secondary-glitch-cyan)]">Acción</TableHead>
+      <Table className="min-w-full bg-white text-gray-900 border-collapse">
+        <TableHeader className="sticky top-0 bg-white z-10">
+          <TableRow className="border-b border-gray-200">
+            <TableHead className="text-gray-700">Categoría</TableHead>
+            <TableHead className="text-gray-700">Producto</TableHead>
+            <TableHead className="text-gray-700">Cant. Sistema</TableHead>
+            <TableHead className="text-gray-700">Cant. Física Real</TableHead>
+            <TableHead className="text-gray-700">Acierto / Desacierto</TableHead>
+            <TableHead className="text-gray-700">Promedio Ventas</TableHead>
+            <TableHead className="text-gray-700">Acción</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -90,7 +90,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             const isDeficit = item.physicalQuantity < item.systemQuantity;
 
             return (
-              <TableRow key={item.productId} className="border-b border-gray-800 hover:bg-gray-900">
+              <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
                 <TableCell className="py-2 px-4">{item.category}</TableCell>
                 <TableCell className="py-2 px-4">{item.productName}</TableCell>
                 <TableCell className="py-2 px-4">{item.systemQuantity}</TableCell>
@@ -99,12 +99,12 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     type="number"
                     value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
                     onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
-                    className="w-24 bg-gray-800 text-white border-primary-glitch-pink focus:ring-primary-glitch-pink"
+                    className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
                   />
                 </TableCell>
                 <TableCell className="py-2 px-4">
                   {isMatch && <Check className="h-5 w-5 text-green-500" />}
-                  {isExcess && <ArrowUp className="h-5 w-5 text-blue-500" />}
+                  {isExcess && <ArrowUp className="h-5 w-5 text-red-500" />} {/* Cambiado a rojo */}
                   {isDeficit && <ArrowDown className="h-5 w-5 text-red-500" />}
                 </TableCell>
                 <TableCell className="py-2 px-4">
@@ -112,7 +112,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     type="number"
                     value={item.averageSales === 0 ? "" : item.averageSales}
                     onChange={(e) => handleAverageSalesChange(index, e.target.value)}
-                    className="w-24 bg-gray-800 text-white border-secondary-glitch-cyan focus:ring-secondary-glitch-cyan"
+                    className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
                   />
                 </TableCell>
                 <TableCell className="py-2 px-4">
@@ -121,7 +121,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       onClick={() => generateCorrectionDocument(item)}
                       variant="outline"
                       size="sm"
-                      className="text-[var(--primary-glitch-pink)] border-[var(--primary-glitch-pink)] hover:bg-[var(--primary-glitch-pink)] hover:text-black"
+                      className="text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
                     >
                       <Download className="h-4 w-4 mr-1" /> Corrección
                     </Button>

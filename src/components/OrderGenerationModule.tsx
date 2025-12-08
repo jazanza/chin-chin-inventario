@@ -81,8 +81,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   const suppliers = Object.keys(ordersBySupplier).sort();
 
   return (
-    <div className="w-full mt-8 p-4 bg-black text-white border border-secondary-glitch-cyan rounded-lg shadow-glitch">
-      <h2 className="text-2xl font-bold mb-4 text-[var(--secondary-glitch-cyan)]">Generación de Pedidos</h2>
+    <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
 
       <div className="mb-4 flex items-center gap-4">
         <label htmlFor="targetWeeks" className="text-lg">Semanas de Stock Objetivo:</label>
@@ -91,21 +91,21 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           type="number"
           value={targetWeeksOfStock}
           onChange={(e) => setTargetWeeksOfStock(parseInt(e.target.value, 10) || 0)}
-          className="w-24 bg-gray-800 text-white border-primary-glitch-pink focus:ring-primary-glitch-pink"
+          className="w-24 bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500"
           min="0"
         />
       </div>
 
       {suppliers.length === 0 ? (
-        <p className="text-gray-400">No hay pedidos generados para ningún proveedor.</p>
+        <p className="text-gray-500">No hay pedidos generados para ningún proveedor.</p>
       ) : (
         <Tabs defaultValue={suppliers[0]} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-6 bg-gray-900 border-b border-primary-glitch-pink">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-6 bg-gray-100 border-b border-gray-200">
             {suppliers.map(supplier => (
               <TabsTrigger
                 key={supplier}
                 value={supplier}
-                className="data-[state=active]:bg-[var(--primary-glitch-pink)] data-[state=active]:text-black data-[state=active]:font-bold text-white hover:bg-gray-700"
+                className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:font-bold text-gray-700 hover:bg-gray-200"
               >
                 {supplier}
               </TabsTrigger>
@@ -114,29 +114,29 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           {suppliers.map(supplier => (
             <TabsContent key={supplier} value={supplier} className="mt-4">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-[var(--primary-glitch-pink)]">{`Pedido para ${supplier}`}</h3>
+                <h3 className="text-xl font-semibold text-gray-900">{`Pedido para ${supplier}`}</h3>
                 <Button
                   onClick={() => exportOrder(supplier)}
                   variant="outline"
                   size="sm"
-                  className="text-[var(--secondary-glitch-cyan)] border-[var(--secondary-glitch-cyan)] hover:bg-[var(--secondary-glitch-cyan)] hover:text-black"
+                  className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white"
                 >
                   <Download className="h-4 w-4 mr-1" /> Exportar Pedido
                 </Button>
               </div>
               <div className="overflow-x-auto custom-scrollbar">
-                <Table className="min-w-full bg-gray-900 text-white border-collapse">
+                <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
                   <TableHeader>
-                    <TableRow className="border-b border-secondary-glitch-cyan">
-                      <TableHead className="text-[var(--primary-glitch-pink)]">Producto</TableHead>
-                      <TableHead className="text-[var(--primary-glitch-pink)]">Cant. Original</TableHead>
-                      <TableHead className="text-[var(--primary-glitch-pink)]">Cant. Ajustada</TableHead>
-                      <TableHead className="text-[var(--primary-glitch-pink)]">Cajas/Unidades</TableHead>
+                    <TableRow className="border-b border-gray-200">
+                      <TableHead className="text-gray-700">Producto</TableHead>
+                      <TableHead className="text-gray-700">Cant. Original</TableHead>
+                      <TableHead className="text-gray-700">Cant. Ajustada</TableHead>
+                      <TableHead className="text-gray-700">Cajas/Unidades</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {ordersBySupplier[supplier].map((order, idx) => (
-                      <TableRow key={idx} className="border-b border-gray-800 hover:bg-gray-700">
+                      <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                         <TableCell className="py-2 px-4">{order.product}</TableCell>
                         <TableCell className="py-2 px-4">{order.quantityToOrder}</TableCell>
                         <TableCell className="py-2 px-4">{order.adjustedQuantity}</TableCell>

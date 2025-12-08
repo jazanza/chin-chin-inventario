@@ -8,22 +8,22 @@ interface InventoryTypeSelectorProps {
 
 export const InventoryTypeSelector = ({ onSelect, loading }: InventoryTypeSelectorProps) => {
   return (
-    <Card className="w-[350px] bg-black text-white border-primary-glitch-pink shadow-glitch">
+    <Card className="w-[350px] bg-white text-gray-900 border-gray-200 shadow-md">
       <CardHeader>
-        <CardTitle className="text-center text-2xl text-[var(--primary-glitch-pink)]">Seleccionar Tipo de Inventario</CardTitle>
+        <CardTitle className="text-center text-2xl text-gray-900">Seleccionar Tipo de Inventario</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Button
           onClick={() => onSelect("weekly")}
           disabled={loading}
-          className="bg-[var(--secondary-glitch-cyan)] hover:bg-cyan-700 text-black font-bold"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
         >
           Inventario Semanal
         </Button>
         <Button
           onClick={() => onSelect("monthly")}
           disabled={loading}
-          className="bg-[var(--primary-glitch-pink)] hover:bg-pink-700 text-black font-bold"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold"
         >
           Inventario Mensual
         </Button>

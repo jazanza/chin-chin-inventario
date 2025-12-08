@@ -43,9 +43,9 @@ const InventoryDashboard = () => {
 
   if (!dbBuffer) {
     return (
-      <div className="w-screen h-screen bg-black text-white flex flex-col items-center justify-center">
+      <div className="w-screen h-screen bg-white text-gray-900 flex flex-col items-center justify-center">
         <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4 text-[var(--primary-glitch-pink)]">Chin Chin Inventarios y Pedidos</h1>
+          <h1 className="text-4xl font-bold mb-4 text-gray-900">Chin Chin Inventarios y Pedidos</h1>
           <FileUploader onFileLoaded={handleFileLoaded} loading={loading} />
           {error && <p className="text-red-500 mt-4">Error: {error}</p>}
         </div>
@@ -55,7 +55,7 @@ const InventoryDashboard = () => {
 
   if (!inventoryType) {
     return (
-      <div className="w-screen h-screen bg-black text-white flex flex-col items-center justify-center">
+      <div className="w-screen h-screen bg-white text-gray-900 flex flex-col items-center justify-center">
         <InventoryTypeSelector onSelect={handleInventoryTypeSelect} loading={loading} />
         {error && <p className="text-red-500 mt-4">Error: {error}</p>}
       </div>
@@ -63,13 +63,13 @@ const InventoryDashboard = () => {
   }
 
   return (
-    <div className="w-screen h-screen bg-black text-white flex flex-col p-4">
-      <h1 className="text-4xl font-bold mb-6 text-center text-[var(--primary-glitch-pink)]">
+    <div className="w-screen h-screen bg-white text-gray-900 flex flex-col p-4">
+      <h1 className="text-4xl font-bold mb-6 text-center text-gray-900">
         Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
       </h1>
       
       {loading ? (
-        <p className="text-xl text-center text-[var(--secondary-glitch-cyan)]">Analizando los datos...</p>
+        <p className="text-xl text-center text-gray-700">Analizando los datos...</p>
       ) : error ? (
         <p className="text-xl text-red-500 text-center">Error: {error}</p>
       ) : (

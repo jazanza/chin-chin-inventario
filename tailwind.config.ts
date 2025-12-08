@@ -19,7 +19,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["'Zalando Sans Expanded'", "sans-serif"],
+        sans: ["ui-sans-serif", "system-ui", "sans-serif", "Arial", "Tahoma"],
       },
       colors: {
         border: "hsl(var(--border))",
