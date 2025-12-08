@@ -96,9 +96,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     >
                       <Minus className="h-3 w-3" />
                     </Button>
+                    {/* Siempre muestra el valor, incluyendo 0 */}
                     <Input
                       type="number"
-                      value={item.physicalQuantity} {/* Siempre muestra el valor, incluyendo 0 */}
+                      value={item.physicalQuantity}
                       onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
                       className={cn(
                         "w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm",
