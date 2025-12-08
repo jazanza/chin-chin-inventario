@@ -2,10 +2,10 @@ import React, { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download } from "lucide-react";
+import { Copy } from "lucide-react"; // Cambiado de Download a Copy
 import { InventoryItem } from "@/context/InventoryContext";
-import { showSuccess } from "@/utils/toast";
-import { productOrderRules } from "@/lib/order-rules"; // Importar las reglas de pedido
+import { showSuccess, showError } from "@/utils/toast"; // Importar showError
+import { productOrderRules } from "@/lib/order-rules";
 
 interface OrderGenerationModuleProps {
   inventoryData: InventoryItem[];
@@ -24,12 +24,10 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       if (rule) {
         quantityToOrder = rule(item.physicalQuantity);
       } else {
-        // Si no hay una regla específica, no se pide por defecto.
-        // Si se quisiera una lógica de fallback (ej. basada en averageSales), se implementaría aquí.
         quantityToOrder = 0; 
       }
       
-      if (quantityToOrder < 0) quantityToOrder = 0; // Asegurar que no se pidan cantidades negativas
+      if (quantityToOrder < 0) quantityToOrder = 0;
 
       let adjustedQuantity = quantityToOrder;
       let boxes = 0;
@@ -38,7 +36,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
         adjustedQuantity = Math.ceil(quantityToOrder / item.multiple) * item.multiple;
         boxes = adjustedQuantity / item.multiple;
       } else {
-        boxes = adjustedQuantity; // Si multiple es 1, las unidades son cajas
+        boxes = adjustedQuantity;
       }
 
       if (adjustedQuantity > 0) {
@@ -54,7 +52,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       }
     });
 
-    // Ordenar productos dentro de cada proveedor
     for (const supplier in orders) {
       orders[supplier].sort((a, b) => a.product.localeCompare(b.product));
     }
@@ -62,26 +59,26 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return orders;
   }, [inventoryData]);
 
-  const exportOrder = (supplier: string) => {
+  const copyOrderToClipboard = async (supplier: string) => {
     const supplierOrders = ordersBySupplier[supplier];
     if (!supplierOrders || supplierOrders.length === 0) {
-      showSuccess(`No hay pedidos para el proveedor ${supplier}.`);
+      showError(`No hay pedidos para el proveedor ${supplier} para copiar.`);
       return;
     }
 
-    let csvContent = "Producto,Cantidad a Pedir Ajustada,Cajas/Unidades Ajustadas\n";
+    let orderText = "Buenos días, por favor para que nos ayuden con:\n\n";
     supplierOrders.forEach(order => {
-      csvContent += `${order.product},${order.adjustedQuantity},${order.boxes}\n`;
+      orderText += `- ${order.product} x ${order.adjustedQuantity} u.\n`;
     });
+    orderText += "\nMuchas gracias.";
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Pedido_${supplier.replace(/\s/g, "_")}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showSuccess(`Pedido para ${supplier} exportado.`);
+    try {
+      await navigator.clipboard.writeText(orderText);
+      showSuccess(`Pedido para ${supplier} copiado al portapapeles.`);
+    } catch (err) {
+      console.error("Error al copiar el pedido:", err);
+      showError("Error al copiar el pedido. Por favor, inténtalo de nuevo.");
+    }
   };
 
   const suppliers = Object.keys(ordersBySupplier).sort();
@@ -90,8 +87,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
       <h2 className="text-lg sm:text-xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
       
-      {/* El input de Semanas de Stock Objetivo se ha eliminado ya que la lógica ahora es por producto */}
-
       {suppliers.length === 0 ? (
         <p className="text-gray-500 text-sm sm:text-base">No hay pedidos generados para ningún proveedor.</p>
       ) : (
@@ -113,13 +108,13 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900">{`Pedido para ${supplier}`}</h3>
                 <Button
-                  onClick={() => exportOrder(supplier)}
+                  onClick={() => copyOrderToClipboard(supplier)}
                   variant="outline"
                   size="sm"
                   className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm"
                 >
-                  <Download className="h-4 w-4 mr-1" />
-                  Exportar Pedido
+                  <Copy className="h-4 w-4 mr-1" />
+                  Copiar Pedido
                 </Button>
               </div>
               
