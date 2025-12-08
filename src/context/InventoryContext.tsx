@@ -7,6 +7,7 @@ export interface InventoryItemFromDB {
   Categoria: string;
   Producto: string;
   Stock_Actual: number;
+  SupplierName: string; // Añadido para el nombre del proveedor
 }
 
 // Interfaz para los datos de inventario procesados
@@ -50,36 +51,76 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
-    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual
-    FROM Stock S
-    JOIN Product P ON P.Id = S.ProductId
-    JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
-    AND PG.Name IN (
-      'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
-      'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
-      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes',
-      'Tabacos', 'Comida'
-    )
-    AND P.IsEnabled = 1
+    SELECT
+        PG.Name AS Categoria,
+        P.Name AS Producto,
+        S.Quantity AS Stock_Actual,
+        COALESCE(MAX(C.Name), 'Desconocido') AS SupplierName
+    FROM
+        Stock S
+    JOIN
+        Product P ON P.Id = S.ProductId
+    JOIN
+        ProductGroup PG ON PG.Id = P.ProductGroupId
+    LEFT JOIN
+        DocumentItem DI ON DI.ProductId = P.Id
+    LEFT JOIN
+        Document D ON D.Id = DI.DocumentId
+    LEFT JOIN
+        DocumentType DT ON DT.Id = D.DocumentTypeId
+    LEFT JOIN
+        Customer C ON C.Id = D.CustomerId
+    WHERE
+        PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
+        AND PG.Name IN (
+            'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
+            'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
+            'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes',
+            'Tabacos', 'Comida'
+        )
+        AND P.IsEnabled = 1
+        AND (DT.Code = '100' OR DT.Code IS NULL) -- DocumentType '100' for Purchase, or no document
+        AND (C.IsSupplier = 1 OR C.IsSupplier IS NULL) -- Only suppliers, or no linked customer
+    GROUP BY
+        PG.Name, P.Name, S.Quantity
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
   const MONTHLY_INVENTORY_QUERY = `
-    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual
-    FROM Stock S
-    JOIN Product P ON P.Id = S.ProductId
-    JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE PG.Id IN (
-      4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
-    )
-    AND PG.Name IN (
-      'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes',
-      'Tequilas', 'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes',
-      'Snacks', 'Personales', 'Six Packs', 'Conservas y Embutidos',
-      'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
-    )
-    AND P.IsEnabled = 1
+    SELECT
+        PG.Name AS Categoria,
+        P.Name AS Producto,
+        S.Quantity AS Stock_Actual,
+        COALESCE(MAX(C.Name), 'Desconocido') AS SupplierName
+    FROM
+        Stock S
+    JOIN
+        Product P ON P.Id = S.ProductId
+    JOIN
+        ProductGroup PG ON PG.Id = P.ProductGroupId
+    LEFT JOIN
+        DocumentItem DI ON DI.ProductId = P.Id
+    LEFT JOIN
+        Document D ON D.Id = DI.DocumentId
+    LEFT JOIN
+        DocumentType DT ON DT.Id = D.DocumentTypeId
+    LEFT JOIN
+        Customer C ON C.Id = D.CustomerId
+    WHERE
+        PG.Id IN (
+            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
+        )
+        AND PG.Name IN (
+            'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes',
+            'Tequilas', 'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes',
+            'Snacks', 'Personales', 'Six Packs', 'Conservas y Embutidos',
+            'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
+        )
+        AND P.IsEnabled = 1
+        AND (DT.Code = '100' OR DT.Code IS NULL) -- DocumentType '100' for Purchase, or no document
+        AND (C.IsSupplier = 1 OR C.IsSupplier IS NULL) -- Only suppliers, or no linked customer
+    GROUP BY
+        PG.Name, P.Name, S.Quantity
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
@@ -118,7 +159,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             systemQuantity: dbItem.Stock_Actual,
             physicalQuantity: dbItem.Stock_Actual, // Inicializar con el mismo valor que systemQuantity
             averageSales: matchedProduct?.averageSales || 0,
-            supplier: matchedProduct?.supplier || "Desconocido",
+            supplier: dbItem.SupplierName, // Usar el nombre del proveedor de la DB
             multiple: matchedProduct?.multiple || 1,
             hasBeenEdited: false, // Nueva propiedad inicializada a false
           };
