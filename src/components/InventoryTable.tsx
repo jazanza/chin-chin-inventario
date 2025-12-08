@@ -72,7 +72,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Real</TableHead> {/* Cambiado aquí */}
+            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Real</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead>
           </TableRow>
         </TableHeader>
@@ -84,10 +84,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
 
             return (
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
-                <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.category}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm">{formatProductName(item.productName, item.category)}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{item.systemQuantity}</TableCell>
-                <TableCell className="py-2 px-2">
+                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle">{item.category}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle">{formatProductName(item.productName, item.category)}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm text-center align-middle">{item.systemQuantity}</TableCell>
+                <TableCell className="py-2 px-2 align-middle">
                   <div className="flex items-center space-x-1">
                     <Button
                       variant="outline"
@@ -118,7 +118,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     </Button>
                   </div>
                 </TableCell>
-                <TableCell className="py-2 px-2 flex items-center justify-center">
+                <TableCell className="py-2 px-2 flex items-center justify-center align-middle">
                   {item.hasBeenEdited && (
                     <>
                       {isMatch && <Check className="h-4 w-4 text-green-500" />}
