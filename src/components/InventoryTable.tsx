@@ -42,16 +42,13 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
 
   const handlePhysicalQuantityChange = (index: number, value: string) => {
     const newQuantity = parseInt(value, 10);
-    if (!isNaN(newQuantity) || value === "") {
-      updateInventoryItem(index, "physicalQuantity", value === "" ? 0 : newQuantity);
-    }
+    // Si el valor es una cadena vacía, se interpreta como 0 para el estado, pero se muestra como vacío si es 0 y no hay systemQuantity
+    updateInventoryItem(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
   };
 
   const handleAverageSalesChange = (index: number, value: string) => {
     const newAverage = parseInt(value, 10);
-    if (!isNaN(newAverage) || value === "") {
-      updateInventoryItem(index, "averageSales", value === "" ? 0 : newAverage);
-    }
+    updateInventoryItem(index, "averageSales", isNaN(newAverage) ? 0 : newAverage);
   };
 
   const handleIncrementPhysicalQuantity = (index: number) => {
@@ -71,10 +68,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
           <TableRow className="border-b border-gray-200">
             <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Sistema</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead> {/* Renombrado y centrado */}
             <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Física Real</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700">Acierto / Desacierto</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700">Promedio Ventas</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead> {/* Centrado */}
+            {/* <TableHead className="text-xs sm:text-sm text-gray-700">Promedio Ventas</TableHead> */} {/* Columna oculta */}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -87,7 +84,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
               <TableRow key={item.productId} className="border-b border-gray-100 hover:bg-gray-50">
                 <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.category}</TableCell>
                 <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.productName}</TableCell>
-                <TableCell className="py-2 px-2 text-xs sm:text-sm">{item.systemQuantity}</TableCell>
+                <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{item.systemQuantity}</TableCell> {/* Centrado */}
                 <TableCell className="py-2 px-2">
                   <div className="flex items-center space-x-1">
                     <Button
@@ -101,7 +98,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     </Button>
                     <Input
                       type="number"
-                      value={item.physicalQuantity === 0 && item.systemQuantity === 0 ? "" : item.physicalQuantity}
+                      value={item.physicalQuantity} {/* Siempre muestra el valor, incluyendo 0 */}
                       onChange={(e) => handlePhysicalQuantityChange(index, e.target.value)}
                       className={cn(
                         "w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm",
@@ -119,19 +116,19 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                     </Button>
                   </div>
                 </TableCell>
-                <TableCell className="py-2 px-2">
+                <TableCell className="py-2 px-2 flex items-center justify-center"> {/* Centrado */}
                   {isMatch && <Check className="h-4 w-4 text-green-500" />}
                   {isExcess && <ArrowUp className="h-4 w-4 text-red-500" />}
                   {isDeficit && <ArrowDown className="h-4 w-4 text-red-500" />}
                 </TableCell>
-                <TableCell className="py-2 px-2">
-                  <Input
+                {/* <TableCell className="py-2 px-2"> */} {/* Columna oculta */}
+                  {/* <Input
                     type="number"
-                    value={item.averageSales === 0 ? "" : item.averageSales}
+                    value={item.averageSales} // Siempre muestra el valor, incluyendo 0
                     onChange={(e) => handleAverageSalesChange(index, e.target.value)}
                     className="w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-xs sm:text-sm"
-                  />
-                </TableCell>
+                  /> */}
+                {/* </TableCell> */}
               </TableRow>
             );
           })}
