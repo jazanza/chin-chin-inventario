@@ -72,7 +72,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             <TableHead className="text-xs sm:text-sm text-gray-700">Categoría</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead>
-            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Física Real</TableHead>
+            <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Real</TableHead> {/* Cambiado aquí */}
             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead>
           </TableRow>
         </TableHeader>
