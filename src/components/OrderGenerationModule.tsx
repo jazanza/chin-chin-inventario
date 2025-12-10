@@ -138,16 +138,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     });
     orderText += "\nMuchas gracias.";
 
-    // Añadir el resumen de Belbier al texto copiado si es el proveedor seleccionado
-    if (supplier === "Belbier" && belbierSummary) {
-      orderText += `\n--- Resumen Belbier ---\n`;
-      orderText += `Total de unidades a pedir: ${belbierSummary.totalFinalOrderQuantity}\n`;
-      orderText += `Equivalente a: ${belbierSummary.totalBoxes} cajas completas.\n`;
-      if (belbierSummary.missingUnits > 0) {
-        orderText += `¡Atención! Faltan ${belbierSummary.missingUnits} unidades para completar la siguiente caja de 24.\n`;
-      }
-      orderText += `-----------------------\n`;
-    }
+    // El resumen de Belbier ya no se añade al texto copiado.
 
     try {
       await navigator.clipboard.writeText(orderText);
