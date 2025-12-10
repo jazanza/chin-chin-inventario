@@ -49,17 +49,16 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
         adjustedQuantity = Math.ceil(quantityToOrder / item.multiple) * item.multiple;
       }
 
-      if (adjustedQuantity > 0) {
-        if (!orders[item.supplier]) {
-          orders[item.supplier] = [];
-        }
-        orders[item.supplier].push({
-          product: item.productName,
-          quantityToOrder: Math.round(quantityToOrder),
-          adjustedQuantity: Math.round(adjustedQuantity),
-          finalOrderQuantity: Math.round(adjustedQuantity), // Inicializar con la cantidad ajustada
-        });
+      // Incluir el producto en la lista de pedidos del proveedor, independientemente de la cantidad
+      if (!orders[item.supplier]) {
+        orders[item.supplier] = [];
       }
+      orders[item.supplier].push({
+        product: item.productName,
+        quantityToOrder: Math.round(quantityToOrder),
+        adjustedQuantity: Math.round(adjustedQuantity),
+        finalOrderQuantity: Math.round(adjustedQuantity), // Inicializar con la cantidad ajustada
+      });
     });
 
     for (const supplier in orders) {
@@ -138,8 +137,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     });
     orderText += "\nMuchas gracias.";
 
-    // El resumen de Belbier ya no se añade al texto copiado.
-
     try {
       await navigator.clipboard.writeText(orderText);
       showSuccess(`Pedido para ${supplier} copiado al portapapeles.`);
@@ -207,15 +204,15 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                     <TableHeader>
                       <TableRow className="border-b border-gray-200">
                         <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Sugerencia</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Pedir</TableHead> {/* Nueva columna */}
+                        <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Sugerencia</TableHead> {/* Centrado */}
+                        <TableHead className="text-xs sm:text-sm text-gray-700">Pedir</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {finalOrders[selectedSupplier].map((order, idx) => (
                         <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.adjustedQuantity}</TableCell>
+                          <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{order.adjustedQuantity}</TableCell> {/* Centrado */}
                           <TableCell className="py-2 px-2 align-middle">
                             <div className="flex items-center space-x-1">
                               <Button
