@@ -1,22 +1,33 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Copy } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Copy, Minus, Plus } from "lucide-react";
 import { InventoryItem } from "@/context/InventoryContext";
 import { showSuccess, showError } from "@/utils/toast";
 import { productOrderRules } from "@/lib/order-rules";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils"; // Importar cn para combinar clases
+import { cn } from "@/lib/utils";
 
 interface OrderGenerationModuleProps {
   inventoryData: InventoryItem[];
 }
 
-export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null); // Estado para gestionar el proveedor seleccionado
+// Definir la interfaz para los ítems de pedido con la cantidad final editable
+interface OrderItem {
+  product: string;
+  quantityToOrder: number; // Cantidad sugerida antes de ajustar por múltiplos
+  adjustedQuantity: number; // Cantidad sugerida ajustada por múltiplos
+  finalOrderQuantity: number; // Cantidad final que el usuario puede editar
+}
 
+export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
+  const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
+  const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
+
+  // Calcula las órdenes sugeridas (adjustedQuantity) y las inicializa en finalOrders
   const ordersBySupplier = useMemo(() => {
-    const orders: { [supplier: string]: { product: string; quantityToOrder: number; adjustedQuantity: number }[] } = {};
+    const orders: { [supplier: string]: OrderItem[] } = {};
 
     inventoryData.forEach(item => {
       if (!item.supplier) return;
@@ -27,19 +38,15 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       if (rule) {
         quantityToOrder = rule(item.physicalQuantity);
       } else {
-        quantityToOrder = 0; 
+        quantityToOrder = 0;
       }
-      
+
       if (quantityToOrder < 0) quantityToOrder = 0;
 
       let adjustedQuantity = quantityToOrder;
-      // let boxes = 0; // Eliminado
 
       if (item.multiple && item.multiple > 1) {
         adjustedQuantity = Math.ceil(quantityToOrder / item.multiple) * item.multiple;
-        // boxes = adjustedQuantity / item.multiple; // Eliminado
-      } else {
-        // boxes = adjustedQuantity; // Eliminado
       }
 
       if (adjustedQuantity > 0) {
@@ -50,7 +57,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           product: item.productName,
           quantityToOrder: Math.round(quantityToOrder),
           adjustedQuantity: Math.round(adjustedQuantity),
-          // boxes: Math.round(boxes) // Eliminado
+          finalOrderQuantity: Math.round(adjustedQuantity), // Inicializar con la cantidad ajustada
         });
       }
     });
@@ -62,27 +69,62 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return orders;
   }, [inventoryData]);
 
+  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData cambia
+  useEffect(() => {
+    const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
+    for (const supplier in ordersBySupplier) {
+      initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => ({
+        ...item,
+        finalOrderQuantity: item.adjustedQuantity,
+      }));
+    }
+    setFinalOrders(initialFinalOrders);
+  }, [ordersBySupplier]);
+
+  // Manejar cambios en la cantidad final de pedido
+  const handleFinalOrderQuantityChange = (
+    supplier: string,
+    productName: string,
+    value: number
+  ) => {
+    setFinalOrders(prevOrders => {
+      const newOrders = { ...prevOrders };
+      if (newOrders[supplier]) {
+        const productIndex = newOrders[supplier].findIndex(
+          item => item.product === productName
+        );
+        if (productIndex !== -1) {
+          newOrders[supplier][productIndex] = {
+            ...newOrders[supplier][productIndex],
+            finalOrderQuantity: Math.max(0, value), // Asegurar que no sea negativo
+          };
+        }
+      }
+      return newOrders;
+    });
+  };
+
   // Lógica para el resumen de cajas de Belbier
   const belbierSummary = useMemo(() => {
-    if (selectedSupplier === "Belbier" && ordersBySupplier["Belbier"]) {
-      const totalAdjustedQuantity = ordersBySupplier["Belbier"].reduce((sum, order) => sum + order.adjustedQuantity, 0);
+    if (selectedSupplier === "Belbier" && finalOrders["Belbier"]) {
+      const totalFinalOrderQuantity = finalOrders["Belbier"].reduce((sum, order) => sum + order.finalOrderQuantity, 0);
       const unitsPerBox = 24;
-      const totalBoxes = Math.floor(totalAdjustedQuantity / unitsPerBox);
-      const remainingUnits = totalAdjustedQuantity % unitsPerBox;
+      const totalBoxes = Math.floor(totalFinalOrderQuantity / unitsPerBox);
+      const remainingUnits = totalFinalOrderQuantity % unitsPerBox;
       const missingUnits = remainingUnits > 0 ? unitsPerBox - remainingUnits : 0;
 
       return {
-        totalAdjustedQuantity,
+        totalFinalOrderQuantity,
         totalBoxes,
         remainingUnits,
         missingUnits,
       };
     }
     return null;
-  }, [selectedSupplier, ordersBySupplier]);
+  }, [selectedSupplier, finalOrders]);
 
   const copyOrderToClipboard = async (supplier: string) => {
-    const supplierOrders = ordersBySupplier[supplier];
+    const supplierOrders = finalOrders[supplier]; // Usar finalOrders para copiar
     if (!supplierOrders || supplierOrders.length === 0) {
       showError(`No hay pedidos para el proveedor ${supplier} para copiar.`);
       return;
@@ -90,14 +132,16 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
     let orderText = "Buenos días, por favor para que nos ayuden con:\n\n";
     supplierOrders.forEach(order => {
-      orderText += `- ${order.product} x ${order.adjustedQuantity} u.\n`;
+      if (order.finalOrderQuantity > 0) {
+        orderText += `- ${order.product} x ${order.finalOrderQuantity} u.\n`;
+      }
     });
     orderText += "\nMuchas gracias.";
 
     // Añadir el resumen de Belbier al texto copiado si es el proveedor seleccionado
     if (supplier === "Belbier" && belbierSummary) {
       orderText += `\n--- Resumen Belbier ---\n`;
-      orderText += `Total de unidades a pedir: ${belbierSummary.totalAdjustedQuantity}\n`;
+      orderText += `Total de unidades a pedir: ${belbierSummary.totalFinalOrderQuantity}\n`;
       orderText += `Equivalente a: ${belbierSummary.totalBoxes} cajas completas.\n`;
       if (belbierSummary.missingUnits > 0) {
         orderText += `¡Atención! Faltan ${belbierSummary.missingUnits} unidades para completar la siguiente caja de 24.\n`;
@@ -119,7 +163,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   return (
     <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
       <h2 className="text-lg sm:text-xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
-      
+
       {suppliers.length === 0 ? (
         <p className="text-gray-500 text-sm sm:text-base">No hay pedidos generados para ningún proveedor.</p>
       ) : (
@@ -148,7 +192,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           </Card>
 
           {/* Módulo "Detalle del Pedido" - Condicionalmente renderizado */}
-          {selectedSupplier && ordersBySupplier[selectedSupplier] && (
+          {selectedSupplier && finalOrders[selectedSupplier] && (
             <Card className="bg-white text-gray-900 border-gray-200 shadow-sm">
               <CardHeader>
                 <CardTitle className="text-base sm:text-lg font-semibold text-gray-900">Detalle del Pedido</CardTitle>
@@ -166,20 +210,52 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                     Copiar Pedido
                   </Button>
                 </div>
-                
+
                 <div className="overflow-x-auto custom-scrollbar">
                   <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
                     <TableHeader>
                       <TableRow className="border-b border-gray-200">
                         <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
+                        <TableHead className="text-xs sm:text-sm text-gray-700">Sugerencia</TableHead>
+                        <TableHead className="text-xs sm:text-sm text-gray-700">Pedir</TableHead> {/* Nueva columna */}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {ordersBySupplier[selectedSupplier].map((order, idx) => (
+                      {finalOrders[selectedSupplier].map((order, idx) => (
                         <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.adjustedQuantity}</TableCell>
+                          <TableCell className="py-2 px-2 align-middle">
+                            <div className="flex items-center space-x-1">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => handleFinalOrderQuantityChange(selectedSupplier, order.product, order.finalOrderQuantity - 1)}
+                                disabled={order.finalOrderQuantity <= 0}
+                                className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <Input
+                                type="number"
+                                value={order.finalOrderQuantity}
+                                onChange={(e) => handleFinalOrderQuantityChange(selectedSupplier, order.product, parseInt(e.target.value, 10) || 0)}
+                                className={cn(
+                                  "w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm",
+                                  "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                )}
+                                min="0"
+                              />
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => handleFinalOrderQuantityChange(selectedSupplier, order.product, order.finalOrderQuantity + 1)}
+                                className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -190,7 +266,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                 {selectedSupplier === "Belbier" && belbierSummary && (
                   <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800">
                     <p className="font-semibold">Resumen para Belbier:</p>
-                    <p>Total de unidades a pedir: {belbierSummary.totalAdjustedQuantity}</p>
+                    <p>Total de unidades a pedir: {belbierSummary.totalFinalOrderQuantity}</p>
                     <p>Equivalente a: {belbierSummary.totalBoxes} cajas completas.</p>
                     {belbierSummary.missingUnits > 0 && (
                       <p className="text-red-600">
