@@ -7,8 +7,8 @@ Este documento detalla la arquitectura, el flujo de trabajo y la lógica de la a
 La aplicación Chin Chin es una herramienta de escritorio (Electron) y web que permite a los usuarios:
 1.  Cargar un archivo de base de datos `.db` de Aronium.
 2.  Seleccionar un tipo de inventario (Semanal o Mensual).
-3.  Visualizar y editar el inventario actual de productos.
-4.  Generar listas de pedidos para diferentes proveedores, aplicando reglas de negocio específicas.
+3.  Visualizar y editar el inventario actual de productos, registrando las discrepancias.
+4.  Generar listas de pedidos para diferentes proveedores, aplicando reglas de negocio específicas y permitiendo la edición manual de las cantidades a pedir.
 5.  Copiar fácilmente los pedidos generados para su comunicación.
 
 El objetivo principal es optimizar el proceso de gestión de stock y la creación de pedidos, reduciendo errores manuales y ahorrando tiempo.
@@ -38,15 +38,17 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Esta selección se guarda en el `InventoryContext` y dispara el procesamiento de los datos.
 4.  **Visualización y Edición del Inventario**:
     *   Los datos procesados se muestran en el `InventoryTable`.
-    *   El usuario puede ajustar manualmente la "Cantidad Real" de cada producto.
+    *   El usuario puede ajustar manualmente la "Cantidad Real" de cada producto utilizando un input con botones de incremento/decremento.
     *   La tabla muestra discrepancias entre la cantidad del sistema (Aronium) y la cantidad física.
     *   Se muestra un resumen de la efectividad del inventario.
 5.  **Generación de Pedidos**:
     *   En la página `/pedidos`, el `OrderGenerationModule` utiliza los datos de inventario (incluyendo las cantidades físicas editadas) para calcular los pedidos.
     *   Los pedidos se agrupan por proveedor.
     *   El usuario puede seleccionar un proveedor para ver su pedido detallado.
+    *   Se muestran todos los productos activos del proveedor, incluso si la cantidad sugerida es 0.
+    *   La columna "Sugerencia" muestra la cantidad calculada, y la columna "Pedir" permite al usuario ajustar manualmente esta cantidad con inputs y botones.
     *   Se aplica una lógica especial para el proveedor "Belbier" para mostrar el resumen de cajas.
-    *   El usuario puede copiar el pedido al portapapeles.
+    *   El usuario puede copiar el pedido al portapapeles, utilizando las cantidades de la columna "Pedir".
 
 ## 4. Componentes Clave y su Lógica
 
@@ -126,21 +128,23 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **Estilos**: Utiliza clases de Tailwind CSS para un diseño responsivo y `custom-scrollbar` para la tabla.
 
 ### `src/components/OrderGenerationModule.tsx`
-*   **Estado Local**: `selectedSupplier` para filtrar los pedidos por proveedor.
+*   **Estado Local**: `selectedSupplier` para filtrar los pedidos por proveedor, y `finalOrders` para gestionar las cantidades editables.
 *   **Cálculo de Pedidos (`useMemo`)**:
     *   Itera sobre `inventoryData`.
     *   Para cada producto, busca una regla de pedido en `productOrderRules`.
     *   Calcula `quantityToOrder` (cantidad bruta a pedir) y `adjustedQuantity` (cantidad ajustada según el `multiple` del producto, redondeando hacia arriba a la caja completa más cercana).
+    *   **Importante**: Ahora incluye *todos* los productos activos del proveedor, incluso si `adjustedQuantity` es 0.
     *   Agrupa los pedidos por `supplier`.
     *   Ordena los productos alfabéticamente dentro de cada proveedor.
+*   **Sincronización `finalOrders`**: `useEffect` para inicializar `finalOrders` con los `adjustedQuantity` calculados cuando `ordersBySupplier` cambia.
+*   **Edición de Cantidad Final (`handleFinalOrderQuantityChange`)**: Permite al usuario modificar la `finalOrderQuantity` de cada producto con un input y botones `+`/`-`.
 *   **Resumen Especial para "Belbier" (`useMemo`)**:
-    *   Si `selectedSupplier` es "Belbier", calcula el `totalAdjustedQuantity`.
-    *   Determina `totalBoxes` (cajas completas de 24 unidades) y `missingUnits` para la siguiente caja.
+    *   Si `selectedSupplier` es "Belbier", calcula el `totalFinalOrderQuantity` (usando las cantidades editadas), `totalBoxes` y `missingUnits`.
+    *   Este resumen se muestra en la UI, pero **no se incluye en el texto copiado**.
 *   **Selección de Proveedor**: Botones para cada proveedor con pedidos generados.
 *   **Detalle del Pedido**:
-    *   Muestra una tabla con el `product` y `adjustedQuantity` para el `selectedSupplier`.
-    *   Botón "Copiar Pedido" que genera un texto formateado y lo copia al portapapeles.
-    *   **Lógica de Copia**: Incluye el resumen especial de "Belbier" en el texto copiado si es el proveedor seleccionado.
+    *   Muestra una tabla con el `product`, `adjustedQuantity` (columna "Sugerencia" centrada) y `finalOrderQuantity` (columna "Pedir" editable) para el `selectedSupplier`.
+    *   Botón "Copiar Pedido" que genera un texto formateado y lo copia al portapapeles, utilizando las `finalOrderQuantity` editadas.
 *   **Toasts**: Utiliza `showSuccess` y `showError` de `src/utils/toast.ts` para feedback al usuario.
 
 ### `src/context/InventoryContext.tsx`
@@ -158,7 +162,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Carga la base de datos (`loadDb`).
     *   Ejecuta la consulta SQL (`WEEKLY_INVENTORY_QUERY` o `MONTHLY_INVENTORY_QUERY`) para obtener los datos brutos.
     *   Cierra la base de datos (`db.close()`).
-    *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `productData.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
+    *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `product-data.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
     *   **Remapeo de Proveedor**: Cambia "Finca Yaruqui" a "Elbe" si se encuentra.
     *   Actualiza `inventoryData`, `loading` y `error` en el estado global.
 *   **`useEffect`**: Dispara `processInventoryData` cada vez que `dbBuffer` o `inventoryType` cambian.
@@ -192,8 +196,8 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 2.  **Selección de Tipo**: `InventoryTypeSelector` -> `inventoryType` (en `InventoryContext`).
 3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
 4.  **Edición de Inventario**: `InventoryTable` -> `onInventoryChange` -> `setInventoryData` (en `InventoryContext`).
-5.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula pedidos por proveedor.
-6.  **Copia de Pedido**: `OrderGenerationModule` -> `navigator.clipboard.writeText` -> `sonner` toast.
+5.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` para cada producto -> inicializa `finalOrderQuantity` -> permite edición manual de `finalOrderQuantity` -> agrupa pedidos por proveedor.
+6.  **Copia de Pedido**: `OrderGenerationModule` -> `navigator.clipboard.writeText` (usando `finalOrderQuantity`) -> `sonner` toast.
 
 ## 6. Cómo Añadir Nuevos Productos o Reglas de Pedido
 
@@ -230,13 +234,13 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
         });
         ```
     *   Asegúrate de que el `[NOMBRE_EXACTO_DEL_PRODUCTO]` coincida con el `productName` en `product-data.json` y en la base de datos de Aronium.
-    *   La función de la regla debe devolver la cantidad *bruta* a pedir. El `OrderGenerationModule` se encargará de ajustarla al `multiple` si es necesario.
+    *   La función de la regla debe devolver la cantidad *bruta* a pedir. El `OrderGenerationModule` se encargará de ajustarla al `multiple` si es necesario y de permitir la edición manual.
 
 ## 7. Configuración de Desarrollo
 
 1.  **Clonar el repositorio**: `git clone [URL_DEL_REPOSITORIO]`
 2.  **Instalar dependencias**: `npm install` o `yarn install`
-3.  **Ejecutar en modo desarrollo**: `npm run dev` o `yarn dev`
+3.  **Ejecutar en modo desarrollo (web)**: `npm run dev` o `yarn dev`
 4.  **Ejecutar Electron en desarrollo**: `npm run build:electron` (esto construirá la app y luego la ejecutará en Electron).
 
 ## 8. Despliegue
@@ -256,13 +260,15 @@ La aplicación está configurada para ser desplegada como una aplicación de esc
     *   **Prevención**: Prueba exhaustivamente cada nueva regla o modificación con diferentes `physicalQuantity` para asegurar que el `quantityToOrder` sea el esperado.
 *   **`InventoryContext.tsx`**: Es el centro de la gestión de estado. Cambios aquí pueden tener efectos en cascada en toda la aplicación.
     *   **Prevención**: Entiende completamente el flujo de datos y las dependencias antes de modificar el contexto.
+*   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es una nueva área crítica.
+    *   **Prevención**: Asegúrate de que `finalOrders` se inicialice correctamente con `adjustedQuantity` y que los cambios del usuario se reflejen solo en `finalOrderQuantity`. Verifica que la función `copyOrderToClipboard` siempre use `finalOrderQuantity` y que el resumen de Belbier se maneje como se espera (visible en UI, no en copiado).
 
 ### Buenas Prácticas Generales
 *   **Inmutabilidad**: Al actualizar arrays u objetos en el estado de React (o Context), siempre crea nuevas copias en lugar de mutar directamente los objetos existentes (ej. `[...array]`, `{...object}`). Esto se sigue en `InventoryTable` y `InventoryContext`.
-*   **Tipado Fuerte (TypeScript)**: Utiliza las interfaces (`InventoryItem`, `InventoryItemFromDB`) para asegurar la consistencia de los datos y atrapar errores en tiempo de desarrollo.
+*   **Tipado Fuerte (TypeScript)**: Utiliza las interfaces (`InventoryItem`, `InventoryItemFromDB`, `OrderItem`) para asegurar la consistencia de los datos y atrapar errores en tiempo de desarrollo.
 *   **Modularización**: Mantén los componentes y módulos pequeños y con una única responsabilidad (ej. `FileUploader` solo carga archivos, `InventoryTable` solo muestra y edita la tabla).
 *   **Comentarios Claros**: Añade comentarios donde la lógica sea compleja o no obvia.
-*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `order-rules.ts`, `processInventoryData`).
+*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `order-rules.ts`, `processInventoryData`, `OrderGenerationModule`).
 
 ## 10. Posibles Mejoras Futuras
 
