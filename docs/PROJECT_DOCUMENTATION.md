@@ -243,6 +243,11 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 3.  **Ejecutar en modo desarrollo (web)**: `npm run dev` o `yarn dev`
 4.  **Ejecutar Electron en desarrollo**: `npm run build:electron` (esto construirá la app y luego la ejecutará en Electron).
 
+**Ajustes de Configuración para `tailwindcss-animate`:**
+Se han realizado ajustes en la configuración para resolver problemas de resolución de módulos con `tailwindcss-animate` en el entorno de desarrollo de Vite:
+*   En `tailwind.config.ts`, la importación de `tailwindcss-animate` se cambió de `require()` a `import` para compatibilidad con ES Modules.
+*   En `vite.config.ts`, `tailwindcss-animate` se añadió a `optimizeDeps.include` para asegurar que Vite lo pre-bundle correctamente y evite errores de "Cannot find module".
+
 ## 8. Despliegue
 
 La aplicación está configurada para ser desplegada como una aplicación de escritorio Electron.
