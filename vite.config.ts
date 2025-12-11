@@ -13,4 +13,7 @@ export default defineConfig(() => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: ['tailwindcss-animate'], // Incluir tailwindcss-animate para optimización
+  },
 }));
