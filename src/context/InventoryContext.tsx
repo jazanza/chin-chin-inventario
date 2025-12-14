@@ -162,12 +162,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
           let supplierName = dbItem.SupplierName;
 
-          // Remapeo general de proveedores
-          if (supplierName === "Finca Yaruqui") {
-            supplierName = "Elbe"; // Remapeo temporal para luego estandarizar a "ELBE S.A."
+          // Estandarizar "Finca Yaruqui" y "Elbe" (y sus variantes) a "ELBE S.A."
+          if (supplierName.toLowerCase() === "finca yaruqui" || supplierName.toLowerCase() === "elbe") {
+            supplierName = "ELBE S.A.";
           }
           // Remapear "AC Bebidas" a "AC Bebidas (Coca Cola)" si es el proveedor original
-          if (supplierName === "AC Bebidas") {
+          else if (supplierName === "AC Bebidas") {
             supplierName = "AC Bebidas (Coca Cola)";
           }
 
@@ -175,11 +175,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
           if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
             supplierName = "AC Bebidas (Coca Cola)";
-          }
-
-          // Estandarizar "Elbe" (y sus variantes) a "ELBE S.A."
-          if (supplierName.toLowerCase() === "elbe") {
-            supplierName = "ELBE S.A.";
           }
 
           return {
@@ -195,11 +190,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           };
         });
 
-        // Filtrar productos del proveedor "KYR S.A.S"
-        processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S");
-        
-        // Filtrar productos del proveedor "Desconocido"
-        processedInventory = processedInventory.filter(item => item.supplier !== "Desconocido");
+        // Filtrar productos de los proveedores "KYR S.A.S" y "Desconocido"
+        processedInventory = processedInventory.filter(item => 
+          item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido"
+        );
 
         setInventoryData(processedInventory);
       } catch (e: any) {
