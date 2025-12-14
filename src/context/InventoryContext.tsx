@@ -50,26 +50,33 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const [error, setError] = useState<string | null>(null);
 
   // Consultas SQL específicas para inventario semanal y mensual
+  // Se ha modificado la subconsulta para obtener el SupplierName del último documento de compra.
   const WEEKLY_INVENTORY_QUERY = `
     SELECT
         PG.Name AS Categoria,
         P.Name AS Producto,
         S.Quantity AS Stock_Actual,
-        COALESCE(MAX(C.Name), 'Desconocido') AS SupplierName
+        COALESCE(
+            (
+                SELECT C_sub.Name
+                FROM DocumentItem DI_sub
+                JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+                JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+                JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+                WHERE DI_sub.ProductId = P.Id
+                  AND DT_sub.Code = '100' -- Tipo de documento de compra
+                  AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+                ORDER BY D_sub.Date DESC, D_sub.CreationTime DESC -- Ordenar por fecha y hora de creación para el más reciente
+                LIMIT 1
+            ),
+            'Desconocido'
+        ) AS SupplierName
     FROM
         Stock S
     JOIN
         Product P ON P.Id = S.ProductId
     JOIN
         ProductGroup PG ON PG.Id = P.ProductGroupId
-    LEFT JOIN
-        DocumentItem DI ON DI.ProductId = P.Id
-    LEFT JOIN
-        Document D ON D.Id = DI.DocumentId
-    LEFT JOIN
-        DocumentType DT ON DT.Id = D.DocumentTypeId
-    LEFT JOIN
-        Customer C ON C.Id = D.CustomerId
     WHERE
         PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
         AND PG.Name IN (
@@ -79,10 +86,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             'Tabacos', 'Comida'
         )
         AND P.IsEnabled = 1
-        AND (DT.Code = '100' OR DT.Code IS NULL) -- DocumentType '100' for Purchase, or no document
-        AND (C.IsSupplier = 1 OR C.IsSupplier IS NULL) -- Only suppliers, or no linked customer
-    GROUP BY
-        PG.Name, P.Name, S.Quantity
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
@@ -91,21 +94,27 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         PG.Name AS Categoria,
         P.Name AS Producto,
         S.Quantity AS Stock_Actual,
-        COALESCE(MAX(C.Name), 'Desconocido') AS SupplierName
+        COALESCE(
+            (
+                SELECT C_sub.Name
+                FROM DocumentItem DI_sub
+                JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+                JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+                JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+                WHERE DI_sub.ProductId = P.Id
+                  AND DT_sub.Code = '100' -- Tipo de documento de compra
+                  AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+                ORDER BY D_sub.Date DESC, D_sub.CreationTime DESC -- Ordenar por fecha y hora de creación para el más reciente
+                LIMIT 1
+            ),
+            'Desconocido'
+        ) AS SupplierName
     FROM
         Stock S
     JOIN
         Product P ON P.Id = S.ProductId
     JOIN
         ProductGroup PG ON PG.Id = P.ProductGroupId
-    LEFT JOIN
-        DocumentItem DI ON DI.ProductId = P.Id
-    LEFT JOIN
-        Document D ON D.Id = DI.DocumentId
-    LEFT JOIN
-        DocumentType DT ON DT.Id = D.DocumentTypeId
-    LEFT JOIN
-        Customer C ON C.Id = D.CustomerId
     WHERE
         PG.Id IN (
             4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
@@ -117,10 +126,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
         )
         AND P.IsEnabled = 1
-        AND (DT.Code = '100' OR DT.Code IS NULL) -- DocumentType '100' for Purchase, or no document
-        AND (C.IsSupplier = 1 OR C.IsSupplier IS NULL) -- Only suppliers, or no linked customer
-    GROUP BY
-        PG.Name, P.Name, S.Quantity
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
@@ -156,6 +161,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           // Remapear "Finca Yaruqui" a "Elbe"
           if (supplierName === "Finca Yaruqui") {
             supplierName = "Elbe";
+          }
+          // Remapear "AC Bebidas" a "AC Bebidas (Coca Cola)"
+          if (supplierName === "AC Bebidas") {
+            supplierName = "AC Bebidas (Coca Cola)";
           }
 
           return {

@@ -160,10 +160,10 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Función asíncrona que toma el `buffer` y el `type` de inventario.
     *   Inicializa `sql.js` (`initDb`).
     *   Carga la base de datos (`loadDb`).
-    *   Ejecuta la consulta SQL (`WEEKLY_INVENTORY_QUERY` o `MONTHLY_INVENTORY_QUERY`) para obtener los datos brutos.
+    *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Si no se encuentra un proveedor, se asigna 'Desconocido'.
     *   Cierra la base de datos (`db.close()`).
     *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `product-data.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
-    *   **Remapeo de Proveedor**: Cambia "Finca Yaruqui" a "Elbe" si se encuentra.
+    *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe" y "AC Bebidas" a "AC Bebidas (Coca Cola)".
     *   Actualiza `inventoryData`, `loading` y `error` en el estado global.
 *   **`useEffect`**: Dispara `processInventoryData` cada vez que `dbBuffer` o `inventoryType` cambian.
 *   **`useInventoryContext`**: Hook personalizado para consumir el contexto.
@@ -194,7 +194,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 
 1.  **Carga de Archivo**: `FileUploader` -> `dbBuffer` (en `InventoryContext`).
 2.  **Selección de Tipo**: `InventoryTypeSelector` -> `inventoryType` (en `InventoryContext`).
-3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
+3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL (ahora con lógica de último proveedor) -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
 4.  **Edición de Inventario**: `InventoryTable` -> `onInventoryChange` -> `setInventoryData` (en `InventoryContext`).
 5.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` para cada producto -> inicializa `finalOrderQuantity` -> permite edición manual de `finalOrderQuantity` -> agrupa pedidos por proveedor.
 6.  **Copia de Pedido**: `OrderGenerationModule` -> `navigator.clipboard.writeText` (usando `finalOrderQuantity`) -> `sonner` toast.
@@ -210,13 +210,14 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
           "productId": [ID_ÚNICO],
           "productName": "[NOMBRE_EXACTO_DEL_PRODUCTO_EN_ARONIUML]",
           "category": "[CATEGORÍA]",
-          "supplier": "[NOMBRE_DEL_PROVEEDOR]",
+          "supplier": "[ESTE_CAMPO_YA_NO_ES_LA_FUENTE_PRINCIPAL_DEL_PROVEEDOR]",
           "averageSales": [VENTAS_PROMEDIO_NUMÉRICO],
           "multiple": [UNIDADES_POR_CAJA_O_MÚLTIPLO_DE_PEDIDO]
         }
         ```
     *   Asegúrate de que `productName` coincida *exactamente* con el nombre del producto en la base de datos de Aronium para que el mapeo funcione correctamente.
     *   `multiple` es crucial para el cálculo de pedidos por cajas. Si se pide por unidad, usa `1`.
+    *   **Nota**: El campo `supplier` en este archivo ya no es la fuente principal para determinar el proveedor en la aplicación. Ahora se extrae dinámicamente de la base de datos Aronium basándose en el último documento de compra.
 
 ### Añadir o Modificar una Regla de Pedido
 1.  **`src/lib/order-rules.ts`**:
@@ -224,7 +225,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Localiza el `Map` `productOrderRules`.
     *   Para añadir una nueva regla, usa:
         ```typescript
-        productOrderRules.set("[NOMBRE_EXACTO_DEL_PRODUCTO]", (physicalQuantity) => {
+        productOrderRules.set("[NOMBRE_EXACTO_DEL_PROVEEDOR]", (physicalQuantity) => {
           // Lógica para calcular la cantidad a pedir
           // Ejemplo: si la cantidad física es <= 5, pedir 12 unidades.
           if (physicalQuantity <= 5) {
@@ -257,15 +258,15 @@ La aplicación está configurada para ser desplegada como una aplicación de esc
 ## 9. Regresiones Técnicas y Cómo Evitarlas
 
 ### Áreas Críticas
-*   **Consultas SQL en `InventoryContext.tsx`**: Cualquier cambio en `WEEKLY_INVENTORY_QUERY` o `MONTHLY_INVENTORY_QUERY` puede alterar drásticamente los datos de inventario.
-    *   **Prevención**: Siempre prueba las consultas SQL directamente en una herramienta de base de datos (ej. DB Browser for SQLite) con un archivo `.db` de muestra antes de integrarlas. Asegúrate de que los nombres de las columnas (`Categoria`, `Producto`, `Stock_Actual`, `SupplierName`) coincidan con las interfaces (`InventoryItemFromDB`).
+*   **Consultas SQL en `InventoryContext.tsx`**: Cualquier cambio en `WEEKLY_INVENTORY_QUERY` o `MONTHLY_INVENTORY_QUERY` puede alterar drásticamente los datos de inventario. La nueva lógica de subconsulta para el proveedor es crítica.
+    *   **Prevención**: Siempre prueba las consultas SQL directamente en una herramienta de base de datos (ej. DB Browser for SQLite) con un archivo `.db` de muestra antes de integrarlas. Asegúrate de que los nombres de las columnas (`Categoria`, `Producto`, `Stock_Actual`, `SupplierName`) coincidan con las interfaces (`InventoryItemFromDB`). Verifica que la subconsulta devuelva el proveedor correcto del último documento de compra.
 *   **Mapeo de `productData.json`**: Si los `productName` en `product-data.json` no coinciden con los nombres de los productos de la DB, los datos enriquecidos (ventas promedio, múltiplos) no se aplicarán correctamente.
     *   **Prevención**: Mantén `productData.json` actualizado y verifica los nombres de los productos. Considera añadir un log de advertencia si un producto de la DB no encuentra un match en `productData.json`.
 *   **Lógica de `order-rules.ts`**: Las reglas de pedido son el corazón de la generación de pedidos. Errores aquí resultarán en pedidos incorrectos.
     *   **Prevención**: Prueba exhaustivamente cada nueva regla o modificación con diferentes `physicalQuantity` para asegurar que el `quantityToOrder` sea el esperado.
 *   **`InventoryContext.tsx`**: Es el centro de la gestión de estado. Cambios aquí pueden tener efectos en cascada en toda la aplicación.
     *   **Prevención**: Entiende completamente el flujo de datos y las dependencias antes de modificar el contexto.
-*   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es una nueva área crítica.
+*   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es un área crítica.
     *   **Prevención**: Asegúrate de que `finalOrders` se inicialice correctamente con `adjustedQuantity` y que los cambios del usuario se reflejen solo en `finalOrderQuantity`. Verifica que la función `copyOrderToClipboard` siempre use `finalOrderQuantity` y que el resumen de Belbier se maneje como se espera (visible en UI, no en copiado).
 
 ### Buenas Prácticas Generales
