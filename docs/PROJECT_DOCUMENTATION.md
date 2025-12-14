@@ -6,7 +6,7 @@ Este documento detalla la arquitectura, el flujo de trabajo y la lógica de la a
 
 La aplicación Chin Chin es una herramienta de escritorio (Electron) y web que permite a los usuarios:
 1.  Cargar un archivo de base de datos `.db` de Aronium.
-2.  **Guardar y cargar sesiones de inventario** para continuar trabajando donde lo dejaron.
+2.  **Guardar, cargar y eliminar sesiones de inventario** para continuar trabajando donde lo dejaron o gestionar entradas duplicadas.
 3.  Seleccionar un tipo de inventario (Semanal o Mensual).
 4.  Visualizar y editar el inventario actual de productos, registrando las discrepancias.
 5.  Generar listas de pedidos para diferentes proveedores, aplicando reglas de negocio específicas y permitiendo la edición manual de las cantidades a pedir.
@@ -34,6 +34,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 2.  **Gestión de Sesiones**:
     *   Al iniciar, si existen sesiones guardadas, se muestra el `SessionManager` para que el usuario elija cargar una sesión existente o iniciar una nueva.
     *   Si no hay sesiones guardadas, se muestra directamente el `FileUploader`.
+    *   El usuario puede **eliminar sesiones** no deseadas desde el `SessionManager`.
 3.  **Carga de Archivo DB**:
     *   El usuario selecciona un archivo `.db` (ya sea a través del diálogo nativo de Electron o un input de archivo web).
     *   El contenido del archivo (como `Uint8Array`) se guarda en el `InventoryContext`.
@@ -47,6 +48,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   **Persistencia Automática**: Cada cambio en la cantidad física se guarda automáticamente en la sesión actual de IndexedDB (con un `debounce` para optimizar el rendimiento).
     *   La tabla muestra discrepancias entre la cantidad del sistema (Aronium) y la cantidad física.
     *   Se muestra un resumen de la efectividad del inventario.
+    *   Un botón "Nueva Sesión" permite al usuario resetear el estado y volver a la pantalla de gestión de sesiones o carga de archivo.
 6.  **Generación de Pedidos**:
     *   En la página `/pedidos`, el `OrderGenerationModule` utiliza los datos de inventario (incluyendo las cantidades físicas editadas) para calcular los pedidos.
     *   Los pedidos se agrupan por proveedor.
@@ -86,17 +88,16 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 
 ### `src/pages/InventoryDashboard.tsx`
 *   **Estado Local**: Utiliza `useInventoryContext` para acceder y modificar el estado global.
-*   **Flujo Condicional Mejorado**:
-    *   Al inicio, verifica si hay sesiones guardadas (`hasSessionHistory`).
-    *   Si hay historial y no se ha forzado la carga de un nuevo archivo (`showFileUploader` es `false`), muestra `SessionManager`.
-    *   Si no hay historial o se ha elegido iniciar una nueva sesión, muestra `FileUploader`.
-    *   Una vez cargado el `dbBuffer`, si `inventoryType` no está seleccionado, muestra `InventoryTypeSelector`.
-    *   Finalmente, si `dbBuffer` y `inventoryType` están presentes, muestra `InventoryTable`.
+*   **Flujo Condicional Mejorado**: La lógica de renderizado prioriza la visualización de la `InventoryTable` si una sesión está activa, ya sea recién creada o cargada del historial.
+    1.  Si `sessionId`, `inventoryType` e `inventoryData` están presentes (indicando una sesión activa y cargada), muestra `InventoryTable` junto con un botón "Nueva Sesión".
+    2.  Si no hay `dbBuffer` cargado, `showFileUploader` es `false` y `hasSessionHistory` es `true`, muestra `SessionManager` (para elegir una sesión existente).
+    3.  Si no hay `dbBuffer` cargado o `showFileUploader` es `true` (ej. se hizo clic en "Nueva Sesión"), muestra `FileUploader` (para cargar un nuevo archivo DB).
+    4.  Si `dbBuffer` está cargado pero `inventoryType` aún no ha sido seleccionado, muestra `InventoryTypeSelector`.
 *   **Manejo de Eventos**:
     *   `handleFileLoaded`: Actualiza `dbBuffer` en el contexto y resetea `inventoryType`.
     *   `handleInventoryTypeSelect`: Actualiza `inventoryType` en el contexto, lo que dispara el `processInventoryData` y el guardado de la nueva sesión.
     *   `handleInventoryChange`: Actualiza `inventoryData` en el contexto.
-    *   `handleStartNewSession`: Resetea el estado del inventario y fuerza la visualización del `FileUploader` para una nueva carga.
+    *   `handleStartNewSession`: Resetea el estado del inventario, fuerza la carga de un nuevo archivo DB y muestra el `FileUploader` para una nueva sesión.
 
 ### `src/pages/OrdersPage.tsx`
 *   Obtiene `inventoryData`, `loading` y `error` del `useInventoryContext`.
@@ -159,10 +160,11 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **Guardado de Pedidos**: Al copiar el pedido, se llama a `saveCurrentSession` para guardar el estado actual de los pedidos en la sesión de IndexedDB.
 *   **Toasts**: Utiliza `showSuccess` y `showError` de `src/utils/toast.ts` para feedback al usuario.
 
-### `src/components/SessionManager.tsx` (Nuevo)
+### `src/components/SessionManager.tsx`
 *   Muestra una lista de sesiones de inventario guardadas en IndexedDB.
 *   Obtiene el historial de sesiones usando `getSessionHistory` del `InventoryContext`.
 *   Permite al usuario cargar una sesión existente (`loadSession`) o iniciar una nueva (`onStartNewSession`).
+*   **Nuevo: Botón "Eliminar"**: Cada fila de sesión incluye un botón con el icono `Trash2` que permite eliminar la sesión de la base de datos.
 *   Muestra la fecha, tipo de inventario y porcentaje de efectividad de cada sesión.
 
 ### `src/context/InventoryContext.tsx`
@@ -186,9 +188,13 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **`loadSession` (`useCallback`)**:
     *   Carga una sesión específica de IndexedDB por `dateKey`.
     *   Actualiza el estado del contexto (`inventoryType`, `inventoryData`, `sessionId`) con los datos de la sesión cargada.
+*   **`deleteSession` (`useCallback`)**:
+    *   **Nueva función** que elimina una sesión de IndexedDB por su `dateKey`.
+    *   Si la sesión eliminada era la que estaba cargada (`state.sessionId`), resetea el estado completo del inventario (`RESET_STATE`) y `sessionId` a `null`.
+    *   Muestra toasts de éxito o error.
 *   **`getSessionHistory` (`useCallback`)**:
     *   Recupera todas las sesiones guardadas de IndexedDB, ordenadas por `timestamp` descendente.
-*   **`useEffect`**: Dispara `processInventoryData` cuando `dbBuffer` o `inventoryType` cambian, pero solo si no hay una `sessionId` activa (para evitar reprocesar si se cargó una sesión).
+*   **`useEffect`**: Dispara `processInventoryData` cuando `dbBuffer` o `inventoryType` cambian, pero solo si no hay una `sessionId` activa (para evitar reprocesar si se cargó una sesión del historial).
 *   **`useInventoryContext`**: Hook personalizado para consumir el contexto.
 
 ### `src/lib/db.ts`
@@ -196,7 +202,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **`loadDb(buffer)`**: Crea una instancia de `SQL.Database` a partir de un `ArrayBuffer` o `Uint8Array`.
 *   **`queryData(db, query)`**: Ejecuta una consulta SQL en la base de datos y devuelve los resultados como un array de objetos.
 
-### `src/lib/persistence.ts` (Nuevo)
+### `src/lib/persistence.ts`
 *   Define la interfaz `InventorySession` que incluye `dateKey`, `inventoryType`, `inventoryData`, `timestamp`, `effectiveness` y `ordersBySupplier`.
 *   Define la clase `SessionDatabase` que extiende `Dexie` para configurar la base de datos IndexedDB y la tabla `sessions`.
 *   Exporta una instancia de `SessionDatabase` (`db`) para su uso en toda la aplicación.
@@ -222,10 +228,11 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 2.  **Sin Historial**: `InventoryDashboard` muestra `FileUploader`.
 3.  **Con Historial**: `InventoryDashboard` muestra `SessionManager`.
     *   Usuario selecciona "Cargar Sesión": `SessionManager` llama `loadSession` (en `InventoryContext`) -> `db.sessions.get()` -> `InventoryContext` actualiza estado (`inventoryType`, `inventoryData`, `sessionId`).
+    *   Usuario selecciona "Eliminar Sesión": `SessionManager` llama `deleteSession` (en `InventoryContext`) -> `db.sessions.delete()` -> `InventoryContext` resetea estado si era la sesión activa -> `SessionManager` recarga historial.
     *   Usuario selecciona "Nueva Sesión": `SessionManager` llama `onStartNewSession` (en `InventoryDashboard`) -> `resetInventoryState`, `setDbBuffer(null)`, `setInventoryType(null)` -> `InventoryDashboard` muestra `FileUploader`.
 4.  **Carga de Archivo**: `FileUploader` -> `setDbBuffer` (en `InventoryContext`).
 5.  **Selección de Tipo**: `InventoryTypeSelector` -> `setInventoryType` (en `InventoryContext`).
-6.  **Procesamiento DB**: `InventoryContext` (`useEffect` dispara `processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL -> combina con `product-data.json` -> `InventoryContext` actualiza estado (`inventoryData`, `loading`, `error`, `inventoryType`) -> **`saveCurrentSession` guarda la nueva sesión en IndexedDB** -> `InventoryContext` establece `sessionId`.
+6.  **Procesamiento DB**: `InventoryContext` (`useEffect` dispara `processInventoryData` si `dbBuffer` y `inventoryType` están presentes y NO hay `sessionId` activa) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL -> combina con `product-data.json` -> `InventoryContext` actualiza estado (`inventoryData`, `loading`, `error`, `inventoryType`) -> **`saveCurrentSession` guarda la nueva sesión en IndexedDB** -> `InventoryContext` establece `sessionId`.
 7.  **Edición de Inventario**: `InventoryTable` lee `inventoryData` (del `InventoryContext`) -> usuario edita `physicalQuantity` -> `updateInventoryItem` llama `onInventoryChange` (en `InventoryDashboard`) -> `setInventoryData` (en `InventoryContext`) -> **`debouncedSave` llama `saveCurrentSession` para actualizar la sesión en IndexedDB**.
 8.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` -> permite edición manual de `finalOrderQuantity`.
 9.  **Copia de Pedido**: `OrderGenerationModule` -> `copyOrderToClipboard` -> **llama `saveCurrentSession` para guardar `finalOrders` en la sesión de IndexedDB**.
@@ -299,15 +306,15 @@ La aplicación está configurada para ser desplegada como una aplicación de esc
     *   **Prevención**: Entiende completamente el flujo de datos y las dependencias antes de modificar el contexto. Asegúrate de que las acciones del `reducer` sean atómicas y que los `payloads` sean correctos.
 *   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es un área crítica.
     *   **Prevención**: Asegúrate de que `finalOrders` se inicialice correctamente con `adjustedQuantity` y que los cambios del usuario se reflejen solo en `finalOrderQuantity`. Verifica que la función `copyOrderToClipboard` siempre use `finalOrderQuantity` y que el resumen de Belbier se maneje como se espera (visible en UI, no en copiado).
-*   **Persistencia de Sesiones (`src/lib/persistence.ts`, `InventoryContext.tsx`, `InventoryTable.tsx`, `OrderGenerationModule.tsx`)**: La integración de Dexie.js y el manejo de `sessionId` es fundamental.
-    *   **Prevención**: Prueba los escenarios de guardar, cargar, iniciar nueva sesión, y guardar pedidos. Asegúrate de que los datos se persistan y recuperen correctamente, y que el `debounce` funcione como se espera sin perder datos. Verifica que la interfaz `InventorySession` sea consistente en todos los lugares donde se usa.
+*   **Persistencia de Sesiones (`src/lib/persistence.ts`, `InventoryContext.tsx`, `InventoryTable.tsx`, `OrderGenerationModule.tsx`, `SessionManager.tsx`)**: La integración de Dexie.js y el manejo de `sessionId` es fundamental. La nueva funcionalidad de `deleteSession` y su impacto en el estado de la aplicación es crítica.
+    *   **Prevención**: Prueba los escenarios de guardar, cargar, iniciar nueva sesión, guardar pedidos y **eliminar sesiones**. Asegúrate de que los datos se persistan y recuperen correctamente, que el `debounce` funcione como se espera sin perder datos, y que la eliminación de una sesión (especialmente la activa) resetea el estado de la aplicación de forma coherente. Verifica que la interfaz `InventorySession` sea consistente en todos los lugares donde se usa.
 
 ### Buenas Prácticas Generales
 *   **Inmutabilidad**: Al actualizar arrays u objetos en el estado de React (o Context), siempre crea nuevas copias en lugar de mutar directamente los objetos existentes (ej. `[...array]`, `{...object}`). Esto se sigue en `InventoryTable` y `InventoryContext`.
 *   **Tipado Fuerte (TypeScript)**: Utiliza las interfaces (`InventoryItem`, `InventoryItemFromDB`, `OrderItem`, `InventorySession`) para asegurar la consistencia de los datos y atrapar errores en tiempo de desarrollo.
 *   **Modularización**: Mantén los componentes y módulos pequeños y con una única responsabilidad (ej. `FileUploader` solo carga archivos, `InventoryTable` solo muestra y edita la tabla, `SessionManager` gestiona sesiones).
 *   **Comentarios Claros**: Añade comentarios donde la lógica sea compleja o no obvia.
-*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `order-rules.ts`, `processInventoryData`, `OrderGenerationModule`, `saveCurrentSession`, `loadSession`).
+*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `order-rules.ts`, `processInventoryData`, `OrderGenerationModule`, `saveCurrentSession`, `loadSession`, `deleteSession`).
 
 ## 10. Posibles Mejoras Futuras
 
