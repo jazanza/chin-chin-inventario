@@ -4,6 +4,8 @@ import { InventoryTypeSelector } from "@/components/InventoryTypeSelector";
 import { InventoryTable } from "@/components/InventoryTable";
 import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
 import { SessionManager } from "@/components/SessionManager"; // Importar SessionManager
+import { Button } from "@/components/ui/button"; // Importar Button
+import { PlusCircle } from "lucide-react"; // Importar icono
 
 const InventoryDashboard = () => {
   const {
@@ -107,9 +109,15 @@ const InventoryDashboard = () => {
   // Si todo está cargado y seleccionado, mostrar la tabla de inventario
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col p-4">
-      <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-6 text-center text-gray-900">
-        Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
-      </h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">
+          Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
+        </h1>
+        <Button onClick={handleStartNewSession} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base">
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Nueva Sesión
+        </Button>
+      </div>
       
       {error ? (
         <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
