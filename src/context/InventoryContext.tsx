@@ -172,7 +172,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           }
 
           // Remapeo específico de productos a "AC Bebidas (Coca Cola)"
-          const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite"];
+          const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
           if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
             supplierName = "AC Bebidas (Coca Cola)";
           }
@@ -197,6 +197,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         // Filtrar productos del proveedor "KYR S.A.S"
         processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S");
+        
+        // Filtrar productos del proveedor "Desconocido"
+        processedInventory = processedInventory.filter(item => item.supplier !== "Desconocido");
 
         setInventoryData(processedInventory);
       } catch (e: any) {
