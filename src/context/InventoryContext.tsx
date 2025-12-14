@@ -155,7 +155,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         );
         db.close();
 
-        const processedInventory = rawInventoryItems.map((dbItem) => {
+        let processedInventory = rawInventoryItems.map((dbItem) => {
           const matchedProduct = productData.find(
             (p) => p.productName === dbItem.Producto
           );
@@ -164,7 +164,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
           // Remapeo general de proveedores
           if (supplierName === "Finca Yaruqui") {
-            supplierName = "Elbe";
+            supplierName = "Elbe"; // Remapeo temporal para luego estandarizar a "ELBE S.A."
           }
           // Remapear "AC Bebidas" a "AC Bebidas (Coca Cola)" si es el proveedor original
           if (supplierName === "AC Bebidas") {
@@ -175,6 +175,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite"];
           if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
             supplierName = "AC Bebidas (Coca Cola)";
+          }
+
+          // Estandarizar "Elbe" (y sus variantes) a "ELBE S.A."
+          if (supplierName.toLowerCase() === "elbe") {
+            supplierName = "ELBE S.A.";
           }
 
           return {
@@ -189,6 +194,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             hasBeenEdited: false, // Nueva propiedad inicializada a false
           };
         });
+
+        // Filtrar productos del proveedor "KYR S.A.S"
+        processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S");
 
         setInventoryData(processedInventory);
       } catch (e: any) {

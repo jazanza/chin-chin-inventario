@@ -163,7 +163,8 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Se ha añadido un filtro (`C_sub.IsEnabled = 1`) para asegurar que solo se consideren proveedores activos. Si no se encuentra un proveedor, se asigna 'Desconocido'.
     *   Cierra la base de datos (`db.close()`).
     *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `product-data.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
-    *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe". Además, se ha añadido una lógica para que productos como "Coca Cola", "Fioravanti", "Fanta" y "Sprite" siempre se asignen a "AC Bebidas (Coca Cola)".
+    *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe" (luego estandarizado a "ELBE S.A.") y "AC Bebidas" a "AC Bebidas (Coca Cola)". Además, se ha añadido una lógica para que productos como "Coca Cola", "Fioravanti", "Fanta" y "Sprite" siempre se asignen a "AC Bebidas (Coca Cola)". Se estandariza "Elbe" (y sus variantes) a "ELBE S.A.".
+    *   **Filtrado de Proveedores**: Se filtran los productos asociados con el proveedor "KYR S.A.S".
     *   Actualiza `inventoryData`, `loading` y `error` en el estado global.
 *   **`useEffect`**: Dispara `processInventoryData` cada vez que `dbBuffer` o `inventoryType` cambian.
 *   **`useInventoryContext`**: Hook personalizado para consumir el contexto.
