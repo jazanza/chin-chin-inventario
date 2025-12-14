@@ -66,7 +66,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 WHERE DI_sub.ProductId = P.Id
                   AND DT_sub.Code = '100' -- Tipo de documento de compra
                   AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                ORDER BY D_sub.Date DESC, D_sub.CreationTime DESC -- Ordenar por fecha y hora de creación para el más reciente
+                ORDER BY D_sub.Date DESC -- Ordenar por fecha para el más reciente
                 LIMIT 1
             ),
             'Desconocido'
@@ -104,7 +104,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 WHERE DI_sub.ProductId = P.Id
                   AND DT_sub.Code = '100' -- Tipo de documento de compra
                   AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                ORDER BY D_sub.Date DESC, D_sub.CreationTime DESC -- Ordenar por fecha y hora de creación para el más reciente
+                ORDER BY D_sub.Date DESC -- Ordenar por fecha para el más reciente
                 LIMIT 1
             ),
             'Desconocido'

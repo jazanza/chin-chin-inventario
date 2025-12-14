@@ -160,7 +160,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Función asíncrona que toma el `buffer` y el `type` de inventario.
     *   Inicializa `sql.js` (`initDb`).
     *   Carga la base de datos (`loadDb`).
-    *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Si no se encuentra un proveedor, se asigna 'Desconocido'.
+    *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Si no se encuentra un proveedor, se asigna 'Desconocido'. La ordenación ahora se realiza solo por fecha (`D_sub.Date DESC`).
     *   Cierra la base de datos (`db.close()`).
     *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `product-data.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
     *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe" y "AC Bebidas" a "AC Bebidas (Coca Cola)".
@@ -194,7 +194,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 
 1.  **Carga de Archivo**: `FileUploader` -> `dbBuffer` (en `InventoryContext`).
 2.  **Selección de Tipo**: `InventoryTypeSelector` -> `inventoryType` (en `InventoryContext`).
-3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL (ahora con lógica de último proveedor) -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
+3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL (ahora con lógica de último proveedor y ordenación por fecha) -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
 4.  **Edición de Inventario**: `InventoryTable` -> `onInventoryChange` -> `setInventoryData` (en `InventoryContext`).
 5.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` para cada producto -> inicializa `finalOrderQuantity` -> permite edición manual de `finalOrderQuantity` -> agrupa pedidos por proveedor.
 6.  **Copia de Pedido**: `OrderGenerationModule` -> `navigator.clipboard.writeText` (usando `finalOrderQuantity`) -> `sonner` toast.
