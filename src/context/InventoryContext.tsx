@@ -1,17 +1,17 @@
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
-import { db, InventorySession } from "@/lib/persistence"; // Importar la DB de persistencia
+import { db, InventorySession } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
-import debounce from "lodash.debounce"; // Importar debounce
+import debounce from "lodash.debounce";
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
   Categoria: string;
   Producto: string;
   Stock_Actual: number;
-  SupplierName: string; // Añadido para el nombre del proveedor
+  SupplierName: string;
 }
 
 // Interfaz para los datos de inventario procesados
@@ -24,7 +24,7 @@ export interface InventoryItem {
   averageSales: number;
   supplier: string;
   multiple: number;
-  hasBeenEdited?: boolean; // Nueva propiedad
+  hasBeenEdited?: boolean;
 }
 
 // --- Reducer Setup ---
@@ -34,7 +34,7 @@ interface InventoryState {
   inventoryData: InventoryItem[];
   loading: boolean;
   error: string | null;
-  sessionId: string | null; // La clave (dateKey) de la sesión cargada actualmente
+  sessionId: string | null;
 }
 
 const initialState: InventoryState = {
@@ -72,7 +72,9 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
     case 'RESET_STATE':
       return {
         ...initialState,
-        dbBuffer: state.dbBuffer, // Mantener el dbBuffer si ya estaba cargado
+        // Mantener el dbBuffer si ya estaba cargado, pero resetear todo lo demás
+        // Si queremos forzar una nueva carga de DB, el handleStartNewSession lo pondrá a null
+        dbBuffer: state.dbBuffer, 
       };
     default:
       return state;
@@ -92,9 +94,10 @@ interface InventoryContextType extends InventoryState {
     data: InventoryItem[],
     type: "weekly" | "monthly",
     timestamp: Date,
-    orders?: { [supplier: string]: any[] } // Añadir orders opcional
+    orders?: { [supplier: string]: any[] }
   ) => Promise<void>;
   loadSession: (dateKey: string) => Promise<void>;
+  deleteSession: (dateKey: string) => Promise<void>; // Nueva función
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
 }
@@ -218,7 +221,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       try {
         await initDb();
-        const dbInstance = loadDb(buffer); // Renombrar para evitar conflicto con la importación 'db'
+        const dbInstance = loadDb(buffer);
         let inventoryQuery: string;
 
         if (type === "weekly") {
@@ -261,11 +264,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             productName: dbItem.Producto,
             category: dbItem.Categoria,
             systemQuantity: dbItem.Stock_Actual,
-            physicalQuantity: dbItem.Stock_Actual, // Inicializar con el mismo valor que systemQuantity
+            physicalQuantity: dbItem.Stock_Actual,
             averageSales: matchedProduct?.averageSales || 0,
-            supplier: supplierName, // Usar el nombre del proveedor (posiblemente remapeado)
+            supplier: supplierName,
             multiple: matchedProduct?.multiple || 1,
-            hasBeenEdited: false, // Nueva propiedad inicializada a false
+            hasBeenEdited: false,
           };
         });
 
@@ -275,9 +278,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         );
 
         dispatch({ type: 'SET_INVENTORY_DATA', payload: processedInventory });
-        dispatch({ type: 'SET_INVENTORY_TYPE', payload: type }); // Asegurarse de que el tipo se guarda
+        dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
         
-        // Guardar la sesión automáticamente al procesar nuevos datos
         const dateKey = format(new Date(), 'yyyy-MM-dd');
         const effectiveness = calculateEffectiveness(processedInventory);
         await db.sessions.put({
@@ -320,7 +322,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         inventoryData: data,
         timestamp,
         effectiveness,
-        ordersBySupplier: orders, // Guardar los pedidos si se proporcionan
+        ordersBySupplier: orders,
       });
       if (!state.sessionId) {
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
@@ -353,6 +355,25 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, []);
 
+  const deleteSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    try {
+      await db.sessions.delete(dateKey);
+      showSuccess(`Sesión del ${dateKey} eliminada.`);
+      // Si la sesión eliminada era la que estaba cargada, resetear el estado
+      if (state.sessionId === dateKey) {
+        dispatch({ type: 'RESET_STATE' });
+        dispatch({ type: 'SET_SESSION_ID', payload: null });
+      }
+    } catch (e) {
+      console.error("Error deleting session:", e);
+      showError('Error al eliminar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [state.sessionId]);
+
   const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
     try {
       return await db.sessions.orderBy('timestamp').reverse().toArray();
@@ -363,10 +384,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, []);
 
-  // Efecto para procesar los datos cuando dbBuffer o inventoryType cambian
-  // Este useEffect ahora solo se encarga de disparar processInventoryData
-  // si dbBuffer y inventoryType están presentes y no hay una sesión activa cargada.
   useEffect(() => {
+    // Este useEffect ahora solo se encarga de disparar processInventoryData
+    // si dbBuffer y inventoryType están presentes y no hay una sesión activa cargada.
     if (state.dbBuffer && state.inventoryType && !state.sessionId) {
       processInventoryData(state.dbBuffer, state.inventoryType);
     }
@@ -380,6 +400,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     processInventoryData,
     saveCurrentSession,
     loadSession,
+    deleteSession, // Añadir la nueva función al contexto
     getSessionHistory,
     resetInventoryState,
   }), [
@@ -390,6 +411,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     processInventoryData,
     saveCurrentSession,
     loadSession,
+    deleteSession,
     getSessionHistory,
     resetInventoryState,
   ]);

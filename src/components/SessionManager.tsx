@@ -5,29 +5,35 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useInventoryContext } from "@/context/InventoryContext";
 import { InventorySession } from "@/lib/persistence";
 import { format } from "date-fns";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Trash2 } from "lucide-react"; // Importar Trash2 para el icono de eliminar
 
 interface SessionManagerProps {
   onStartNewSession: () => void;
 }
 
 export const SessionManager = ({ onStartNewSession }: SessionManagerProps) => {
-  const { getSessionHistory, loadSession, loading } = useInventoryContext();
+  const { getSessionHistory, loadSession, deleteSession, loading, sessionId: currentSessionId } = useInventoryContext();
   const [sessions, setSessions] = useState<InventorySession[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
+  const fetchSessions = async () => {
+    setIsLoadingHistory(true);
+    const history = await getSessionHistory();
+    setSessions(history);
+    setIsLoadingHistory(false);
+  };
+
   useEffect(() => {
-    const fetchSessions = async () => {
-      setIsLoadingHistory(true);
-      const history = await getSessionHistory();
-      setSessions(history);
-      setIsLoadingHistory(false);
-    };
     fetchSessions();
-  }, [getSessionHistory]);
+  }, [getSessionHistory, loading]); // Refrescar historial cuando cambie el estado de carga o se elimine/cargue una sesión
 
   const handleLoadSession = async (dateKey: string) => {
     await loadSession(dateKey);
+  };
+
+  const handleDeleteSession = async (dateKey: string) => {
+    await deleteSession(dateKey);
+    fetchSessions(); // Volver a cargar el historial después de eliminar
   };
 
   return (
@@ -53,7 +59,7 @@ export const SessionManager = ({ onStartNewSession }: SessionManagerProps) => {
                     <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Fecha</TableHead>
                     <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Tipo</TableHead>
                     <TableHead className="text-xs sm:text-sm text-gray-700 font-bold text-center">Efectividad</TableHead>
-                    <TableHead className="text-xs sm:text-sm text-gray-700 font-bold text-center">Acción</TableHead>
+                    <TableHead className="text-xs sm:text-sm text-gray-700 font-bold text-center">Acciones</TableHead> {/* Cambiado a Acciones */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -62,15 +68,24 @@ export const SessionManager = ({ onStartNewSession }: SessionManagerProps) => {
                       <TableCell className="py-2 px-2 text-xs sm:text-sm">{format(session.timestamp, 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="py-2 px-2 text-xs sm:text-sm capitalize">{session.inventoryType}</TableCell>
                       <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{session.effectiveness.toFixed(2)}%</TableCell>
-                      <TableCell className="py-2 px-2 text-center">
+                      <TableCell className="py-2 px-2 text-center flex items-center justify-center space-x-2">
                         <Button
                           onClick={() => handleLoadSession(session.dateKey)}
-                          disabled={loading}
+                          disabled={loading || currentSessionId === session.dateKey} // Deshabilitar si ya está cargada
                           variant="outline"
                           size="sm"
                           className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs sm:text-sm"
                         >
                           Cargar
+                        </Button>
+                        <Button
+                          onClick={() => handleDeleteSession(session.dateKey)}
+                          disabled={loading}
+                          variant="destructive"
+                          size="sm"
+                          className="text-xs sm:text-sm"
+                        >
+                          <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
