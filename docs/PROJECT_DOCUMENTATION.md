@@ -160,10 +160,10 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Función asíncrona que toma el `buffer` y el `type` de inventario.
     *   Inicializa `sql.js` (`initDb`).
     *   Carga la base de datos (`loadDb`).
-    *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Si no se encuentra un proveedor, se asigna 'Desconocido'. La ordenación ahora se realiza solo por fecha (`D_sub.Date DESC`).
+    *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Se ha añadido un filtro (`C_sub.IsEnabled = 1`) para asegurar que solo se consideren proveedores activos. Si no se encuentra un proveedor, se asigna 'Desconocido'.
     *   Cierra la base de datos (`db.close()`).
     *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `product-data.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
-    *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe" y "AC Bebidas" a "AC Bebidas (Coca Cola)".
+    *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe". Además, se ha añadido una lógica para que productos como "Coca Cola", "Fioravanti", "Fanta" y "Sprite" siempre se asignen a "AC Bebidas (Coca Cola)".
     *   Actualiza `inventoryData`, `loading` y `error` en el estado global.
 *   **`useEffect`**: Dispara `processInventoryData` cada vez que `dbBuffer` o `inventoryType` cambian.
 *   **`useInventoryContext`**: Hook personalizado para consumir el contexto.
@@ -194,7 +194,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 
 1.  **Carga de Archivo**: `FileUploader` -> `dbBuffer` (en `InventoryContext`).
 2.  **Selección de Tipo**: `InventoryTypeSelector` -> `inventoryType` (en `InventoryContext`).
-3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL (ahora con lógica de último proveedor y ordenación por fecha) -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
+3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL (ahora con lógica de último proveedor y filtro de activo) -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
 4.  **Edición de Inventario**: `InventoryTable` -> `onInventoryChange` -> `setInventoryData` (en `InventoryContext`).
 5.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` para cada producto -> inicializa `finalOrderQuantity` -> permite edición manual de `finalOrderQuantity` -> agrupa pedidos por proveedor.
 6.  **Copia de Pedido**: `OrderGenerationModule` -> `navigator.clipboard.writeText` (usando `finalOrderQuantity`) -> `sonner` toast.
@@ -217,7 +217,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
         ```
     *   Asegúrate de que `productName` coincida *exactamente* con el nombre del producto en la base de datos de Aronium para que el mapeo funcione correctamente.
     *   `multiple` es crucial para el cálculo de pedidos por cajas. Si se pide por unidad, usa `1`.
-    *   **Nota**: El campo `supplier` en este archivo ya no es la fuente principal para determinar el proveedor en la aplicación. Ahora se extrae dinámicamente de la base de datos Aronium basándose en el último documento de compra.
+    *   **Nota**: El campo `supplier` en este archivo ya no es la fuente principal para determinar el proveedor en la aplicación. Ahora se extrae dinámicamente de la base de datos Aronium basándose en el último documento de compra y se aplican reglas de remapeo específicas.
 
 ### Añadir o Modificar una Regla de Pedido
 1.  **`src/lib/order-rules.ts`**:
@@ -225,7 +225,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Localiza el `Map` `productOrderRules`.
     *   Para añadir una nueva regla, usa:
         ```typescript
-        productOrderRules.set("[NOMBRE_EXACTO_DEL_PROVEEDOR]", (physicalQuantity) => {
+        productOrderRules.set("[NOMBRE_EXACTO_DEL_PRODUCTO]", (physicalQuantity) => {
           // Lógica para calcular la cantidad a pedir
           // Ejemplo: si la cantidad física es <= 5, pedir 12 unidades.
           if (physicalQuantity <= 5) {
@@ -258,8 +258,8 @@ La aplicación está configurada para ser desplegada como una aplicación de esc
 ## 9. Regresiones Técnicas y Cómo Evitarlas
 
 ### Áreas Críticas
-*   **Consultas SQL en `InventoryContext.tsx`**: Cualquier cambio en `WEEKLY_INVENTORY_QUERY` o `MONTHLY_INVENTORY_QUERY` puede alterar drásticamente los datos de inventario. La nueva lógica de subconsulta para el proveedor es crítica.
-    *   **Prevención**: Siempre prueba las consultas SQL directamente en una herramienta de base de datos (ej. DB Browser for SQLite) con un archivo `.db` de muestra antes de integrarlas. Asegúrate de que los nombres de las columnas (`Categoria`, `Producto`, `Stock_Actual`, `SupplierName`) coincidan con las interfaces (`InventoryItemFromDB`). Verifica que la subconsulta devuelva el proveedor correcto del último documento de compra.
+*   **Consultas SQL en `InventoryContext.tsx`**: Cualquier cambio en `WEEKLY_INVENTORY_QUERY` o `MONTHLY_INVENTORY_QUERY` puede alterar drásticamente los datos de inventario. La nueva lógica de subconsulta para el proveedor (incluyendo el filtro `IsEnabled`) es crítica.
+    *   **Prevención**: Siempre prueba las consultas SQL directamente en una herramienta de base de datos (ej. DB Browser for SQLite) con un archivo `.db` de muestra antes de integrarlas. Asegúrate de que los nombres de las columnas (`Categoria`, `Producto`, `Stock_Actual`, `SupplierName`) coincidan con las interfaces (`InventoryItemFromDB`). Verifica que la subconsulta devuelva el proveedor correcto del último documento de compra y que solo se incluyan proveedores activos.
 *   **Mapeo de `productData.json`**: Si los `productName` en `product-data.json` no coinciden con los nombres de los productos de la DB, los datos enriquecidos (ventas promedio, múltiplos) no se aplicarán correctamente.
     *   **Prevención**: Mantén `productData.json` actualizado y verifica los nombres de los productos. Considera añadir un log de advertencia si un producto de la DB no encuentra un match en `productData.json`.
 *   **Lógica de `order-rules.ts`**: Las reglas de pedido son el corazón de la generación de pedidos. Errores aquí resultarán en pedidos incorrectos.

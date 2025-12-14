@@ -51,6 +51,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Consultas SQL específicas para inventario semanal y mensual
   // Se ha modificado la subconsulta para obtener el SupplierName del último documento de compra.
+  // Se añade filtro para que el proveedor esté habilitado (IsEnabled = 1).
   const WEEKLY_INVENTORY_QUERY = `
     SELECT
         PG.Name AS Categoria,
@@ -66,7 +67,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 WHERE DI_sub.ProductId = P.Id
                   AND DT_sub.Code = '100' -- Tipo de documento de compra
                   AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                ORDER BY D_sub.Date DESC -- Ordenar por fecha para el más reciente
+                  AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+                ORDER BY D_sub.Date DESC
                 LIMIT 1
             ),
             'Desconocido'
@@ -104,7 +106,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 WHERE DI_sub.ProductId = P.Id
                   AND DT_sub.Code = '100' -- Tipo de documento de compra
                   AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                ORDER BY D_sub.Date DESC -- Ordenar por fecha para el más reciente
+                  AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+                ORDER BY D_sub.Date DESC
                 LIMIT 1
             ),
             'Desconocido'
@@ -158,12 +161,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           );
 
           let supplierName = dbItem.SupplierName;
-          // Remapear "Finca Yaruqui" a "Elbe"
+
+          // Remapeo general de proveedores
           if (supplierName === "Finca Yaruqui") {
             supplierName = "Elbe";
           }
-          // Remapear "AC Bebidas" a "AC Bebidas (Coca Cola)"
+          // Remapear "AC Bebidas" a "AC Bebidas (Coca Cola)" si es el proveedor original
           if (supplierName === "AC Bebidas") {
+            supplierName = "AC Bebidas (Coca Cola)";
+          }
+
+          // Remapeo específico de productos a "AC Bebidas (Coca Cola)"
+          const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite"];
+          if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
             supplierName = "AC Bebidas (Coca Cola)";
           }
 
