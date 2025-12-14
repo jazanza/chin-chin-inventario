@@ -161,13 +161,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           );
 
           let supplierName = dbItem.SupplierName;
+          const lowerCaseSupplierName = supplierName.toLowerCase();
 
           // Estandarizar "Finca Yaruqui" y "Elbe" (y sus variantes) a "ELBE S.A."
-          if (supplierName.toLowerCase() === "finca yaruqui" || supplierName.toLowerCase() === "elbe") {
+          if (lowerCaseSupplierName.includes("finca yaruqui") || lowerCaseSupplierName.includes("elbe")) {
             supplierName = "ELBE S.A.";
           }
           // Remapear "AC Bebidas" a "AC Bebidas (Coca Cola)" si es el proveedor original
-          else if (supplierName === "AC Bebidas") {
+          else if (lowerCaseSupplierName.includes("ac bebidas")) {
             supplierName = "AC Bebidas (Coca Cola)";
           }
 

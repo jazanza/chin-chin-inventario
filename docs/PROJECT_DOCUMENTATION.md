@@ -176,7 +176,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 
 ### `src/lib/order-rules.ts`
 *   Define un `Map` (`productOrderRules`) que asocia nombres de productos con funciones (`OrderRule`).
-*   Cada `OrderRule` es una función que toma la `physicalQuantity` actual y devuelve la cantidad a pedir para ese producto específico, siguiendo reglas de negocio predefinidas (ej. "si hay 6 o menos, pedir 12").
+*   Cada `OrderRule` es una función que toma la `physicalQuantity` actual y devuelve la cantidad a pedir para ese producto específico, siguiendo reglas de negocio de negocio predefinidas (ej. "si hay 6 o menos, pedir 12").
 *   Esto centraliza la lógica de negocio de los pedidos.
 
 ### `src/utils/toast.ts`
