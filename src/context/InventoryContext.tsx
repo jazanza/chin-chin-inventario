@@ -1,6 +1,10 @@
-import React, { createContext, useState, useContext, useCallback, useEffect, } from "react";
+import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
+import { db, InventorySession } from "@/lib/persistence"; // Importar la DB de persistencia
+import { format } from "date-fns";
+import { showSuccess, showError } from "@/utils/toast";
+import debounce from "lodash.debounce"; // Importar debounce
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -23,12 +27,60 @@ export interface InventoryItem {
   hasBeenEdited?: boolean; // Nueva propiedad
 }
 
-interface InventoryContextType {
+// --- Reducer Setup ---
+interface InventoryState {
   dbBuffer: Uint8Array | null;
   inventoryType: "weekly" | "monthly" | null;
   inventoryData: InventoryItem[];
   loading: boolean;
   error: string | null;
+  sessionId: string | null; // La clave (dateKey) de la sesión cargada actualmente
+}
+
+const initialState: InventoryState = {
+  dbBuffer: null,
+  inventoryType: null,
+  inventoryData: [],
+  loading: false,
+  error: null,
+  sessionId: null,
+};
+
+type InventoryAction =
+  | { type: 'SET_DB_BUFFER'; payload: Uint8Array | null }
+  | { type: 'SET_INVENTORY_TYPE'; payload: "weekly" | "monthly" | null }
+  | { type: 'SET_INVENTORY_DATA'; payload: InventoryItem[] }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_SESSION_ID'; payload: string | null }
+  | { type: 'RESET_STATE' };
+
+const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
+  switch (action.type) {
+    case 'SET_DB_BUFFER':
+      return { ...state, dbBuffer: action.payload, error: null };
+    case 'SET_INVENTORY_TYPE':
+      return { ...state, inventoryType: action.payload, error: null };
+    case 'SET_INVENTORY_DATA':
+      return { ...state, inventoryData: action.payload, error: null };
+    case 'SET_LOADING':
+      return { ...state, loading: action.payload };
+    case 'SET_ERROR':
+      return { ...state, error: action.payload, loading: false };
+    case 'SET_SESSION_ID':
+      return { ...state, sessionId: action.payload };
+    case 'RESET_STATE':
+      return {
+        ...initialState,
+        dbBuffer: state.dbBuffer, // Mantener el dbBuffer si ya estaba cargado
+      };
+    default:
+      return state;
+  }
+};
+
+// --- Context Type ---
+interface InventoryContextType extends InventoryState {
   setDbBuffer: (buffer: Uint8Array | null) => void;
   setInventoryType: (type: "weekly" | "monthly" | null) => void;
   setInventoryData: (data: InventoryItem[]) => void;
@@ -36,22 +88,48 @@ interface InventoryContextType {
     buffer: Uint8Array,
     type: "weekly" | "monthly"
   ) => Promise<void>;
+  saveCurrentSession: (
+    data: InventoryItem[],
+    type: "weekly" | "monthly",
+    timestamp: Date,
+    orders?: { [supplier: string]: any[] } // Añadir orders opcional
+  ) => Promise<void>;
+  loadSession: (dateKey: string) => Promise<void>;
+  getSessionHistory: () => Promise<InventorySession[]>;
+  resetInventoryState: () => void;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
   undefined
 );
 
+// --- Helper Function: Calculate Effectiveness ---
+const calculateEffectiveness = (data: InventoryItem[]): number => {
+  if (data.length === 0) return 0;
+  const matches = data.filter(item => item.systemQuantity === item.physicalQuantity).length;
+  return (matches / data.length) * 100;
+};
+
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
-  const [dbBuffer, setDbBuffer] = useState<Uint8Array | null>(null);
-  const [inventoryType, setInventoryType] = useState<"weekly" | "monthly" | null>(null);
-  const [inventoryData, setInventoryData] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(inventoryReducer, initialState);
+
+  const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
+    dispatch({ type: 'SET_DB_BUFFER', payload: buffer });
+  }, []);
+
+  const setInventoryType = useCallback((type: "weekly" | "monthly" | null) => {
+    dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
+  }, []);
+
+  const setInventoryData = useCallback((data: InventoryItem[]) => {
+    dispatch({ type: 'SET_INVENTORY_DATA', payload: data });
+  }, []);
+
+  const resetInventoryState = useCallback(() => {
+    dispatch({ type: 'RESET_STATE' });
+  }, []);
 
   // Consultas SQL específicas para inventario semanal y mensual
-  // Se ha modificado la subconsulta para obtener el SupplierName del último documento de compra.
-  // Se añade filtro para que el proveedor esté habilitado (IsEnabled = 1).
   const WEEKLY_INVENTORY_QUERY = `
     SELECT
         PG.Name AS Categoria,
@@ -134,13 +212,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const processInventoryData = useCallback(
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
-      setLoading(true);
-      setError(null);
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
       console.log(`Starting database processing for ${type} inventory.`);
 
       try {
         await initDb();
-        const db = loadDb(buffer);
+        const dbInstance = loadDb(buffer); // Renombrar para evitar conflicto con la importación 'db'
         let inventoryQuery: string;
 
         if (type === "weekly") {
@@ -150,10 +228,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
 
         const rawInventoryItems: InventoryItemFromDB[] = queryData(
-          db,
+          dbInstance,
           inventoryQuery
         );
-        db.close();
+        dbInstance.close();
 
         let processedInventory = rawInventoryItems.map((dbItem) => {
           const matchedProduct = productData.find(
@@ -196,36 +274,125 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido"
         );
 
-        setInventoryData(processedInventory);
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: processedInventory });
+        dispatch({ type: 'SET_INVENTORY_TYPE', payload: type }); // Asegurarse de que el tipo se guarda
+        
+        // Guardar la sesión automáticamente al procesar nuevos datos
+        const dateKey = format(new Date(), 'yyyy-MM-dd');
+        const effectiveness = calculateEffectiveness(processedInventory);
+        await db.sessions.put({
+          dateKey,
+          inventoryType: type,
+          inventoryData: processedInventory,
+          timestamp: new Date(),
+          effectiveness,
+        });
+        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+        showSuccess('Nueva sesión de inventario iniciada y guardada.');
+
       } catch (e: any) {
         console.error("Error processing database for inventory:", e);
-        setError(e.message);
+        dispatch({ type: 'SET_ERROR', payload: e.message });
       } finally {
-        setLoading(false);
+        dispatch({ type: 'SET_LOADING', payload: false });
         console.log("Database inventory processing finished.");
       }
     },
     []
   );
 
-  // Efecto para procesar los datos cuando dbBuffer o inventoryType cambian
-  useEffect(() => {
-    if (dbBuffer && inventoryType) {
-      processInventoryData(dbBuffer, inventoryType);
-    }
-  }, [dbBuffer, inventoryType, processInventoryData]);
+  // --- Persistencia de Sesiones ---
+  const saveCurrentSession = useCallback(async (
+    data: InventoryItem[],
+    type: "weekly" | "monthly",
+    timestamp: Date,
+    orders?: { [supplier: string]: any[] }
+  ) => {
+    if (!data || data.length === 0) return;
 
-  const value = {
-    dbBuffer,
-    inventoryType,
-    inventoryData,
-    loading,
-    error,
+    const dateKey = format(timestamp, 'yyyy-MM-dd');
+    const effectiveness = calculateEffectiveness(data);
+
+    try {
+      await db.sessions.put({
+        dateKey,
+        inventoryType: type,
+        inventoryData: data,
+        timestamp,
+        effectiveness,
+        ordersBySupplier: orders, // Guardar los pedidos si se proporcionan
+      });
+      if (!state.sessionId) {
+        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+      }
+      showSuccess('Sesión guardada automáticamente.');
+    } catch (e) {
+      console.error("Error saving session:", e);
+      showError('Error al guardar la sesión.');
+    }
+  }, [state.sessionId]);
+
+  const loadSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    try {
+      const session = await db.sessions.get(dateKey);
+      if (session) {
+        dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData });
+        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+        showSuccess(`Sesión del ${dateKey} cargada.`);
+      } else {
+        showError('No se encontró la sesión.');
+      }
+    } catch (e) {
+      console.error("Error loading session:", e);
+      showError('Error al cargar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, []);
+
+  const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
+    try {
+      return await db.sessions.orderBy('timestamp').reverse().toArray();
+    } catch (e) {
+      console.error("Error fetching session history:", e);
+      showError('Error al obtener el historial de sesiones.');
+      return [];
+    }
+  }, []);
+
+  // Efecto para procesar los datos cuando dbBuffer o inventoryType cambian
+  // Este useEffect ahora solo se encarga de disparar processInventoryData
+  // si dbBuffer y inventoryType están presentes y no hay una sesión activa cargada.
+  useEffect(() => {
+    if (state.dbBuffer && state.inventoryType && !state.sessionId) {
+      processInventoryData(state.dbBuffer, state.inventoryType);
+    }
+  }, [state.dbBuffer, state.inventoryType, state.sessionId, processInventoryData]);
+
+  const value = useMemo(() => ({
+    ...state,
     setDbBuffer,
     setInventoryType,
     setInventoryData,
     processInventoryData,
-  };
+    saveCurrentSession,
+    loadSession,
+    getSessionHistory,
+    resetInventoryState,
+  }), [
+    state,
+    setDbBuffer,
+    setInventoryType,
+    setInventoryData,
+    processInventoryData,
+    saveCurrentSession,
+    loadSession,
+    getSessionHistory,
+    resetInventoryState,
+  ]);
 
   return (
     <InventoryContext.Provider value={value}>

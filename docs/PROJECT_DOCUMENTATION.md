@@ -6,10 +6,11 @@ Este documento detalla la arquitectura, el flujo de trabajo y la lógica de la a
 
 La aplicación Chin Chin es una herramienta de escritorio (Electron) y web que permite a los usuarios:
 1.  Cargar un archivo de base de datos `.db` de Aronium.
-2.  Seleccionar un tipo de inventario (Semanal o Mensual).
-3.  Visualizar y editar el inventario actual de productos, registrando las discrepancias.
-4.  Generar listas de pedidos para diferentes proveedores, aplicando reglas de negocio específicas y permitiendo la edición manual de las cantidades a pedir.
-5.  Copiar fácilmente los pedidos generados para su comunicación.
+2.  **Guardar y cargar sesiones de inventario** para continuar trabajando donde lo dejaron.
+3.  Seleccionar un tipo de inventario (Semanal o Mensual).
+4.  Visualizar y editar el inventario actual de productos, registrando las discrepancias.
+5.  Generar listas de pedidos para diferentes proveedores, aplicando reglas de negocio específicas y permitiendo la edición manual de las cantidades a pedir.
+6.  Copiar fácilmente los pedidos generados para su comunicación.
 
 El objetivo principal es optimizar el proceso de gestión de stock y la creación de pedidos, reduciendo errores manuales y ahorrando tiempo.
 
@@ -19,29 +20,34 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **Bundler**: Vite
 *   **Estilos**: Tailwind CSS (con shadcn/ui para componentes preconstruidos)
 *   **Enrutamiento**: React Router DOM
-*   **Gestión de Estado Global**: React Context API (`InventoryContext`)
+*   **Gestión de Estado Global**: React Context API (`InventoryContext` con `useReducer`)
 *   **Base de Datos (Cliente)**: `sql.js` (para leer y consultar archivos `.db` en el navegador o Electron)
-*   **Notificaciones**: `sonner` (para toasts)
+*   **Persistencia de Sesiones**: `Dexie.js` (IndexedDB Wrapper)
 *   **Utilidades de Fecha**: `date-fns`
+*   **Utilidades de Rendimiento**: `lodash.debounce`
+*   **Notificaciones**: `sonner` (para toasts)
 *   **Entorno de Escritorio**: Electron (para la funcionalidad de carga de archivos nativa)
 
 ## 3. Flujo General de la Aplicación
 
 1.  **Inicio**: La aplicación redirige automáticamente a `/inventario`.
-2.  **Carga de Archivo DB**:
-    *   Si no hay un archivo DB cargado, se muestra el componente `FileUploader`.
+2.  **Gestión de Sesiones**:
+    *   Al iniciar, si existen sesiones guardadas, se muestra el `SessionManager` para que el usuario elija cargar una sesión existente o iniciar una nueva.
+    *   Si no hay sesiones guardadas, se muestra directamente el `FileUploader`.
+3.  **Carga de Archivo DB**:
     *   El usuario selecciona un archivo `.db` (ya sea a través del diálogo nativo de Electron o un input de archivo web).
     *   El contenido del archivo (como `Uint8Array`) se guarda en el `InventoryContext`.
-3.  **Selección de Tipo de Inventario**:
+4.  **Selección de Tipo de Inventario**:
     *   Una vez cargado el archivo DB, se muestra el `InventoryTypeSelector`.
     *   El usuario elige entre "Inventario Semanal" o "Inventario Mensual".
-    *   Esta selección se guarda en el `InventoryContext` y dispara el procesamiento de los datos.
-4.  **Visualización y Edición del Inventario**:
+    *   Esta selección se guarda en el `InventoryContext` y dispara el procesamiento de los datos, **creando y guardando automáticamente una nueva sesión** en IndexedDB.
+5.  **Visualización y Edición del Inventario**:
     *   Los datos procesados se muestran en el `InventoryTable`.
     *   El usuario puede ajustar manualmente la "Cantidad Real" de cada producto utilizando un input con botones de incremento/decremento.
+    *   **Persistencia Automática**: Cada cambio en la cantidad física se guarda automáticamente en la sesión actual de IndexedDB (con un `debounce` para optimizar el rendimiento).
     *   La tabla muestra discrepancias entre la cantidad del sistema (Aronium) y la cantidad física.
     *   Se muestra un resumen de la efectividad del inventario.
-5.  **Generación de Pedidos**:
+6.  **Generación de Pedidos**:
     *   En la página `/pedidos`, el `OrderGenerationModule` utiliza los datos de inventario (incluyendo las cantidades físicas editadas) para calcular los pedidos.
     *   Los pedidos se agrupan por proveedor.
     *   El usuario puede seleccionar un proveedor para ver su pedido detallado.
@@ -49,6 +55,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   La columna "Sugerencia" muestra la cantidad calculada, y la columna "Pedir" permite al usuario ajustar manualmente esta cantidad con inputs y botones.
     *   Se aplica una lógica especial para el proveedor "Belbier" para mostrar el resumen de cajas.
     *   El usuario puede copiar el pedido al portapapeles, utilizando las cantidades de la columna "Pedir".
+    *   **Persistencia de Pedidos**: Al copiar un pedido, los pedidos finales (`finalOrders`) también se guardan en la sesión actual de IndexedDB.
 
 ## 4. Componentes Clave y su Lógica
 
@@ -78,15 +85,18 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   Un componente simple que redirige (`<Navigate>`) al usuario a la ruta `/inventario` al cargar la aplicación.
 
 ### `src/pages/InventoryDashboard.tsx`
-*   **Estado Local**: No gestiona estado de inventario directamente, sino que utiliza `useInventoryContext`.
-*   **Flujo Condicional**:
-    *   Si `dbBuffer` no está cargado, muestra `FileUploader`.
-    *   Si `dbBuffer` está cargado pero `inventoryType` no, muestra `InventoryTypeSelector`.
-    *   Si ambos están presentes, muestra `InventoryTable` con los datos procesados.
+*   **Estado Local**: Utiliza `useInventoryContext` para acceder y modificar el estado global.
+*   **Flujo Condicional Mejorado**:
+    *   Al inicio, verifica si hay sesiones guardadas (`hasSessionHistory`).
+    *   Si hay historial y no se ha forzado la carga de un nuevo archivo (`showFileUploader` es `false`), muestra `SessionManager`.
+    *   Si no hay historial o se ha elegido iniciar una nueva sesión, muestra `FileUploader`.
+    *   Una vez cargado el `dbBuffer`, si `inventoryType` no está seleccionado, muestra `InventoryTypeSelector`.
+    *   Finalmente, si `dbBuffer` y `inventoryType` están presentes, muestra `InventoryTable`.
 *   **Manejo de Eventos**:
     *   `handleFileLoaded`: Actualiza `dbBuffer` en el contexto y resetea `inventoryType`.
-    *   `handleInventoryTypeSelect`: Actualiza `inventoryType` en el contexto.
-    *   `handleInventoryChange`: Actualiza `inventoryData` en el contexto cuando el usuario edita la tabla.
+    *   `handleInventoryTypeSelect`: Actualiza `inventoryType` en el contexto, lo que dispara el `processInventoryData` y el guardado de la nueva sesión.
+    *   `handleInventoryChange`: Actualiza `inventoryData` en el contexto.
+    *   `handleStartNewSession`: Resetea el estado del inventario y fuerza la visualización del `FileUploader` para una nueva carga.
 
 ### `src/pages/OrdersPage.tsx`
 *   Obtiene `inventoryData`, `loading` y `error` del `useInventoryContext`.
@@ -116,6 +126,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   `Input` de tipo número para la `physicalQuantity`.
     *   Botones `+` y `-` para incrementar/decrementar la cantidad.
     *   `updateInventoryItem`: Función para actualizar un ítem específico y marcarlo como `hasBeenEdited`.
+*   **Guardado Automático**: Utiliza `saveCurrentSession` del `InventoryContext` con un `debounce` para guardar los cambios en IndexedDB cada vez que se edita una cantidad física.
 *   **Visualización de Discrepancias**:
     *   Muestra un icono de `Check` si `systemQuantity` y `physicalQuantity` coinciden o si no ha sido editado.
     *   Muestra `ArrowUp` (exceso) o `ArrowDown` (déficit) si hay una discrepancia y ha sido editado.
@@ -137,7 +148,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Agrupa los pedidos por `supplier`.
     *   Ordena los productos alfabéticamente dentro de cada proveedor.
 *   **Sincronización `finalOrders`**: `useEffect` para inicializar `finalOrders` con los `adjustedQuantity` calculados cuando `ordersBySupplier` cambia.
-*   **Edición de Cantidad Final (`handleFinalOrderQuantityChange`)**: Permite al usuario modificar la `finalOrderQuantity` de cada producto con un input y botones `+`/`-`.
+*   **Edición de Cantidad Final (`handleFinalOrderQuantityChange`)**: Permite al usuario modificar la `finalOrderQuantity` de cada producto con un input y botones `+`/`-`. Al cambiar, también se llama a `saveCurrentSession` para guardar los pedidos en la sesión.
 *   **Resumen Especial para "Belbier" (`useMemo`)**:
     *   Si `selectedSupplier` es "Belbier", calcula el `totalFinalOrderQuantity` (usando las cantidades editadas), `totalBoxes` y `missingUnits`.
     *   Este resumen se muestra en la UI, pero **no se incluye en el texto copiado**.
@@ -145,28 +156,39 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **Detalle del Pedido**:
     *   Muestra una tabla con el `product`, `adjustedQuantity` (columna "Sugerencia" centrada) y `finalOrderQuantity` (columna "Pedir" editable) para el `selectedSupplier`.
     *   Botón "Copiar Pedido" que genera un texto formateado y lo copia al portapapeles, utilizando las `finalOrderQuantity` editadas.
+*   **Guardado de Pedidos**: Al copiar el pedido, se llama a `saveCurrentSession` para guardar el estado actual de los pedidos en la sesión de IndexedDB.
 *   **Toasts**: Utiliza `showSuccess` y `showError` de `src/utils/toast.ts` para feedback al usuario.
 
+### `src/components/SessionManager.tsx` (Nuevo)
+*   Muestra una lista de sesiones de inventario guardadas en IndexedDB.
+*   Obtiene el historial de sesiones usando `getSessionHistory` del `InventoryContext`.
+*   Permite al usuario cargar una sesión existente (`loadSession`) o iniciar una nueva (`onStartNewSession`).
+*   Muestra la fecha, tipo de inventario y porcentaje de efectividad de cada sesión.
+
 ### `src/context/InventoryContext.tsx`
-*   **Context API**: Proporciona un estado global para `dbBuffer`, `inventoryType`, `inventoryData`, `loading` y `error`.
+*   **Context API con `useReducer`**: Proporciona un estado global para `dbBuffer`, `inventoryType`, `inventoryData`, `loading`, `error` y `sessionId`.
 *   **Estado Global**:
     *   `dbBuffer`: `Uint8Array` del archivo DB cargado.
     *   `inventoryType`: "weekly" o "monthly".
     *   `inventoryData`: Array de `InventoryItem` procesados.
     *   `loading`: Booleano para indicar si se están procesando datos.
     *   `error`: String para mensajes de error.
-*   **Funciones de Actualización**: `setDbBuffer`, `setInventoryType`, `setInventoryData`.
+    *   `sessionId`: `dateKey` de la sesión actualmente cargada.
+*   **Funciones de Actualización**: `setDbBuffer`, `setInventoryType`, `setInventoryData`, `resetInventoryState`.
 *   **`processInventoryData` (`useCallback`)**:
     *   Función asíncrona que toma el `buffer` y el `type` de inventario.
-    *   Inicializa `sql.js` (`initDb`).
-    *   Carga la base de datos (`loadDb`).
-    *   **Determinación de Proveedor**: Las consultas SQL (`WEEKLY_INVENTORY_QUERY` y `MONTHLY_INVENTORY_QUERY`) han sido actualizadas para incluir una subconsulta que extrae el nombre del proveedor del *último documento de compra* (`DocumentType.Code = '100'`) para cada producto. Se ha añadido un filtro (`C_sub.IsEnabled = 1`) para asegurar que solo se consideren proveedores activos. Si no se encuentra un proveedor, se asigna 'Desconocido'.
-    *   Cierra la base de datos (`db.close()`).
-    *   **Procesamiento de Datos**: Mapea los datos brutos de la DB con `product-data.json` para enriquecerlos con `productId`, `averageSales`, `multiple`, y establece `physicalQuantity` inicial a `systemQuantity`.
-    *   **Remapeo de Proveedor**: Se aplican remapeos específicos como cambiar "Finca Yaruqui" a "Elbe" (luego estandarizado a "ELBE S.A.") y "AC Bebidas" a "AC Bebidas (Coca Cola)". Además, se ha añadido una lógica para que productos como "Coca Cola", "Fioravanti", "Fanta", "Sprite" e "Imperial Toronja" siempre se asignen a "AC Bebidas (Coca Cola)". Se estandariza "Elbe" (y sus variantes) a "ELBE S.A.".
-    *   **Filtrado de Proveedores**: Se filtran los productos asociados con el proveedor "KYR S.A.S" y los productos con proveedor "Desconocido".
+    *   Inicializa `sql.js`, carga la base de datos, ejecuta consultas SQL (con lógica de último proveedor y filtro de activo), combina con `product-data.json`.
+    *   **Guardado de Nueva Sesión**: Al finalizar el procesamiento, guarda automáticamente los datos como una nueva sesión en IndexedDB y establece `sessionId`.
     *   Actualiza `inventoryData`, `loading` y `error` en el estado global.
-*   **`useEffect`**: Dispara `processInventoryData` cada vez que `dbBuffer` o `inventoryType` cambian.
+*   **`saveCurrentSession` (`useCallback`)**:
+    *   Guarda el estado actual de `inventoryData`, `inventoryType`, `timestamp`, `effectiveness` y opcionalmente `ordersBySupplier` en IndexedDB.
+    *   Utiliza `db.sessions.put()` para insertar o actualizar la sesión por `dateKey`.
+*   **`loadSession` (`useCallback`)**:
+    *   Carga una sesión específica de IndexedDB por `dateKey`.
+    *   Actualiza el estado del contexto (`inventoryType`, `inventoryData`, `sessionId`) con los datos de la sesión cargada.
+*   **`getSessionHistory` (`useCallback`)**:
+    *   Recupera todas las sesiones guardadas de IndexedDB, ordenadas por `timestamp` descendente.
+*   **`useEffect`**: Dispara `processInventoryData` cuando `dbBuffer` o `inventoryType` cambian, pero solo si no hay una `sessionId` activa (para evitar reprocesar si se cargó una sesión).
 *   **`useInventoryContext`**: Hook personalizado para consumir el contexto.
 
 ### `src/lib/db.ts`
@@ -174,13 +196,16 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **`loadDb(buffer)`**: Crea una instancia de `SQL.Database` a partir de un `ArrayBuffer` o `Uint8Array`.
 *   **`queryData(db, query)`**: Ejecuta una consulta SQL en la base de datos y devuelve los resultados como un array de objetos.
 
+### `src/lib/persistence.ts` (Nuevo)
+*   Define la interfaz `InventorySession` que incluye `dateKey`, `inventoryType`, `inventoryData`, `timestamp`, `effectiveness` y `ordersBySupplier`.
+*   Define la clase `SessionDatabase` que extiende `Dexie` para configurar la base de datos IndexedDB y la tabla `sessions`.
+*   Exporta una instancia de `SessionDatabase` (`db`) para su uso en toda la aplicación.
+
 ### `src/lib/order-rules.ts`
-*   Define un `Map` (`productOrderRules`) que asocia nombres de productos con funciones (`OrderRule`).
-*   Cada `OrderRule` es una función que toma la `physicalQuantity` actual y devuelve la cantidad a pedir para ese producto específico, siguiendo reglas de negocio de negocio predefinidas (ej. "si hay 6 o menos, pedir 12").
-*   Esto centraliza la lógica de negocio de los pedidos.
+*   Define un `Map` (`productOrderRules`) que asocia nombres de productos con funciones (`OrderRule`) para calcular las cantidades a pedir.
 
 ### `src/utils/toast.ts`
-*   Proporciona funciones de utilidad (`showSuccess`, `showError`, `showLoading`, `dismissToast`) para mostrar notificaciones `sonner` de manera consistente en toda la aplicación.
+*   Proporciona funciones de utilidad (`showSuccess`, `showError`, `showLoading`, `dismissToast`) para mostrar notificaciones `sonner`.
 
 ### Integración con Electron (`src/electron.d.ts`, `electron/main.ts`, `electron/preload.ts`)
 *   **`src/electron.d.ts`**: Define la interfaz `IElectronAPI` y extiende `Window` para que TypeScript reconozca `window.electronAPI`.
@@ -193,12 +218,17 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 
 ## 5. Flujo de Datos
 
-1.  **Carga de Archivo**: `FileUploader` -> `dbBuffer` (en `InventoryContext`).
-2.  **Selección de Tipo**: `InventoryTypeSelector` -> `inventoryType` (en `InventoryContext`).
-3.  **Procesamiento DB**: `InventoryContext` (`processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL (ahora con lógica de último proveedor y filtro de activo) -> combina con `product-data.json` -> `inventoryData` (en `InventoryContext`).
-4.  **Edición de Inventario**: `InventoryTable` -> `onInventoryChange` -> `setInventoryData` (en `InventoryContext`).
-5.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` para cada producto -> inicializa `finalOrderQuantity` -> permite edición manual de `finalOrderQuantity` -> agrupa pedidos por proveedor.
-6.  **Copia de Pedido**: `OrderGenerationModule` -> `navigator.clipboard.writeText` (usando `finalOrderQuantity`) -> `sonner` toast.
+1.  **Inicio App**: `InventoryDashboard` verifica `getSessionHistory`.
+2.  **Sin Historial**: `InventoryDashboard` muestra `FileUploader`.
+3.  **Con Historial**: `InventoryDashboard` muestra `SessionManager`.
+    *   Usuario selecciona "Cargar Sesión": `SessionManager` llama `loadSession` (en `InventoryContext`) -> `db.sessions.get()` -> `InventoryContext` actualiza estado (`inventoryType`, `inventoryData`, `sessionId`).
+    *   Usuario selecciona "Nueva Sesión": `SessionManager` llama `onStartNewSession` (en `InventoryDashboard`) -> `resetInventoryState`, `setDbBuffer(null)`, `setInventoryType(null)` -> `InventoryDashboard` muestra `FileUploader`.
+4.  **Carga de Archivo**: `FileUploader` -> `setDbBuffer` (en `InventoryContext`).
+5.  **Selección de Tipo**: `InventoryTypeSelector` -> `setInventoryType` (en `InventoryContext`).
+6.  **Procesamiento DB**: `InventoryContext` (`useEffect` dispara `processInventoryData`) -> `sql.js` lee `dbBuffer` -> ejecuta consultas SQL -> combina con `product-data.json` -> `InventoryContext` actualiza estado (`inventoryData`, `loading`, `error`, `inventoryType`) -> **`saveCurrentSession` guarda la nueva sesión en IndexedDB** -> `InventoryContext` establece `sessionId`.
+7.  **Edición de Inventario**: `InventoryTable` lee `inventoryData` (del `InventoryContext`) -> usuario edita `physicalQuantity` -> `updateInventoryItem` llama `onInventoryChange` (en `InventoryDashboard`) -> `setInventoryData` (en `InventoryContext`) -> **`debouncedSave` llama `saveCurrentSession` para actualizar la sesión en IndexedDB**.
+8.  **Generación de Pedidos**: `OrdersPage` -> `OrderGenerationModule` lee `inventoryData` (del `InventoryContext`) -> aplica `productOrderRules` -> calcula `adjustedQuantity` -> permite edición manual de `finalOrderQuantity`.
+9.  **Copia de Pedido**: `OrderGenerationModule` -> `copyOrderToClipboard` -> **llama `saveCurrentSession` para guardar `finalOrders` en la sesión de IndexedDB**.
 
 ## 6. Cómo Añadir Nuevos Productos o Reglas de Pedido
 
@@ -265,23 +295,24 @@ La aplicación está configurada para ser desplegada como una aplicación de esc
     *   **Prevención**: Mantén `productData.json` actualizado y verifica los nombres de los productos. Considera añadir un log de advertencia si un producto de la DB no encuentra un match en `productData.json`.
 *   **Lógica de `order-rules.ts`**: Las reglas de pedido son el corazón de la generación de pedidos. Errores aquí resultarán en pedidos incorrectos.
     *   **Prevención**: Prueba exhaustivamente cada nueva regla o modificación con diferentes `physicalQuantity` para asegurar que el `quantityToOrder` sea el esperado.
-*   **`InventoryContext.tsx`**: Es el centro de la gestión de estado. Cambios aquí pueden tener efectos en cascada en toda la aplicación.
-    *   **Prevención**: Entiende completamente el flujo de datos y las dependencias antes de modificar el contexto.
+*   **`InventoryContext.tsx`**: Es el centro de la gestión de estado. Cambios aquí pueden tener efectos en cascada en toda la aplicación. La refactorización a `useReducer` mejora la previsibilidad, pero requiere atención.
+    *   **Prevención**: Entiende completamente el flujo de datos y las dependencias antes de modificar el contexto. Asegúrate de que las acciones del `reducer` sean atómicas y que los `payloads` sean correctos.
 *   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es un área crítica.
     *   **Prevención**: Asegúrate de que `finalOrders` se inicialice correctamente con `adjustedQuantity` y que los cambios del usuario se reflejen solo en `finalOrderQuantity`. Verifica que la función `copyOrderToClipboard` siempre use `finalOrderQuantity` y que el resumen de Belbier se maneje como se espera (visible en UI, no en copiado).
+*   **Persistencia de Sesiones (`src/lib/persistence.ts`, `InventoryContext.tsx`, `InventoryTable.tsx`, `OrderGenerationModule.tsx`)**: La integración de Dexie.js y el manejo de `sessionId` es fundamental.
+    *   **Prevención**: Prueba los escenarios de guardar, cargar, iniciar nueva sesión, y guardar pedidos. Asegúrate de que los datos se persistan y recuperen correctamente, y que el `debounce` funcione como se espera sin perder datos. Verifica que la interfaz `InventorySession` sea consistente en todos los lugares donde se usa.
 
 ### Buenas Prácticas Generales
 *   **Inmutabilidad**: Al actualizar arrays u objetos en el estado de React (o Context), siempre crea nuevas copias en lugar de mutar directamente los objetos existentes (ej. `[...array]`, `{...object}`). Esto se sigue en `InventoryTable` y `InventoryContext`.
-*   **Tipado Fuerte (TypeScript)**: Utiliza las interfaces (`InventoryItem`, `InventoryItemFromDB`, `OrderItem`) para asegurar la consistencia de los datos y atrapar errores en tiempo de desarrollo.
-*   **Modularización**: Mantén los componentes y módulos pequeños y con una única responsabilidad (ej. `FileUploader` solo carga archivos, `InventoryTable` solo muestra y edita la tabla).
+*   **Tipado Fuerte (TypeScript)**: Utiliza las interfaces (`InventoryItem`, `InventoryItemFromDB`, `OrderItem`, `InventorySession`) para asegurar la consistencia de los datos y atrapar errores en tiempo de desarrollo.
+*   **Modularización**: Mantén los componentes y módulos pequeños y con una única responsabilidad (ej. `FileUploader` solo carga archivos, `InventoryTable` solo muestra y edita la tabla, `SessionManager` gestiona sesiones).
 *   **Comentarios Claros**: Añade comentarios donde la lógica sea compleja o no obvia.
-*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `order-rules.ts`, `processInventoryData`, `OrderGenerationModule`).
+*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `order-rules.ts`, `processInventoryData`, `OrderGenerationModule`, `saveCurrentSession`, `loadSession`).
 
 ## 10. Posibles Mejoras Futuras
 
-*   **Persistencia de Datos**: Guardar el `dbBuffer` o los datos de inventario editados localmente (ej. `localStorage`, `IndexedDB`) para no tener que cargar el archivo cada vez.
 *   **Gestión de Proveedores**: Una interfaz para gestionar proveedores y sus reglas de pedido directamente en la UI, en lugar de en `product-data.json` y `order-rules.ts`.
-*   **Historial de Pedidos**: Guardar los pedidos generados.
+*   **Historial de Pedidos Detallado**: Una vista dedicada para explorar los pedidos guardados en cada sesión.
 *   **Exportación de Pedidos**: Exportar pedidos a otros formatos (CSV, PDF).
 *   **Autenticación**: Si la aplicación crece y necesita acceso a recursos protegidos.
 *   **Optimización de Consultas**: Para bases de datos muy grandes, optimizar las consultas SQL o considerar un ORM.

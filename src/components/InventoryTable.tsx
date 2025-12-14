@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { InventoryItem } from "@/context/InventoryContext";
+import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import debounce from "lodash.debounce"; // Importar debounce
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
@@ -13,40 +14,55 @@ interface InventoryTableProps {
 }
 
 export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
+  const { saveCurrentSession, inventoryType, sessionId } = useInventoryContext(); // Obtener del contexto
   const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
 
   useEffect(() => {
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
-  const updateInventoryItem = (index: number, key: keyof InventoryItem, value: number | boolean) => {
-    const updatedData = [...editableInventory];
-    if (key === "physicalQuantity") {
-      updatedData[index][key] = Math.max(0, value as number);
-      updatedData[index].hasBeenEdited = true;
-    } else if (key === "averageSales") {
-      updatedData[index][key] = value as number;
-    } else if (key === "hasBeenEdited") {
-      updatedData[index][key] = value as boolean;
-    }
-    setEditableInventory(updatedData);
-    onInventoryChange(updatedData);
-  };
+  // Debounce para guardar la sesión automáticamente
+  const debouncedSave = useMemo(
+    () =>
+      debounce((data: InventoryItem[]) => {
+        if (inventoryType && sessionId) { // Solo guardar si hay un tipo de inventario y una sesión activa
+          saveCurrentSession(data, inventoryType, new Date());
+        }
+      }, 1000), // Guardar 1 segundo después de la última edición
+    [saveCurrentSession, inventoryType, sessionId]
+  );
 
-  const handlePhysicalQuantityChange = (index: number, value: string) => {
+  const updateInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
+    setEditableInventory(prevData => {
+      const updatedData = [...prevData];
+      if (key === "physicalQuantity") {
+        updatedData[index][key] = Math.max(0, value as number);
+        updatedData[index].hasBeenEdited = true;
+      } else if (key === "averageSales") {
+        updatedData[index][key] = value as number;
+      } else if (key === "hasBeenEdited") {
+        updatedData[index][key] = value as boolean;
+      }
+      onInventoryChange(updatedData); // Notificar al contexto de los cambios
+      debouncedSave(updatedData); // Llamar al guardado debounced
+      return updatedData;
+    });
+  }, [onInventoryChange, debouncedSave]);
+
+  const handlePhysicalQuantityChange = useCallback((index: number, value: string) => {
     const newQuantity = parseInt(value, 10);
     updateInventoryItem(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
-  };
+  }, [updateInventoryItem]);
 
-  const handleIncrementPhysicalQuantity = (index: number) => {
+  const handleIncrementPhysicalQuantity = useCallback((index: number) => {
     const currentQuantity = editableInventory[index].physicalQuantity;
     updateInventoryItem(index, "physicalQuantity", currentQuantity + 1);
-  };
+  }, [editableInventory, updateInventoryItem]);
 
-  const handleDecrementPhysicalQuantity = (index: number) => {
+  const handleDecrementPhysicalQuantity = useCallback((index: number) => {
     const currentQuantity = editableInventory[index].physicalQuantity;
     updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
-  };
+  }, [editableInventory, updateInventoryItem]);
 
   const formatProductName = (productName: string) => {
     return productName;

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Copy, Minus, Plus } from "lucide-react";
-import { InventoryItem } from "@/context/InventoryContext";
+import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
 import { showSuccess, showError } from "@/utils/toast";
 import { productOrderRules } from "@/lib/order-rules";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +14,7 @@ interface OrderGenerationModuleProps {
 }
 
 // Definir la interfaz para los ítems de pedido con la cantidad final editable
-interface OrderItem {
+export interface OrderItem { // Exportar para usar en persistence.ts
   product: string;
   quantityToOrder: number; // Cantidad sugerida antes de ajustar por múltiplos
   adjustedQuantity: number; // Cantidad sugerida ajustada por múltiplos
@@ -22,6 +22,7 @@ interface OrderItem {
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
+  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData } = useInventoryContext(); // Obtener del contexto
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
 
@@ -99,6 +100,10 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           };
         }
       }
+      // Guardar la sesión con los pedidos actualizados
+      if (sessionId && inventoryType && currentInventoryData) {
+        saveCurrentSession(currentInventoryData, inventoryType, new Date(), newOrders);
+      }
       return newOrders;
     });
   };
@@ -140,6 +145,12 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     try {
       await navigator.clipboard.writeText(orderText);
       showSuccess(`Pedido para ${supplier} copiado al portapapeles.`);
+
+      // Guardar los pedidos en la sesión actual
+      if (sessionId && inventoryType && currentInventoryData) {
+        await saveCurrentSession(currentInventoryData, inventoryType, new Date(), finalOrders);
+        showSuccess('Pedidos guardados en la sesión.');
+      }
     } catch (err) {
       console.error("Error al copiar el pedido:", err);
       showError("Error al copiar el pedido. Por favor, inténtalo de nuevo.");
