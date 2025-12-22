@@ -133,7 +133,7 @@ const InventoryDashboard = () => {
   // Fallback, idealmente no debería alcanzarse si la lógica es completa
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
-      <p className="text-base sm:text-lg text-center text-gray-700">Estado desconocido. Por favor, recarga la página.</p>
+      <p className="text-base sm:text-lg text-center text-gray-700">Cargando base de datos. Espera unos segundo.</p>
     </div>
   );
 };
