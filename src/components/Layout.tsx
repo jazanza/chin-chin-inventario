@@ -1,6 +1,6 @@
 import { Outlet, NavLink, Navigate } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
-import { MadeWithDyad } from "./made-with-dyad";
+
 
 export const Layout = () => {
   return (
@@ -34,7 +34,7 @@ export const Layout = () => {
       <main className="flex-1 flex flex-col p-4 sm:px-6 sm:py-0">
         <Outlet />
       </main>
-      <MadeWithDyad />
+      
     </div>
   );
 };
