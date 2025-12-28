@@ -5,6 +5,7 @@ import { db, InventorySession } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
+import { remoteDb, SESSIONS_KEY } from '../lib/remoteDb'; // Importar Upstash
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -35,6 +36,7 @@ interface InventoryState {
   loading: boolean;
   error: string | null;
   sessionId: string | null;
+  sessionHistory: InventorySession[]; // Nuevo: para almacenar el historial de sesiones
 }
 
 const initialState: InventoryState = {
@@ -44,6 +46,7 @@ const initialState: InventoryState = {
   loading: false,
   error: null,
   sessionId: null,
+  sessionHistory: [], // Inicializar el historial vacío
 };
 
 type InventoryAction =
@@ -53,6 +56,7 @@ type InventoryAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_SESSION_ID'; payload: string | null }
+  | { type: 'SET_SESSION_HISTORY'; payload: InventorySession[] } // Nuevo: acción para actualizar el historial
   | { type: 'RESET_STATE' };
 
 const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
@@ -69,12 +73,15 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, error: action.payload, loading: false };
     case 'SET_SESSION_ID':
       return { ...state, sessionId: action.payload };
+    case 'SET_SESSION_HISTORY': // Nuevo caso para el historial
+      return { ...state, sessionHistory: action.payload };
     case 'RESET_STATE':
       return {
         ...initialState,
         // Mantener el dbBuffer si ya estaba cargado, pero resetear todo lo demás
         // Si queremos forzar una nueva carga de DB, el handleStartNewSession lo pondrá a null
         dbBuffer: state.dbBuffer, 
+        sessionHistory: [], // Resetear el historial al iniciar una nueva sesión
       };
     default:
       return state;
@@ -97,9 +104,10 @@ interface InventoryContextType extends InventoryState {
     orders?: { [supplier: string]: any[] }
   ) => Promise<void>;
   loadSession: (dateKey: string) => Promise<void>;
-  deleteSession: (dateKey: string) => Promise<void>; // Nueva función
+  deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
+  setSessionHistory: (history: InventorySession[]) => void; // Nuevo: para actualizar el historial desde fuera
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
@@ -130,6 +138,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const resetInventoryState = useCallback(() => {
     dispatch({ type: 'RESET_STATE' });
+  }, []);
+
+  const setSessionHistory = useCallback((history: InventorySession[]) => {
+    dispatch({ type: 'SET_SESSION_HISTORY', payload: history });
   }, []);
 
   // Consultas SQL específicas para inventario semanal y mensual
@@ -282,13 +294,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         
         const dateKey = format(new Date(), 'yyyy-MM-dd');
         const effectiveness = calculateEffectiveness(processedInventory);
-        await db.sessions.put({
+        
+        const newSession: InventorySession = {
           dateKey,
           inventoryType: type,
           inventoryData: processedInventory,
           timestamp: new Date(),
           effectiveness,
-        });
+        };
+
+        // Guardar en local (Dexie) y en la nube (Upstash)
+        await saveCurrentSession(newSession);
+        
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         showSuccess('Nueva sesión de inventario iniciada y guardada.');
 
@@ -300,39 +317,35 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Database inventory processing finished.");
       }
     },
-    []
+    [saveCurrentSession] // Añadir saveCurrentSession como dependencia
   );
 
   // --- Persistencia de Sesiones ---
   const saveCurrentSession = useCallback(async (
-    data: InventoryItem[],
-    type: "weekly" | "monthly",
-    timestamp: Date,
-    orders?: { [supplier: string]: any[] }
+    sessionData: InventorySession
   ) => {
-    if (!data || data.length === 0) return;
-
-    const dateKey = format(timestamp, 'yyyy-MM-dd');
-    const effectiveness = calculateEffectiveness(data);
+    if (!sessionData || sessionData.inventoryData.length === 0) return;
 
     try {
-      await db.sessions.put({
-        dateKey,
-        inventoryType: type,
-        inventoryData: data,
-        timestamp,
-        effectiveness,
-        ordersBySupplier: orders,
+      // 1. Guardar en local (Dexie)
+      await db.sessions.put(sessionData);
+
+      // 2. Guardar en la NUBE (Upstash/Vercel)
+      // Usamos la dateKey como identificador dentro de un objeto de Redis
+      await remoteDb.hset(SESSIONS_KEY, {
+        [sessionData.dateKey]: sessionData
       });
+
       if (!state.sessionId) {
-        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+        dispatch({ type: 'SET_SESSION_ID', payload: sessionData.dateKey });
       }
-      showSuccess('Sesión guardada automáticamente.');
+      showSuccess('Sesión guardada automáticamente y sincronizada con la nube.');
+      console.log("Sincronizado con la nube con éxito");
     } catch (e) {
-      console.error("Error saving session:", e);
-      showError('Error al guardar la sesión.');
+      console.error("Error al guardar/sincronizar la sesión:", e);
+      showError('Error al guardar la sesión o sincronizar con la nube.');
     }
-  }, [state.sessionId]);
+  }, [state.sessionId]); // Dependencia de state.sessionId
 
   const loadSession = useCallback(async (dateKey: string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
@@ -360,29 +373,35 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
       await db.sessions.delete(dateKey);
-      showSuccess(`Sesión del ${dateKey} eliminada.`);
+      // También eliminar de la nube
+      await remoteDb.hdel(SESSIONS_KEY, dateKey);
+      showSuccess(`Sesión del ${dateKey} eliminada y sincronizada.`);
       // Si la sesión eliminada era la que estaba cargada, resetear el estado
       if (state.sessionId === dateKey) {
         dispatch({ type: 'RESET_STATE' });
         dispatch({ type: 'SET_SESSION_ID', payload: null });
       }
+      // Refrescar el historial después de eliminar
+      await getSessionHistory();
     } catch (e) {
       console.error("Error deleting session:", e);
       showError('Error al eliminar la sesión.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [state.sessionId]);
+  }, [state.sessionId, getSessionHistory]);
 
   const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
     try {
-      return await db.sessions.orderBy('timestamp').reverse().toArray();
+      const history = await db.sessions.orderBy('timestamp').reverse().toArray();
+      setSessionHistory(history); // Actualizar el estado con el historial
+      return history;
     } catch (e) {
       console.error("Error fetching session history:", e);
       showError('Error al obtener el historial de sesiones.');
       return [];
     }
-  }, []);
+  }, [setSessionHistory]);
 
   useEffect(() => {
     // Este useEffect ahora solo se encarga de disparar processInventoryData
@@ -392,6 +411,32 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.dbBuffer, state.inventoryType, state.sessionId, processInventoryData]);
 
+  // Nuevo useEffect para sincronizar con la nube al cargar la app
+  useEffect(() => {
+    const syncWithCloud = async () => {
+      try {
+        // Pedimos todas las sesiones de la nube
+        const cloudSessions: Record<string, InventorySession> | null = await remoteDb.hgetall(SESSIONS_KEY);
+        
+        if (cloudSessions) {
+          // Las metemos todas en Dexie (local). 
+          // Dexie es inteligente: si ya existe y es igual, no hace nada; si es nueva, la añade.
+          const sessionsArray = Object.values(cloudSessions);
+          await db.sessions.bulkPut(sessionsArray);
+          
+          // Refrescamos el historial en la interfaz
+          await getSessionHistory(); // Llama a getSessionHistory para actualizar el estado
+          showSuccess('Sesiones sincronizadas desde la nube.');
+        }
+      } catch (error) {
+        console.log("Modo offline o error de sincronización con la nube:", error);
+        showError('No se pudo sincronizar con la nube. Trabajando en modo offline.');
+      }
+    };
+
+    syncWithCloud();
+  }, [getSessionHistory]); // Dependencia de getSessionHistory
+
   const value = useMemo(() => ({
     ...state,
     setDbBuffer,
@@ -400,9 +445,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     processInventoryData,
     saveCurrentSession,
     loadSession,
-    deleteSession, // Añadir la nueva función al contexto
+    deleteSession,
     getSessionHistory,
     resetInventoryState,
+    setSessionHistory,
   }), [
     state,
     setDbBuffer,
@@ -414,6 +460,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     deleteSession,
     getSessionHistory,
     resetInventoryState,
+    setSessionHistory,
   ]);
 
   return (

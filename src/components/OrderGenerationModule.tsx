@@ -8,6 +8,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import { productOrderRules } from "@/lib/order-rules";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns"; // Importar format para la fecha
 
 interface OrderGenerationModuleProps {
   inventoryData: InventoryItem[];
@@ -102,7 +103,15 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       }
       // Guardar la sesión con los pedidos actualizados
       if (sessionId && inventoryType && currentInventoryData) {
-        saveCurrentSession(currentInventoryData, inventoryType, new Date(), newOrders);
+        const sessionToSave = {
+          dateKey: sessionId,
+          inventoryType: inventoryType,
+          inventoryData: currentInventoryData,
+          timestamp: new Date(),
+          effectiveness: 0, // La efectividad se recalcula en el contexto si es necesario, o se mantiene la última
+          ordersBySupplier: newOrders,
+        };
+        saveCurrentSession(sessionToSave);
       }
       return newOrders;
     });
@@ -148,8 +157,16 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
       // Guardar los pedidos en la sesión actual
       if (sessionId && inventoryType && currentInventoryData) {
-        await saveCurrentSession(currentInventoryData, inventoryType, new Date(), finalOrders);
-        showSuccess('Pedidos guardados en la sesión.');
+        const sessionToSave = {
+          dateKey: sessionId,
+          inventoryType: inventoryType,
+          inventoryData: currentInventoryData,
+          timestamp: new Date(),
+          effectiveness: 0, // La efectividad se recalcula en el contexto si es necesario, o se mantiene la última
+          ordersBySupplier: finalOrders,
+        };
+        await saveCurrentSession(sessionToSave);
+        showSuccess('Pedidos guardados en la sesión y sincronizados con la nube.');
       }
     } catch (err) {
       console.error("Error al copiar el pedido:", err);
