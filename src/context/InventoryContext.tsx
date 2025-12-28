@@ -116,6 +116,87 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
   return (matches / data.length) * 100;
 };
 
+// Consultas SQL específicas para inventario semanal y mensual
+const WEEKLY_INVENTORY_QUERY = `
+  SELECT
+      PG.Name AS Categoria,
+      P.Name AS Producto,
+      S.Quantity AS Stock_Actual,
+      COALESCE(
+          (
+              SELECT C_sub.Name
+              FROM DocumentItem DI_sub
+              JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+              JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+              JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+              WHERE DI_sub.ProductId = P.Id
+                AND DT_sub.Code = '100' -- Tipo de documento de compra
+                AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+                AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+              ORDER BY D_sub.Date DESC
+              LIMIT 1
+          ),
+          'Desconocido'
+      ) AS SupplierName
+  FROM
+      Stock S
+  JOIN
+      Product P ON P.Id = S.ProductId
+  JOIN
+      ProductGroup PG ON PG.Id = P.ProductGroupId
+  WHERE
+      PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
+      AND PG.Name IN (
+          'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
+          'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
+          'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes',
+          'Tabacos', 'Comida'
+      )
+      AND P.IsEnabled = 1
+  ORDER BY PG.Name ASC, P.Name ASC;
+`;
+
+const MONTHLY_INVENTORY_QUERY = `
+  SELECT
+      PG.Name AS Categoria,
+      P.Name AS Producto,
+      S.Quantity AS Stock_Actual,
+      COALESCE(
+          (
+              SELECT C_sub.Name
+              FROM DocumentItem DI_sub
+              JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+              JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+              JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+              WHERE DI_sub.ProductId = P.Id
+                AND DT_sub.Code = '100' -- Tipo de documento de compra
+                AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+                AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+              ORDER BY D_sub.Date DESC
+              LIMIT 1
+          ),
+          'Desconocido'
+      ) AS SupplierName
+  FROM
+      Stock S
+  JOIN
+      Product P ON P.Id = S.ProductId
+  JOIN
+      ProductGroup PG ON PG.Id = P.ProductGroupId
+  WHERE
+      PG.Id IN (
+          4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
+      )
+      AND PG.Name IN (
+          'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes',
+          'Tequilas', 'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes',
+          'Snacks', 'Personales', 'Six Packs', 'Conservas y Embutidos',
+          'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
+      )
+      AND P.IsEnabled = 1
+  ORDER BY PG.Name ASC, P.Name ASC;
+`;
+
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
 
