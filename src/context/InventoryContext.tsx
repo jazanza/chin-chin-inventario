@@ -4,7 +4,6 @@ import productData from "@/data/product-data.json";
 import { db, InventorySession } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
-import debounce from "lodash.debounce";
 import { remoteDb, SESSIONS_KEY } from '../lib/remoteDb'; // Importar Upstash
 
 // Interfaz para los datos de inventario tal como vienen de la DB
@@ -97,12 +96,8 @@ interface InventoryContextType extends InventoryState {
     buffer: Uint8Array,
     type: "weekly" | "monthly"
   ) => Promise<void>;
-  saveCurrentSession: (
-    data: InventoryItem[],
-    type: "weekly" | "monthly",
-    timestamp: Date,
-    orders?: { [supplier: string]: any[] }
-  ) => Promise<void>;
+  // Actualizar la firma de saveCurrentSession
+  saveCurrentSession: (sessionData: InventorySession) => Promise<void>;
   loadSession: (dateKey: string) => Promise<void>;
   deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
@@ -144,86 +139,89 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_SESSION_HISTORY', payload: history });
   }, []);
 
-  // Consultas SQL específicas para inventario semanal y mensual
-  const WEEKLY_INVENTORY_QUERY = `
-    SELECT
-        PG.Name AS Categoria,
-        P.Name AS Producto,
-        S.Quantity AS Stock_Actual,
-        COALESCE(
-            (
-                SELECT C_sub.Name
-                FROM DocumentItem DI_sub
-                JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
-                JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
-                JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
-                WHERE DI_sub.ProductId = P.Id
-                  AND DT_sub.Code = '100' -- Tipo de documento de compra
-                  AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                  AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
-                ORDER BY D_sub.Date DESC
-                LIMIT 1
-            ),
-            'Desconocido'
-        ) AS SupplierName
-    FROM
-        Stock S
-    JOIN
-        Product P ON P.Id = S.ProductId
-    JOIN
-        ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE
-        PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
-        AND PG.Name IN (
-            'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
-            'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
-            'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes',
-            'Tabacos', 'Comida'
-        )
-        AND P.IsEnabled = 1
-    ORDER BY PG.Name ASC, P.Name ASC;
-  `;
+  // getSessionHistory debe declararse antes de deleteSession y el useEffect de sincronización
+  const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
+    try {
+      const history = await db.sessions.orderBy('timestamp').reverse().toArray();
+      setSessionHistory(history); // Actualizar el estado con el historial
+      return history;
+    } catch (e) {
+      console.error("Error fetching session history:", e);
+      showError('Error al obtener el historial de sesiones.');
+      return [];
+    }
+  }, [setSessionHistory]);
 
-  const MONTHLY_INVENTORY_QUERY = `
-    SELECT
-        PG.Name AS Categoria,
-        P.Name AS Producto,
-        S.Quantity AS Stock_Actual,
-        COALESCE(
-            (
-                SELECT C_sub.Name
-                FROM DocumentItem DI_sub
-                JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
-                JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
-                JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
-                WHERE DI_sub.ProductId = P.Id
-                  AND DT_sub.Code = '100' -- Tipo de documento de compra
-                  AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                  AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
-                ORDER BY D_sub.Date DESC
-                LIMIT 1
-            ),
-            'Desconocido'
-        ) AS SupplierName
-    FROM
-        Stock S
-    JOIN
-        Product P ON P.Id = S.ProductId
-    JOIN
-        ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE
-        PG.Id IN (
-            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
-        )
-        AND PG.Name IN (
-            'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes',
-            'Tequilas', 'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes',
-            'Snacks', 'Personales', 'Six Packs', 'Conservas y Embutidos',
-            'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
-        )
-        AND P.IsEnabled = 1
-    ORDER BY PG.Name ASC, P.Name ASC;
-  `;
+  // saveCurrentSession debe declararse antes de processInventoryData
+  const saveCurrentSession = useCallback(async (
+    sessionData: InventorySession
+  ) => {
+    if (!sessionData || sessionData.inventoryData.length === 0) return;
+
+    try {
+      // 1. Guardar en local (Dexie)
+      await db.sessions.put(sessionData);
+
+      // 2. Guardar en la NUBE (Upstash/Vercel)
+      // Usamos la dateKey como identificador dentro de un objeto de Redis
+      await remoteDb.hset(SESSIONS_KEY, {
+        [sessionData.dateKey]: sessionData
+      });
+
+      if (!state.sessionId) {
+        dispatch({ type: 'SET_SESSION_ID', payload: sessionData.dateKey });
+      }
+      showSuccess('Sesión guardada automáticamente y sincronizada con la nube.');
+      console.log("Sincronizado con la nube con éxito");
+    } catch (e) {
+      console.error("Error al guardar/sincronizar la sesión:", e);
+      showError('Error al guardar la sesión o sincronizar con la nube.');
+    }
+  }, [state.sessionId]); // Dependencia de state.sessionId
+
+  const loadSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    try {
+      const session = await db.sessions.get(dateKey);
+      if (session) {
+        dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData });
+        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+        showSuccess(`Sesión del ${dateKey} cargada.`);
+      } else {
+        showError('No se encontró la sesión.');
+      }
+    } catch (e) {
+      console.error("Error loading session:", e);
+      showError('Error al cargar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, []);
+
+  const deleteSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    try {
+      await db.sessions.delete(dateKey);
+      // También eliminar de la nube
+      await remoteDb.hdel(SESSIONS_KEY, dateKey);
+      showSuccess(`Sesión del ${dateKey} eliminada y sincronizada.`);
+      // Si la sesión eliminada era la que estaba cargada, resetear el estado
+      if (state.sessionId === dateKey) {
+        dispatch({ type: 'RESET_STATE' });
+        dispatch({ type: 'SET_SESSION_ID', payload: null });
+      }
+      // Refrescar el historial después de eliminar
+      await getSessionHistory();
+    } catch (e) {
+      console.error("Error deleting session:", e);
+      showError('Error al eliminar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [state.sessionId, getSessionHistory]);
 
   const processInventoryData = useCallback(
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
@@ -320,97 +318,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     [saveCurrentSession] // Añadir saveCurrentSession como dependencia
   );
 
-  // --- Persistencia de Sesiones ---
-  const saveCurrentSession = useCallback(async (
-    sessionData: InventorySession
-  ) => {
-    if (!sessionData || sessionData.inventoryData.length === 0) return;
-
-    try {
-      // 1. Guardar en local (Dexie)
-      await db.sessions.put(sessionData);
-
-      // 2. Guardar en la NUBE (Upstash/Vercel)
-      // Usamos la dateKey como identificador dentro de un objeto de Redis
-      await remoteDb.hset(SESSIONS_KEY, {
-        [sessionData.dateKey]: sessionData
-      });
-
-      if (!state.sessionId) {
-        dispatch({ type: 'SET_SESSION_ID', payload: sessionData.dateKey });
-      }
-      showSuccess('Sesión guardada automáticamente y sincronizada con la nube.');
-      console.log("Sincronizado con la nube con éxito");
-    } catch (e) {
-      console.error("Error al guardar/sincronizar la sesión:", e);
-      showError('Error al guardar la sesión o sincronizar con la nube.');
-    }
-  }, [state.sessionId]); // Dependencia de state.sessionId
-
-  const loadSession = useCallback(async (dateKey: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-    try {
-      const session = await db.sessions.get(dateKey);
-      if (session) {
-        dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData });
-        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
-        showSuccess(`Sesión del ${dateKey} cargada.`);
-      } else {
-        showError('No se encontró la sesión.');
-      }
-    } catch (e) {
-      console.error("Error loading session:", e);
-      showError('Error al cargar la sesión.');
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, []);
-
-  const deleteSession = useCallback(async (dateKey: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-    try {
-      await db.sessions.delete(dateKey);
-      // También eliminar de la nube
-      await remoteDb.hdel(SESSIONS_KEY, dateKey);
-      showSuccess(`Sesión del ${dateKey} eliminada y sincronizada.`);
-      // Si la sesión eliminada era la que estaba cargada, resetear el estado
-      if (state.sessionId === dateKey) {
-        dispatch({ type: 'RESET_STATE' });
-        dispatch({ type: 'SET_SESSION_ID', payload: null });
-      }
-      // Refrescar el historial después de eliminar
-      await getSessionHistory();
-    } catch (e) {
-      console.error("Error deleting session:", e);
-      showError('Error al eliminar la sesión.');
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, [state.sessionId, getSessionHistory]);
-
-  const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
-    try {
-      const history = await db.sessions.orderBy('timestamp').reverse().toArray();
-      setSessionHistory(history); // Actualizar el estado con el historial
-      return history;
-    } catch (e) {
-      console.error("Error fetching session history:", e);
-      showError('Error al obtener el historial de sesiones.');
-      return [];
-    }
-  }, [setSessionHistory]);
-
-  useEffect(() => {
-    // Este useEffect ahora solo se encarga de disparar processInventoryData
-    // si dbBuffer y inventoryType están presentes y no hay una sesión activa cargada.
-    if (state.dbBuffer && state.inventoryType && !state.sessionId) {
-      processInventoryData(state.dbBuffer, state.inventoryType);
-    }
-  }, [state.dbBuffer, state.inventoryType, state.sessionId, processInventoryData]);
-
   // Nuevo useEffect para sincronizar con la nube al cargar la app
   useEffect(() => {
     const syncWithCloud = async () => {
@@ -436,6 +343,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     syncWithCloud();
   }, [getSessionHistory]); // Dependencia de getSessionHistory
+
+  useEffect(() => {
+    // Este useEffect ahora solo se encarga de disparar processInventoryData
+    // si dbBuffer y inventoryType están presentes y no hay una sesión activa cargada.
+    if (state.dbBuffer && state.inventoryType && !state.sessionId) {
+      processInventoryData(state.dbBuffer, state.inventoryType);
+    }
+  }, [state.dbBuffer, state.inventoryType, state.sessionId, processInventoryData]);
 
   const value = useMemo(() => ({
     ...state,
