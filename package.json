@@ -105,7 +105,7 @@
     "@types/react-day-picker": "^8.0.0",
     "@types/embla-carousel-react": "^7.0.0",
     "@types/recharts": "^1.8.0",
-    "@types/cmdk": "^0.0.0",
+    "@types/cmdk": "^1.0.0",
     "@types/vaul": "^0.1.0",
     "@types/react-hook-form": "^7.0.0",
     "@types/react-resizable-panels": "^2.0.0",
@@ -136,7 +136,8 @@
     "@types/radix-ui__react-switch": "^1.0.0",
     "@types/radix-ui__react-tabs": "^1.0.0",
     "@types/radix-ui__react-toggle": "^1.0.0",
-    "@types/radix-ui__react-toggle-group": "^1.0.0"
+    "@types/radix-ui__react-toggle-group": "^1.0.0",
+    "@types/sql.js": "^1.4.9"
   },
   "resolutions": {
     "react": "18.3.1",
