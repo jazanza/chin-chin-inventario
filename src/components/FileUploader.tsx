@@ -4,6 +4,15 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 
+// Declaración de tipos local para asegurar que TypeScript reconozca electronAPI
+declare global {
+  interface Window {
+    electronAPI?: {
+      openDbFile: () => Promise<Uint8Array | null>;
+    };
+  }
+}
+
 interface FileUploaderProps {
   onFileLoaded: (buffer: Uint8Array) => void;
   loading: boolean;
@@ -14,8 +23,9 @@ export const FileUploader = ({ onFileLoaded, loading }: FileUploaderProps) => {
 
   // Lógica para Electron
   const handleElectronUpload = async () => {
-    if (window.electronAPI) {
-      const dbBuffer = await window.electronAPI.openDbFile();
+    const electronAPI = (window as unknown as Window).electronAPI;
+    if (electronAPI) {
+      const dbBuffer = await electronAPI.openDbFile();
       if (dbBuffer) {
         onFileLoaded(dbBuffer);
       }
@@ -38,7 +48,8 @@ export const FileUploader = ({ onFileLoaded, loading }: FileUploaderProps) => {
   };
 
   // Si la API de Electron está disponible, muestra el botón de Electron
-  if (window.electronAPI) {
+  const electronAPI = (window as unknown as Window).electronAPI;
+  if (electronAPI) {
     return (
       <Button onClick={handleElectronUpload} size="lg" disabled={loading}>
         {loading ? (
