@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -102,15 +102,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       }
       // Guardar la sesión con los pedidos actualizados
       if (sessionId && inventoryType && currentInventoryData) {
-        const sessionToSave = {
-          dateKey: sessionId,
-          inventoryType: inventoryType,
-          inventoryData: currentInventoryData,
-          timestamp: new Date(),
-          effectiveness: 0, // La efectividad se recalcula en el contexto si es necesario, o se mantiene la última
-          ordersBySupplier: newOrders,
-        };
-        saveCurrentSession(sessionToSave);
+        saveCurrentSession(currentInventoryData, inventoryType, new Date(), newOrders);
       }
       return newOrders;
     });
@@ -156,16 +148,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
       // Guardar los pedidos en la sesión actual
       if (sessionId && inventoryType && currentInventoryData) {
-        const sessionToSave = {
-          dateKey: sessionId,
-          inventoryType: inventoryType,
-          inventoryData: currentInventoryData,
-          timestamp: new Date(),
-          effectiveness: 0, // La efectividad se recalcula en el contexto si es necesario, o se mantiene la última
-          ordersBySupplier: finalOrders,
-        };
-        await saveCurrentSession(sessionToSave);
-        showSuccess('Pedidos guardados en la sesión y sincronizados con la nube.');
+        await saveCurrentSession(currentInventoryData, inventoryType, new Date(), finalOrders);
+        showSuccess('Pedidos guardados en la sesión.');
       }
     } catch (err) {
       console.error("Error al copiar el pedido:", err);

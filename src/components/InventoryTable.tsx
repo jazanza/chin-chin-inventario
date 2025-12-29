@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -7,19 +7,11 @@ import { cn } from "@/lib/utils";
 import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import debounce from "lodash.debounce"; // Importar debounce
-import { InventorySession } from "@/lib/persistence"; // Importar InventorySession
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
   onInventoryChange: (updatedData: InventoryItem[]) => void;
 }
-
-// Helper Function: Calculate Effectiveness (moved from context for local use)
-const calculateEffectiveness = (data: InventoryItem[]): number => {
-  if (data.length === 0) return 0;
-  const matches = data.filter(item => item.systemQuantity === item.physicalQuantity).length;
-  return (matches / data.length) * 100;
-};
 
 export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
   const { saveCurrentSession, inventoryType, sessionId } = useInventoryContext(); // Obtener del contexto
@@ -34,16 +26,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     () =>
       debounce((data: InventoryItem[]) => {
         if (inventoryType && sessionId) { // Solo guardar si hay un tipo de inventario y una sesión activa
-          const effectiveness = calculateEffectiveness(data);
-          const sessionToSave: InventorySession = {
-            dateKey: sessionId,
-            inventoryType: inventoryType,
-            inventoryData: data,
-            timestamp: new Date(),
-            effectiveness: effectiveness,
-            // ordersBySupplier no se guarda aquí, se guarda en OrderGenerationModule
-          };
-          saveCurrentSession(sessionToSave);
+          saveCurrentSession(data, inventoryType, new Date());
         }
       }, 1000), // Guardar 1 segundo después de la última edición
     [saveCurrentSession, inventoryType, sessionId]

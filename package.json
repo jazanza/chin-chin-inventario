@@ -75,8 +75,7 @@
     "three-stdlib": "^2.36.1",
     "vaul": "^0.9.3",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8",
-    "@upstash/redis": "^1.36.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@dyad-sh/react-vite-component-tagger": "^0.8.0",
@@ -98,46 +97,7 @@
     "tailwindcss": "^3.4.11",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
-    "vite": "^6.3.4",
-    "@types/date-fns": "^2.6.0",
-    "@types/next-themes": "^0.2.0",
-    "@types/sonner": "^1.0.0",
-    "@types/react-day-picker": "^8.0.0",
-    "@types/embla-carousel-react": "^7.0.0",
-    "@types/recharts": "^1.8.0",
-    "@types/cmdk": "^1.0.0",
-    "@types/vaul": "^0.1.0",
-    "@types/react-hook-form": "^7.0.0",
-    "@types/react-resizable-panels": "^2.0.0",
-    "@types/input-otp": "^1.0.0",
-    "@types/radix-ui__react-toast": "^1.0.0",
-    "@types/radix-ui__react-tooltip": "^1.0.0",
-    "@types/radix-ui__react-slot": "^1.0.0",
-    "@types/radix-ui__react-dialog": "^1.0.0",
-    "@types/radix-ui__react-accordion": "^1.0.0",
-    "@types/radix-ui__react-alert-dialog": "^1.0.0",
-    "@types/radix-ui__react-aspect-ratio": "^1.0.0",
-    "@types/radix-ui__react-avatar": "^1.0.0",
-    "@types/radix-ui__react-checkbox": "^1.0.0",
-    "@types/radix-ui__react-collapsible": "^1.0.0",
-    "@types/radix-ui__react-context-menu": "^1.0.0",
-    "@types/radix-ui__react-dropdown-menu": "^1.0.0",
-    "@types/radix-ui__react-hover-card": "^1.0.0",
-    "@types/radix-ui__react-label": "^1.0.0",
-    "@types/radix-ui__react-menubar": "^1.0.0",
-    "@types/radix-ui__react-navigation-menu": "^1.0.0",
-    "@types/radix-ui__react-popover": "^1.0.0",
-    "@types/radix-ui__react-progress": "^1.0.0",
-    "@types/radix-ui__react-radio-group": "^1.0.0",
-    "@types/radix-ui__react-scroll-area": "^1.0.0",
-    "@types/radix-ui__react-select": "^1.0.0",
-    "@types/radix-ui__react-separator": "^1.0.0",
-    "@types/radix-ui__react-slider": "^1.0.0",
-    "@types/radix-ui__react-switch": "^1.0.0",
-    "@types/radix-ui__react-tabs": "^1.0.0",
-    "@types/radix-ui__react-toggle": "^1.0.0",
-    "@types/radix-ui__react-toggle-group": "^1.0.0",
-    "@types/sql.js": "^1.4.9"
+    "vite": "^6.3.4"
   },
   "resolutions": {
     "react": "18.3.1",
@@ -148,8 +108,7 @@
     "productName": "ChinChinDataViz",
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
-      "src/api/**/*"
+      "dist-electron/**/*"
     ],
     "directories": {
       "buildResources": "assets",
