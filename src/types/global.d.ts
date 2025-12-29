@@ -4,7 +4,7 @@ interface IElectronAPI {
 
 declare global {
   interface Window {
-    electronAPI?: IElectronAPI;
+    electronAPI?: IElectronAPI; // Make electronAPI directly available on Window
   }
   // Declaraciones para process.env en el contexto de Node.js (para API Routes)
   namespace NodeJS {

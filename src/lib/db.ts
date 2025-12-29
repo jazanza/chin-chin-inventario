@@ -6,7 +6,7 @@ let SQL: any = null;
 export async function initDb(): Promise<void> {
   if (!SQL) {
     SQL = await initSqlJs({
-      locateFile: (file) => `https://sql.js.org/dist/${file}`,
+      locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
     });
   }
 }

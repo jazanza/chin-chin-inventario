@@ -11,12 +11,6 @@ const remoteDb = new Redis({
 // Usaremos una "key" base para tus sesiones
 const SESSIONS_KEY = 'chinchin_inventory_sessions';
 
-// Definir el tipo para el objeto de respuesta de la API
-interface ApiResponse {
-  status: number;
-  body: any;
-}
-
 // Handler para la API Route
 export default async function handler(req: Request): Promise<Response> {
   try {

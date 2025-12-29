@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,6 @@ import { showSuccess, showError } from "@/utils/toast";
 import { productOrderRules } from "@/lib/order-rules";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns"; // Importar format para la fecha
 
 interface OrderGenerationModuleProps {
   inventoryData: InventoryItem[];

@@ -1,10 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { OTPInput, OTPInputContext } from "input-otp";
+import { OTPInput, Slot, type OTPInputProps } from "input-otp";
 import { Dot } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+
+interface OTPInputContextValue {
+  slots: { char: string; hasFakeCaret: boolean; isActive: boolean }[];
+  // Add other properties if they exist in the context value, e.g.,
+  // value: string;
+  // setValue: (value: string) => void;
+  // maxLength: number;
+}
+
+const OTPInputContext = React.createContext<OTPInputContextValue | undefined>(undefined);
 
 const InputOTP = React.forwardRef<
   React.ElementRef<typeof OTPInput>,
@@ -18,7 +28,9 @@ const InputOTP = React.forwardRef<
     )}
     className={cn("disabled:cursor-not-allowed", className)}
     {...props}
-  />
+  >
+    {props.children}
+  </OTPInput>
 ));
 InputOTP.displayName = "InputOTP";
 
@@ -34,7 +46,10 @@ const InputOTPSlot = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentPropsWithoutRef<"div"> & { index: number }
 >(({ index, className, ...props }, ref) => {
-  const inputOTPContext = React.useContext(OTPInputContext as any); // Cast to any
+  const inputOTPContext = React.useContext(OTPInputContext);
+  if (!inputOTPContext) {
+    throw new Error("InputOTPSlot must be used within InputOTP");
+  }
   const { char, hasFakeCaret, isActive } = inputOTPContext.slots[index];
   return (
     <div
@@ -63,7 +78,7 @@ const InputOTPSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("-mx-2 flex items-center justify-center", className)}
+    className={cn("flex items-center justify-center", className)}
     {...props}
   >
     <Dot />

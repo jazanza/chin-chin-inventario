@@ -1,4 +1,4 @@
-import { Outlet, NavLink, Navigate } from "react-router-dom";
+import { Outlet, NavLink } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
 
 

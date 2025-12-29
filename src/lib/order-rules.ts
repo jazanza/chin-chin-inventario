@@ -8,11 +8,11 @@ export const productOrderRules: Map<string, OrderRule> = new Map([
   ["Belhaven Black Stout - 440ml", (pq) => (pq <= 4 ? 12 : pq <= 12 ? 6 : 0)],
   ["Belhaven Original Best - 440ml", (pq) => (pq <= 3 ? 6 : pq <= 5 ? 3 : 0)],
   ["Blue Moon - 330ml", (pq) => (pq <= 3 ? 6 : 0)],
-  ["Carlsberg - 330 ml", (pq) => (pq <= 3 ? 6 : 0)],
-  ["Corona - 330ml", (pq) => 0], // Sin fórmula de pedido
-  ["Cusqueña Negra - 330ml", (pq) => 0], // Sin fórmula de pedido
+  ["Carlsberg - 330 ml", (_pq) => (0)], // Sin fórmula de pedido
+  ["Corona - 330ml", (_pq) => 0], // Sin fórmula de pedido
+  ["Cusqueña Negra - 330ml", (_pq) => 0], // Sin fórmula de pedido
   ["Estrella Galicia - 330ml", (pq) => (pq <= 2 ? 6 : 0)],
-  ["Guinness Stout", (pq) => 0], // Sin fórmula de pedido
+  ["Guinness Stout", (_pq) => 0], // Sin fórmula de pedido
   ["Heineken 0 Alcohol", (pq) => (pq <= 1 ? 6 : 0)],
   ["Hobgoblin Gold - 500ml", (pq) => (pq <= 3 ? 6 : pq <= 5 ? 3 : 0)],
   ["Hobgoblin Ruby - 500ml", (pq) => (pq <= 3 ? 6 : pq <= 5 ? 3 : 0)],
@@ -110,7 +110,7 @@ export const productOrderRules: Map<string, OrderRule> = new Map([
   ["Sticks Snacks Salchichon", (pq) => (pq <= 3 ? 6 : pq <= 6 ? 3 : 0)],
   ["Tapas Mix de Quesos y Jamon Serrano", (pq) => (pq <= 1 ? 2 : 0)],
   ["Agua de Guitig - 1500ml", (pq) => (pq <= 2 ? 6 : 0)],
-  ["Agua de Guitig - 3000ml", (pq) => 0], // Sin fórmula de pedido
+  ["Agua de Guitig - 3000ml", (_pq) => 0], // Sin fórmula de pedido
   ["Coca Cola Original - 2L", (pq) => (pq <= 1 ? 6 : 0)],
   ["Coca Cola Original - 1L", (pq) => (pq <= 1 ? 6 : 0)],
   ["Coca Cola Original - 3L", (pq) => (pq <= 1 ? 3 : 0)],

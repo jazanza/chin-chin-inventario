@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import debounce from "lodash.debounce"; // Importar debounce
-import { format } from "date-fns"; // Importar format para la fecha
 import { InventorySession } from "@/lib/persistence"; // Importar InventorySession
 
 interface InventoryTableProps {
