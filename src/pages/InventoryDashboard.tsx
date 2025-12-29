@@ -8,27 +8,30 @@ import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
 
 const InventoryDashboard = () => {
-  const {
-    dbBuffer,
-    inventoryType,
-    inventoryData,
-    loading,
-    error,
-    sessionId,
-    setDbBuffer,
-    setInventoryType,
-    setInventoryData,
+  const { 
+    dbBuffer, 
+    inventoryType, 
+    inventoryData, 
+    loading, 
+    error, 
+    sessionId, 
+    setDbBuffer, 
+    setInventoryType, 
+    setInventoryData, 
     resetInventoryState,
     getSessionHistory,
+    syncFromSupabase
   } = useInventoryContext();
-
+  
   const [hasSessionHistory, setHasSessionHistory] = useState(false);
   const [showFileUploader, setShowFileUploader] = useState(false);
+  const [initialSyncDone, setInitialSyncDone] = useState(false);
 
   useEffect(() => {
     const checkHistory = async () => {
       const history = await getSessionHistory();
       setHasSessionHistory(history.length > 0);
+      
       // Si no hay historial y no hay dbBuffer ni sessionId, mostrar el FileUploader por defecto
       if (history.length === 0 && !dbBuffer && !sessionId) {
         setShowFileUploader(true);
@@ -36,6 +39,34 @@ const InventoryDashboard = () => {
     };
     checkHistory();
   }, [getSessionHistory, dbBuffer, sessionId]);
+
+  // Manejar la sincronización inicial desde Supabase
+  useEffect(() => {
+    const performInitialSync = async () => {
+      if (!initialSyncDone) {
+        // Verificar si hay sesiones locales
+        const localSessions = await getSessionHistory();
+        
+        // Si no hay sesiones locales, intentar sincronizar desde Supabase
+        if (localSessions.length === 0) {
+          await syncFromSupabase();
+          
+          // Volver a verificar el historial después de la sincronización
+          const updatedHistory = await getSessionHistory();
+          setHasSessionHistory(updatedHistory.length > 0);
+          
+          // Si después de sincronizar hay sesiones, mostrar el SessionManager
+          if (updatedHistory.length > 0 && !dbBuffer && !sessionId) {
+            setShowFileUploader(false);
+          }
+        }
+        
+        setInitialSyncDone(true);
+      }
+    };
+
+    performInitialSync();
+  }, [getSessionHistory, syncFromSupabase, dbBuffer, sessionId, initialSyncDone]);
 
   const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer);
@@ -59,7 +90,7 @@ const InventoryDashboard = () => {
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
   // Lógica de renderizado condicional
-  if (loading) {
+  if (loading && !initialSyncDone) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <p className="text-base sm:text-lg text-center text-gray-700">Cargando o procesando datos...</p>
@@ -77,11 +108,9 @@ const InventoryDashboard = () => {
             Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
           </h1>
           <Button onClick={handleStartNewSession} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Nueva Sesión
+            <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión
           </Button>
         </div>
-        
         {error ? (
           <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
         ) : (
@@ -93,7 +122,7 @@ const InventoryDashboard = () => {
 
   // 2. Si no hay dbBuffer cargado, no se ha forzado el FileUploader, y hay historial, mostrar SessionManager
   // Este es el punto de entrada cuando la app inicia con sesiones existentes.
-  if (!dbBuffer && !showFileUploader && hasSessionHistory) {
+  if (!dbBuffer && !showFileUploader && (hasSessionHistory || initialSyncDone)) {
     return <SessionManager onStartNewSession={handleStartNewSession} />;
   }
 
@@ -107,9 +136,9 @@ const InventoryDashboard = () => {
           <FileUploader onFileLoaded={handleFileLoaded} loading={loading} />
           {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
           {hasSessionHistory && ( // Solo mostrar "O cargar una sesión existente" si hay historial
-            <Button
+            <Button 
               onClick={() => setShowFileUploader(false)} // Este botón debe ocultar FileUploader y mostrar SessionManager
-              variant="link"
+              variant="link" 
               className="mt-4 text-blue-600 hover:text-blue-800"
             >
               O cargar una sesión existente

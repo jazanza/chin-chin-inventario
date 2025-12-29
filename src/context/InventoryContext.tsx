@@ -5,6 +5,8 @@ import { db, InventorySession } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
+// Importar el cliente de Supabase
+import { supabase } from "@/lib/supabase";
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -74,7 +76,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
         ...initialState,
         // Mantener el dbBuffer si ya estaba cargado, pero resetear todo lo demás
         // Si queremos forzar una nueva carga de DB, el handleStartNewSession lo pondrá a null
-        dbBuffer: state.dbBuffer, 
+        dbBuffer: state.dbBuffer,
       };
     default:
       return state;
@@ -97,9 +99,11 @@ interface InventoryContextType extends InventoryState {
     orders?: { [supplier: string]: any[] }
   ) => Promise<void>;
   loadSession: (dateKey: string) => Promise<void>;
-  deleteSession: (dateKey: string) => Promise<void>; // Nueva función
+  deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
+  // Nueva función para sincronizar desde Supabase
+  syncFromSupabase: () => Promise<void>;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
@@ -134,82 +138,66 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
-    SELECT
-        PG.Name AS Categoria,
-        P.Name AS Producto,
-        S.Quantity AS Stock_Actual,
-        COALESCE(
-            (
-                SELECT C_sub.Name
-                FROM DocumentItem DI_sub
-                JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
-                JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
-                JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
-                WHERE DI_sub.ProductId = P.Id
-                  AND DT_sub.Code = '100' -- Tipo de documento de compra
-                  AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                  AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
-                ORDER BY D_sub.Date DESC
-                LIMIT 1
-            ),
-            'Desconocido'
-        ) AS SupplierName
-    FROM
-        Stock S
-    JOIN
-        Product P ON P.Id = S.ProductId
-    JOIN
-        ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE
-        PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
-        AND PG.Name IN (
-            'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
-            'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
-            'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes',
-            'Tabacos', 'Comida'
-        )
-        AND P.IsEnabled = 1
+    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
+    COALESCE(
+      (
+        SELECT C_sub.Name
+        FROM DocumentItem DI_sub
+        JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+        JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+        JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+        WHERE DI_sub.ProductId = P.Id
+        AND DT_sub.Code = '100' -- Tipo de documento de compra
+        AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+        AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+        ORDER BY D_sub.Date DESC
+        LIMIT 1
+      ),
+      'Desconocido'
+    ) AS SupplierName
+    FROM Stock S
+    JOIN Product P ON P.Id = S.ProductId
+    JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
+    WHERE PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
+    AND PG.Name IN (
+      'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
+      'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
+      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes', 'Tabacos', 'Comida'
+    )
+    AND P.IsEnabled = 1
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
   const MONTHLY_INVENTORY_QUERY = `
-    SELECT
-        PG.Name AS Categoria,
-        P.Name AS Producto,
-        S.Quantity AS Stock_Actual,
-        COALESCE(
-            (
-                SELECT C_sub.Name
-                FROM DocumentItem DI_sub
-                JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
-                JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
-                JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
-                WHERE DI_sub.ProductId = P.Id
-                  AND DT_sub.Code = '100' -- Tipo de documento de compra
-                  AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
-                  AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
-                ORDER BY D_sub.Date DESC
-                LIMIT 1
-            ),
-            'Desconocido'
-        ) AS SupplierName
-    FROM
-        Stock S
-    JOIN
-        Product P ON P.Id = S.ProductId
-    JOIN
-        ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE
-        PG.Id IN (
-            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
-        )
-        AND PG.Name IN (
-            'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes',
-            'Tequilas', 'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes',
-            'Snacks', 'Personales', 'Six Packs', 'Conservas y Embutidos',
-            'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
-        )
-        AND P.IsEnabled = 1
+    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
+    COALESCE(
+      (
+        SELECT C_sub.Name
+        FROM DocumentItem DI_sub
+        JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+        JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+        JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+        WHERE DI_sub.ProductId = P.Id
+        AND DT_sub.Code = '100' -- Tipo de documento de compra
+        AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+        AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+        ORDER BY D_sub.Date DESC
+        LIMIT 1
+      ),
+      'Desconocido'
+    ) AS SupplierName
+    FROM Stock S
+    JOIN Product P ON P.Id = S.ProductId
+    JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
+    WHERE PG.Id IN (
+      4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
+    )
+    AND PG.Name IN (
+      'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes', 'Tequilas',
+      'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Personales',
+      'Six Packs', 'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
+    )
+    AND P.IsEnabled = 1
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
@@ -273,15 +261,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         });
 
         // Filtrar productos de los proveedores "KYR S.A.S" y "Desconocido"
-        processedInventory = processedInventory.filter(item => 
-          item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido"
-        );
+        processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
 
         dispatch({ type: 'SET_INVENTORY_DATA', payload: processedInventory });
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
-        
+
         const dateKey = format(new Date(), 'yyyy-MM-dd');
         const effectiveness = calculateEffectiveness(processedInventory);
+
+        // Guardar en Dexie
         await db.sessions.put({
           dateKey,
           inventoryType: type,
@@ -289,9 +277,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           timestamp: new Date(),
           effectiveness,
         });
+
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         showSuccess('Nueva sesión de inventario iniciada y guardada.');
-
       } catch (e: any) {
         console.error("Error processing database for inventory:", e);
         dispatch({ type: 'SET_ERROR', payload: e.message });
@@ -316,6 +304,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const effectiveness = calculateEffectiveness(data);
 
     try {
+      // Guardar en Dexie
       await db.sessions.put({
         dateKey,
         inventoryType: type,
@@ -324,9 +313,35 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         effectiveness,
         ordersBySupplier: orders,
       });
+
+      // Si no hay sessionId, establecerlo
       if (!state.sessionId) {
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       }
+
+      // Guardar en Supabase si está disponible
+      if (supabase) {
+        const { error } = await supabase
+          .from('inventory_sessions')
+          .upsert({
+            dateKey,
+            inventoryType: type,
+            inventoryData: data,
+            timestamp,
+            effectiveness,
+            ordersBySupplier: orders,
+          }, {
+            onConflict: 'dateKey' // Usar dateKey como clave para upsert
+          });
+
+        if (error) {
+          console.error("Error saving session to Supabase:", error);
+          // No mostrar error al usuario, solo loguear
+        } else {
+          console.log("Session saved to Supabase successfully.");
+        }
+      }
+
       showSuccess('Sesión guardada automáticamente.');
     } catch (e) {
       console.error("Error saving session:", e);
@@ -337,6 +352,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const loadSession = useCallback(async (dateKey: string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+
     try {
       const session = await db.sessions.get(dateKey);
       if (session) {
@@ -358,9 +374,28 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const deleteSession = useCallback(async (dateKey: string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+
     try {
+      // Eliminar de Dexie
       await db.sessions.delete(dateKey);
+      
+      // Eliminar de Supabase si está disponible
+      if (supabase) {
+        const { error } = await supabase
+          .from('inventory_sessions')
+          .delete()
+          .eq('dateKey', dateKey);
+
+        if (error) {
+          console.error("Error deleting session from Supabase:", error);
+          // No mostrar error al usuario, solo loguear
+        } else {
+          console.log("Session deleted from Supabase successfully.");
+        }
+      }
+
       showSuccess(`Sesión del ${dateKey} eliminada.`);
+
       // Si la sesión eliminada era la que estaba cargada, resetear el estado
       if (state.sessionId === dateKey) {
         dispatch({ type: 'RESET_STATE' });
@@ -384,6 +419,63 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, []);
 
+  // Nueva función para sincronizar desde Supabase
+  const syncFromSupabase = useCallback(async () => {
+    // Solo intentar sincronizar si Supabase está disponible
+    if (!supabase) {
+      console.log("Supabase not available, skipping sync.");
+      return;
+    }
+
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      // Verificar si hay sesiones locales
+      const localSessions = await db.sessions.toArray();
+      
+      // Si ya hay sesiones locales, no sincronizar (para evitar sobrescritura)
+      if (localSessions.length > 0) {
+        console.log("Local sessions found, skipping Supabase sync.");
+        return;
+      }
+
+      // Obtener sesiones desde Supabase
+      const { data, error } = await supabase
+        .from('inventory_sessions')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (error) {
+        console.error("Error fetching sessions from Supabase:", error);
+        // No mostrar error al usuario, solo loguear
+        return;
+      }
+
+      // Guardar sesiones en Dexie
+      if (data && data.length > 0) {
+        for (const session of data) {
+          await db.sessions.put({
+            dateKey: session.dateKey,
+            inventoryType: session.inventoryType,
+            inventoryData: session.inventoryData,
+            timestamp: new Date(session.timestamp),
+            effectiveness: session.effectiveness,
+            ordersBySupplier: session.ordersBySupplier,
+          });
+        }
+        console.log(`Synced ${data.length} sessions from Supabase to local storage.`);
+      } else {
+        console.log("No sessions found in Supabase to sync.");
+      }
+    } catch (e) {
+      console.error("Error during Supabase sync:", e);
+      // No mostrar error al usuario, solo loguear
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, []);
+
   useEffect(() => {
     // Este useEffect ahora solo se encarga de disparar processInventoryData
     // si dbBuffer y inventoryType están presentes y no hay una sesión activa cargada.
@@ -400,9 +492,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     processInventoryData,
     saveCurrentSession,
     loadSession,
-    deleteSession, // Añadir la nueva función al contexto
+    deleteSession,
     getSessionHistory,
     resetInventoryState,
+    syncFromSupabase, // Añadir la nueva función al contexto
   }), [
     state,
     setDbBuffer,
@@ -414,6 +507,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     deleteSession,
     getSessionHistory,
     resetInventoryState,
+    syncFromSupabase,
   ]);
 
   return (

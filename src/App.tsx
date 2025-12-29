@@ -7,7 +7,33 @@ import InventoryDashboard from "./pages/InventoryDashboard";
 import OrdersPage from "./pages/OrdersPage";
 import NotFound from "./pages/NotFound";
 import { Layout } from "./components/Layout";
-import { InventoryProvider } from "./context/InventoryContext"; // Importar el proveedor de contexto
+import { InventoryProvider, useInventoryContext } from "./context/InventoryContext";
+import { useEffect } from "react";
+
+// Componente para manejar la sincronización inicial
+const AppInitializer = () => {
+  const { syncFromSupabase, getSessionHistory } = useInventoryContext();
+
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        // Verificar si hay sesiones locales
+        const localSessions = await getSessionHistory();
+        
+        // Si no hay sesiones locales, intentar sincronizar desde Supabase
+        if (localSessions.length === 0) {
+          await syncFromSupabase();
+        }
+      } catch (error) {
+        console.error("Error during app initialization:", error);
+      }
+    };
+
+    initializeApp();
+  }, [syncFromSupabase, getSessionHistory]);
+
+  return null;
+};
 
 const queryClient = new QueryClient();
 
@@ -17,7 +43,8 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <InventoryProvider> {/* Envolver con InventoryProvider */}
+        <InventoryProvider>
+          <AppInitializer />
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<Navigate to="/inventario" replace />} />
