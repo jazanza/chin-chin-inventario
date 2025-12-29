@@ -4,7 +4,6 @@ import productData from "@/data/product-data.json";
 import { db, InventorySession } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
-import { remoteDb, SESSIONS_KEY } from '../lib/remoteDb'; // Importar Upstash
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -243,20 +242,32 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       // 1. Guardar en local (Dexie)
       await db.sessions.put(sessionData);
 
-      // 2. Guardar en la NUBE (Upstash/Vercel)
-      // Usamos la dateKey como identificador dentro de un objeto de Redis
-      await remoteDb.hset(SESSIONS_KEY, {
-        [sessionData.dateKey]: sessionData
-      });
+      // 2. Guardar en la NUBE (a través de la API Route)
+      try {
+        const response = await fetch('/api/inventory', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(sessionData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+        showSuccess('Sesión guardada automáticamente y sincronizada con la nube.');
+      } catch (cloudError) {
+        console.warn("Error al sincronizar con la nube, guardando solo localmente:", cloudError);
+        showError('Error al sincronizar con la nube. Guardado localmente.');
+      }
 
       if (!state.sessionId) {
         dispatch({ type: 'SET_SESSION_ID', payload: sessionData.dateKey });
       }
-      showSuccess('Sesión guardada automáticamente y sincronizada con la nube.');
-      console.log("Sincronizado con la nube con éxito");
     } catch (e) {
-      console.error("Error al guardar/sincronizar la sesión:", e);
-      showError('Error al guardar la sesión o sincronizar con la nube.');
+      console.error("Error al guardar la sesión localmente:", e);
+      showError('Error al guardar la sesión localmente.');
     }
   }, [state.sessionId]); // Dependencia de state.sessionId
 
@@ -286,9 +297,28 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
       await db.sessions.delete(dateKey);
-      // También eliminar de la nube
-      await remoteDb.hdel(SESSIONS_KEY, dateKey);
-      showSuccess(`Sesión del ${dateKey} eliminada y sincronizada.`);
+      showSuccess(`Sesión del ${dateKey} eliminada localmente.`);
+
+      // Intentar eliminar de la nube
+      try {
+        const response = await fetch('/api/inventory', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ dateKey }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+        showSuccess(`Sesión del ${dateKey} eliminada y sincronizada.`);
+      } catch (cloudError) {
+        console.warn("Error al eliminar de la nube, eliminada solo localmente:", cloudError);
+        showError('Error al eliminar de la nube. Eliminada solo localmente.');
+      }
+
       // Si la sesión eliminada era la que estaba cargada, resetear el estado
       if (state.sessionId === dateKey) {
         dispatch({ type: 'RESET_STATE' });
@@ -382,7 +412,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           effectiveness,
         };
 
-        // Guardar en local (Dexie) y en la nube (Upstash)
+        // Guardar en local (Dexie) y en la nube (a través de la API Route)
         await saveCurrentSession(newSession);
         
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
@@ -403,21 +433,30 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   useEffect(() => {
     const syncWithCloud = async () => {
       try {
-        // Pedimos todas las sesiones de la nube
-        const cloudSessions: Record<string, InventorySession> | null = await remoteDb.hgetall(SESSIONS_KEY);
+        // Pedimos todas las sesiones de la nube a través de la API Route
+        const response = await fetch('/api/inventory', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const cloudSessions: Record<string, InventorySession> = await response.json();
         
         if (cloudSessions) {
-          // Las metemos todas en Dexie (local). 
-          // Dexie es inteligente: si ya existe y es igual, no hace nada; si es nueva, la añade.
           const sessionsArray = Object.values(cloudSessions);
           await db.sessions.bulkPut(sessionsArray);
           
-          // Refrescamos el historial en la interfaz
           await getSessionHistory(); // Llama a getSessionHistory para actualizar el estado
           showSuccess('Sesiones sincronizadas desde la nube.');
         }
       } catch (error) {
-        console.log("Modo offline o error de sincronización con la nube:", error);
+        console.warn("Modo offline o error de sincronización con la nube:", error);
         showError('No se pudo sincronizar con la nube. Trabajando en modo offline.');
       }
     };
