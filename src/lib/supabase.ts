@@ -14,6 +14,11 @@ interface ImportMeta {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+console.log('Supabase environment variables:', {
+  url: supabaseUrl ? 'URL present' : 'URL missing',
+  key: supabaseAnonKey ? 'Key present' : 'Key missing'
+});
+
 // Validar que las variables de entorno estén presentes
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase URL or Anon Key is missing. Supabase features will be disabled.');

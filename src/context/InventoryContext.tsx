@@ -321,7 +321,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       // Guardar en Supabase si está disponible
       if (supabase) {
-        const { error } = await supabase
+        console.log("Attempting to save session to Supabase with data:", {
+          dateKey,
+          inventoryType: type,
+          inventoryDataLength: data.length,
+          timestamp,
+          effectiveness,
+          hasOrders: !!orders
+        });
+
+        const { data: supabaseData, error } = await supabase
           .from('inventory_sessions')
           .upsert({
             dateKey,
@@ -336,10 +345,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         if (error) {
           console.error("Error saving session to Supabase:", error);
+          console.error("Error details:", {
+            message: error.message,
+            code: error.code,
+            hint: error.hint,
+            details: error.details
+          });
           // No mostrar error al usuario, solo loguear
         } else {
-          console.log("Session saved to Supabase successfully.");
+          console.log("Session saved to Supabase successfully:", supabaseData);
         }
+      } else {
+        console.log("Supabase client not available, skipping save to Supabase");
       }
 
       showSuccess('Sesión guardada automáticamente.');
@@ -440,6 +457,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
+      console.log("Attempting to fetch sessions from Supabase...");
+      
       // Obtener sesiones desde Supabase
       const { data, error } = await supabase
         .from('inventory_sessions')
@@ -448,9 +467,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       if (error) {
         console.error("Error fetching sessions from Supabase:", error);
+        console.error("Error details:", {
+          message: error.message,
+          code: error.code,
+          hint: error.hint,
+          details: error.details
+        });
         // No mostrar error al usuario, solo loguear
         return;
       }
+
+      console.log("Successfully fetched sessions from Supabase:", data?.length || 0, "sessions found");
 
       // Guardar sesiones en Dexie
       if (data && data.length > 0) {
