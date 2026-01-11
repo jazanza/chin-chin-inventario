@@ -1,6 +1,6 @@
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
-import productData from "@/data/product-data.json";
+import productData from "@/data/product-data.json"; // Mantener por ahora, aunque su uso se reducirá
 import { db, InventorySession, MasterProductConfig, ProductRule, SupplierConfig } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
+  ProductId: number; // Añadido ProductId
   Categoria: string;
   Producto: string;
   Stock_Actual: number;
@@ -17,7 +18,7 @@ export interface InventoryItemFromDB {
 
 // Interfaz para los datos de inventario procesados
 export interface InventoryItem {
-  productId: number;
+  productId: number; // Ahora es la clave principal
   productName: string;
   category: string;
   systemQuantity: number;
@@ -26,7 +27,6 @@ export interface InventoryItem {
   supplier: string;
   hasBeenEdited?: boolean;
   rules: ProductRule[]; // Lista de reglas de stock/pedido
-  // Eliminado: minProductOrder: number; // Mínimo de unidades a pedir para este producto
 }
 
 // --- Reducer Setup ---
@@ -110,7 +110,7 @@ interface InventoryContextType extends InventoryState {
   resetInventoryState: () => void;
   syncFromSupabase: () => Promise<void>;
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
-  deleteMasterProductConfig: (productName: string) => Promise<void>;
+  deleteMasterProductConfig: (productId: number) => Promise<void>; // Cambiado a productId
   loadMasterProductConfigs: () => Promise<MasterProductConfig[]>;
 }
 
@@ -150,7 +150,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
-    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
+    SELECT P.Id AS ProductId, PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
     COALESCE(
       (
         SELECT C_sub.Name
@@ -181,7 +181,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   `;
 
   const MONTHLY_INVENTORY_QUERY = `
-    SELECT PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
+    SELECT P.Id AS ProductId, PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
     COALESCE(
       (
         SELECT C_sub.Name
@@ -213,9 +213,36 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
+  // Nueva consulta SQL para obtener TODOS los productos habilitados para la configuración maestra
+  const ALL_PRODUCTS_QUERY = `
+    SELECT P.Id AS ProductId, PG.Name AS Categoria, P.Name AS Producto, S.Quantity AS Stock_Actual,
+    COALESCE(
+      (
+        SELECT C_sub.Name
+        FROM DocumentItem DI_sub
+        JOIN Document D_sub ON D_sub.Id = DI_sub.DocumentId
+        JOIN DocumentType DT_sub ON DT_sub.Id = D_sub.DocumentTypeId
+        JOIN Customer C_sub ON C_sub.Id = D_sub.CustomerId
+        WHERE DI_sub.ProductId = P.Id
+        AND DT_sub.Code = '100' -- Tipo de documento de compra
+        AND C_sub.IsSupplier = 1 -- Debe ser un proveedor
+        AND C_sub.IsEnabled = 1 -- El proveedor debe estar habilitado
+        ORDER BY D_sub.Date DESC
+        LIMIT 1
+      ),
+      'Desconocido'
+    ) AS SupplierName
+    FROM Stock S
+    JOIN Product P ON P.Id = S.ProductId
+    JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
+    WHERE P.IsEnabled = 1
+    ORDER BY PG.Name ASC, P.Name ASC;
+  `;
+
   const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
-      const localConfigs = await db.productRules.toArray();
+      // Cargar solo las configuraciones que no están ocultas
+      const localConfigs = await db.productRules.where('isHidden').notEqual(true).toArray();
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
       return localConfigs;
     } catch (e) {
@@ -227,13 +254,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
     try {
-      await db.productRules.put(config);
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() }); // Refrescar configs
+      await db.productRules.put(config); // Dexie usa productId como clave
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
 
       if (supabase) {
         const { error } = await supabase
           .from('product_rules')
-          .upsert(config, { onConflict: 'productName' });
+          .upsert(config, { onConflict: 'productId' }); // Usar productId como clave de conflicto
 
         if (error) {
           console.error("Error saving master product config to Supabase:", error);
@@ -241,37 +268,51 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log("Master product config saved to Supabase successfully.");
         }
       }
-      // showSuccess(`Configuración para ${config.productName} guardada.`); // Feedback handled by SettingsPage
     } catch (e) {
       console.error("Error saving master product config:", e);
-      // showError('Error al guardar la configuración de producto.'); // Feedback handled by SettingsPage
-      throw e; // Re-throw to allow SettingsPage to catch and show error feedback
+      throw e;
     }
   }, []);
 
-  const deleteMasterProductConfig = useCallback(async (productName: string) => {
+  const deleteMasterProductConfig = useCallback(async (productId: number) => { // Cambiado a productId
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
     try {
-      await db.productRules.delete(productName);
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() }); // Refrescar configs
+      // Realizar borrado suave: actualizar isHidden a true
+      await db.productRules.update(productId, { isHidden: true });
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
 
       if (supabase) {
         const { error } = await supabase
           .from('product_rules')
-          .delete()
-          .eq('productName', productName);
+          .update({ isHidden: true })
+          .eq('productId', productId); // Usar productId para la condición
 
         if (error) {
-          console.error("Error deleting master product config from Supabase:", error);
+          console.error("Error soft-deleting master product config from Supabase:", error);
         } else {
-          console.log("Master product config deleted from Supabase successfully.");
+          console.log("Master product config soft-deleted from Supabase successfully.");
         }
       }
-      showSuccess(`Configuración para ${productName} eliminada.`);
+      showSuccess(`Configuración de producto eliminada (ocultada).`);
+
+      // Si el producto eliminado estaba en el inventario actual, actualizarlo
+      if (state.inventoryData.some(item => item.productId === productId)) {
+        const updatedInventory = state.inventoryData.filter(item => item.productId !== productId);
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: updatedInventory });
+        if (state.sessionId && state.inventoryType) {
+          await saveCurrentSession(updatedInventory, state.inventoryType, new Date());
+        }
+      }
+
     } catch (e) {
-      console.error("Error deleting master product config:", e);
+      console.error("Error soft-deleting master product config:", e);
       showError('Error al eliminar la configuración de producto.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, []);
+  }, [state.inventoryData, state.sessionId, state.inventoryType, saveCurrentSession]);
 
   const processInventoryData = useCallback(
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
@@ -296,9 +337,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         );
         dbInstance.close();
 
-        // Cargar las configuraciones maestras existentes
-        const existingMasterProductConfigs = await db.productRules.toArray();
-        const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productName, config]));
+        // Cargar las configuraciones maestras existentes (incluyendo ocultas para referencia)
+        const allMasterProductConfigs = await db.productRules.toArray();
+        const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
 
         let processedInventory: InventoryItem[] = [];
         const newMasterConfigsToSave: MasterProductConfig[] = [];
@@ -326,40 +367,56 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             (p) => p.productName === dbItem.Producto
           );
 
-          let masterConfig = masterProductConfigsMap.get(dbItem.Producto);
+          let masterConfig = masterProductConfigsMap.get(dbItem.ProductId);
 
           if (!masterConfig) {
             // Si no existe una configuración maestra, crear una nueva con valores por defecto
             masterConfig = {
+              productId: dbItem.ProductId,
               productName: dbItem.Producto,
               rules: [], // Inicializar con array vacío
               supplier: supplierName, // Usar el proveedor detectado inicialmente
+              isHidden: false, // Por defecto no oculto
             };
             newMasterConfigsToSave.push(masterConfig);
-            masterProductConfigsMap.set(dbItem.Producto, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
+            masterProductConfigsMap.set(dbItem.ProductId, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
+          } else {
+            // Si ya existe, actualizar el nombre y proveedor si han cambiado en la DB, pero NO el isHidden
+            masterConfig = {
+              ...masterConfig,
+              productName: dbItem.Producto, // Actualizar nombre si ha cambiado
+              supplier: supplierName, // Actualizar proveedor si ha cambiado
+            };
+            // Si el producto estaba oculto y reaparece en la DB, no lo desocultamos automáticamente
+            // Si se quiere desocultar, debe hacerse manualmente en la configuración
+            newMasterConfigsToSave.push(masterConfig); // Añadir para posible actualización
           }
 
-          processedInventory.push({
-            productId: matchedProductData?.productId || 0,
-            productName: dbItem.Producto,
-            category: dbItem.Categoria,
-            systemQuantity: dbItem.Stock_Actual,
-            physicalQuantity: dbItem.Stock_Actual,
-            averageSales: matchedProductData?.averageSales || 0,
-            supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
-            hasBeenEdited: false,
-            rules: masterConfig.rules, // Usar las reglas de la configuración maestra
-          });
+          // Solo añadir al inventario si no está oculto
+          if (!masterConfig.isHidden) {
+            processedInventory.push({
+              productId: dbItem.ProductId,
+              productName: dbItem.Producto,
+              category: dbItem.Categoria,
+              systemQuantity: dbItem.Stock_Actual,
+              physicalQuantity: dbItem.Stock_Actual,
+              averageSales: matchedProductData?.averageSales || 0,
+              supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
+              hasBeenEdited: false,
+              rules: masterConfig.rules, // Usar las reglas de la configuración maestra
+            });
+          }
         });
 
-        // Guardar las nuevas configuraciones maestras creadas
+        // Guardar las nuevas configuraciones maestras creadas o actualizadas
         if (newMasterConfigsToSave.length > 0) {
           await db.productRules.bulkPut(newMasterConfigsToSave);
-          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() }); // Actualizar estado global
-          console.log(`Saved ${newMasterConfigsToSave.length} new master product configs.`);
+          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Actualizar estado global sin ocultos
+          console.log(`Saved ${newMasterConfigsToSave.length} new or updated master product configs.`);
         }
 
         // Filtrar productos de los proveedores "KYR S.A.S" y "Desconocido"
+        // Este filtro se aplica al inventario actual, no a la configuración maestra
         processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
 
         dispatch({ type: 'SET_INVENTORY_DATA', payload: processedInventory });
@@ -399,17 +456,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     try {
       await initDb();
       const dbInstance = loadDb(buffer);
-      // Usar la consulta mensual para obtener la lista más completa de productos
+      // Usar la consulta ALL_PRODUCTS_QUERY para obtener la lista más completa de productos
       const rawInventoryItems: InventoryItemFromDB[] = queryData(
         dbInstance,
-        MONTHLY_INVENTORY_QUERY
+        ALL_PRODUCTS_QUERY // Usar la nueva consulta amplia
       );
       dbInstance.close();
 
-      const existingMasterProductConfigs = await db.productRules.toArray();
-      const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productName, config]));
+      const existingMasterProductConfigs = await db.productRules.toArray(); // Obtener todas las configs, incluyendo ocultas
+      const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productId, config]));
 
-      const newMasterConfigsToSave: MasterProductConfig[] = [];
+      const configsToUpdateOrAdd: MasterProductConfig[] = [];
+      let newProductsCount = 0;
 
       rawInventoryItems.forEach((dbItem) => {
         let supplierName = dbItem.SupplierName;
@@ -426,29 +484,47 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           supplierName = "AC Bebidas (Coca Cola)";
         }
 
-        const matchedProductData = productData.find(
-          (p) => p.productName === dbItem.Producto
-        );
-
-        let masterConfig = masterProductConfigsMap.get(dbItem.Producto);
+        let masterConfig = masterProductConfigsMap.get(dbItem.ProductId);
 
         if (!masterConfig) {
+          // Si no existe, es un producto nuevo
           masterConfig = {
+            productId: dbItem.ProductId,
             productName: dbItem.Producto,
             rules: [], // Inicializar con array vacío
             supplier: supplierName,
+            isHidden: false, // Por defecto no oculto
           };
-          newMasterConfigsToSave.push(masterConfig);
-          masterProductConfigsMap.set(dbItem.Producto, masterConfig);
+          newProductsCount++;
+          configsToUpdateOrAdd.push(masterConfig);
+        } else {
+          // Si existe, actualizar nombre y proveedor si han cambiado, pero mantener isHidden
+          const updatedConfig = {
+            ...masterConfig,
+            productName: dbItem.Producto, // Actualizar nombre si ha cambiado
+            supplier: supplierName, // Actualizar proveedor si ha cambiado
+            // isHidden se mantiene como está, no se sobrescribe
+          };
+          // Solo añadir a la lista de actualización si hay cambios relevantes
+          if (
+            masterConfig.productName !== updatedConfig.productName ||
+            masterConfig.supplier !== updatedConfig.supplier
+          ) {
+            configsToUpdateOrAdd.push(updatedConfig);
+          }
         }
       });
 
-      if (newMasterConfigsToSave.length > 0) {
-        await db.productRules.bulkPut(newMasterConfigsToSave);
-        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() });
-        showSuccess(`Se agregaron ${newMasterConfigsToSave.length} nuevos productos a la configuración maestra.`);
+      if (configsToUpdateOrAdd.length > 0) {
+        await db.productRules.bulkPut(configsToUpdateOrAdd);
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Actualizar estado global sin ocultos
+        if (newProductsCount > 0) {
+          showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra.`);
+        } else {
+          showSuccess('Configuraciones de productos actualizadas.');
+        }
       } else {
-        showSuccess('No se encontraron nuevos productos para agregar a la configuración maestra.');
+        showSuccess('No se encontraron nuevos productos para agregar o actualizar en la configuración maestra.');
       }
 
     } catch (e: any) {
@@ -550,7 +626,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const session = await db.sessions.get(dateKey);
       if (session) {
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData });
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData);
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         showSuccess(`Sesión del ${dateKey} cargada.`);
       } else {
@@ -667,7 +743,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           for (const config of configsData) {
             await db.productRules.put(config);
           }
-          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configsData });
+          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configsData.filter(c => !c.isHidden) }); // Filtrar ocultos
           console.log(`Synced ${configsData.length} product rules from Supabase to local storage.`);
         } else {
           console.log("No product rules found in Supabase to sync.");

@@ -20,13 +20,14 @@ export interface ProductRule {
 
 // Define la estructura de una Regla de Producto configurable por el usuario (MasterProductConfig)
 export interface MasterProductConfig {
-  productName: string; // Clave principal para la regla
+  productId: number; // Nueva clave principal: ID único del producto de Aronium
+  productName: string; // Nombre del producto (para visualización)
   rules: ProductRule[]; // Lista de reglas de stock/pedido
-  // Eliminado: minProductOrder: number; // Mínimo de unidades a pedir para este producto
-  supplier: string; // Ahora parte de la configuración global
+  supplier: string; // Proveedor asociado
+  isHidden?: boolean; // Nuevo campo para el borrado suave
 }
 
-// Define la estructura de la configuración por proveedor
+// Define la estructura de la configuración por proveedor (sin cambios por ahora)
 export interface SupplierConfig {
   supplierName: string; // Clave principal para el proveedor
 }
@@ -35,7 +36,7 @@ export class SessionDatabase extends Dexie {
   // Define la tabla principal para sesiones
   sessions!: Table<InventorySession, string>;
   // Define la tabla para reglas de producto (ahora MasterProductConfig)
-  productRules!: Table<MasterProductConfig, string>;
+  productRules!: Table<MasterProductConfig, number>; // Cambiado a 'number' para productId
   // Define la tabla para configuraciones de proveedor
   supplierConfigs!: Table<SupplierConfig, string>;
 
@@ -43,7 +44,7 @@ export class SessionDatabase extends Dexie {
     super('ChinChinDB');
     this.version(1).stores({
       sessions: 'dateKey, timestamp',
-      productRules: 'productName', // Clave principal por nombre de producto
+      productRules: 'productId', // Clave principal por productId
       supplierConfigs: 'supplierName', // Clave principal por nombre de proveedor
     });
   }
