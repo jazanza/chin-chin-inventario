@@ -128,6 +128,7 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
 
+  // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
     dispatch({ type: 'SET_DB_BUFFER', payload: buffer });
   }, []);
@@ -147,6 +148,232 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const resetInventoryState = useCallback(() => {
     dispatch({ type: 'RESET_STATE' });
   }, []);
+
+  // --- Core Persistence Functions (Sessions) ---
+  const saveCurrentSession = useCallback(async (
+    data: InventoryItem[],
+    type: "weekly" | "monthly",
+    timestamp: Date,
+    orders?: { [supplier: string]: any[] }
+  ) => {
+    if (!data || data.length === 0) return;
+
+    const dateKey = format(timestamp, 'yyyy-MM-dd');
+    const effectiveness = calculateEffectiveness(data);
+
+    try {
+      // Recuperar la sesión existente para preservar ordersBySupplier si no se proporciona
+      const existingSession = await db.sessions.get(dateKey);
+      const ordersToSave = orders !== undefined ? orders : existingSession?.ordersBySupplier;
+
+      // Guardar en Dexie
+      await db.sessions.put({
+        dateKey,
+        inventoryType: type,
+        inventoryData: data,
+        timestamp,
+        effectiveness,
+        ordersBySupplier: ordersToSave,
+      });
+
+      // Si no hay sessionId, establecerlo
+      if (!state.sessionId) {
+        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+      }
+
+      // Guardar en Supabase si está disponible
+      if (supabase) {
+        console.log("Attempting to save session to Supabase with data:", {
+          dateKey,
+          inventoryType: type,
+          inventoryDataLength: data.length,
+          timestamp,
+          effectiveness,
+          hasOrders: !!ordersToSave
+        });
+
+        const { data: supabaseData, error } = await supabase
+          .from('inventory_sessions')
+          .upsert({
+            dateKey,
+            inventoryType: type,
+            inventoryData: data,
+            timestamp,
+            effectiveness,
+            ordersBySupplier: ordersToSave,
+          }, {
+            onConflict: 'dateKey' // Usar dateKey como clave para upsert
+          });
+
+        if (error) {
+          console.error("Error saving session to Supabase:", error);
+          console.error("Error details:", {
+            message: error.message,
+            code: error.code,
+            hint: error.hint,
+            details: error.details
+          });
+          // No mostrar error al usuario, solo loguear
+        } else {
+          console.log("Session saved to Supabase successfully:", supabaseData);
+        }
+      } else {
+        console.log("Supabase client not available, skipping save to Supabase");
+      }
+
+      // showSuccess('Sesión guardada automáticamente.'); // Feedback handled by calling component
+    } catch (e) {
+      console.error("Error saving session:", e);
+      // showError('Error al guardar la sesión.'); // Feedback handled by calling component
+      throw e; // Re-throw to allow calling component to catch and show error feedback
+    }
+  }, [state.sessionId]);
+
+  const loadSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      const session = await db.sessions.get(dateKey);
+      if (session) {
+        dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData });
+        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+        showSuccess(`Sesión del ${dateKey} cargada.`);
+      } else {
+        showError('No se encontró la sesión.');
+      }
+    } catch (e) {
+      console.error("Error loading session:", e);
+      showError('Error al cargar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, []);
+
+  const deleteSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      // Eliminar de Dexie
+      await db.sessions.delete(dateKey);
+      
+      // Eliminar de Supabase si está disponible
+      if (supabase) {
+        const { error } = await supabase
+          .from('inventory_sessions')
+          .delete()
+          .eq('dateKey', dateKey);
+
+        if (error) {
+          console.error("Error deleting session from Supabase:", error);
+          // No mostrar error al usuario, solo loguear
+        } else {
+          console.log("Session deleted from Supabase successfully.");
+        }
+      }
+
+      showSuccess(`Sesión del ${dateKey} eliminada.`);
+
+      // Si la sesión eliminada era la que estaba cargada, resetear el estado
+      if (state.sessionId === dateKey) {
+        dispatch({ type: 'RESET_STATE' });
+        dispatch({ type: 'SET_SESSION_ID', payload: null });
+      }
+    } catch (e) {
+      console.error("Error deleting session:", e);
+      showError('Error al eliminar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [state.sessionId]);
+
+  const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
+    try {
+      return await db.sessions.orderBy('timestamp').reverse().toArray();
+    } catch (e) {
+      console.error("Error fetching session history:", e);
+      showError('Error al obtener el historial de sesiones.');
+      return [];
+    }
+  }, []);
+
+  // --- Master Product Config Persistence ---
+  const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
+    try {
+      // Cargar solo las configuraciones que no están ocultas
+      const localConfigs = await db.productRules.where('isHidden').notEqual(true).toArray();
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
+      return localConfigs;
+    } catch (e) {
+      console.error("Error fetching master product configs from Dexie:", e);
+      showError('Error al obtener las configuraciones de producto.');
+      return [];
+    }
+  }, []);
+
+  const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
+    try {
+      await db.productRules.put(config); // Dexie usa productId como clave
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
+
+      if (supabase) {
+        const { error } = await supabase
+          .from('product_rules')
+          .upsert(config, { onConflict: 'productId' }); // Usar productId como clave de conflicto
+
+        if (error) {
+          console.error("Error saving master product config to Supabase:", error);
+        } else {
+          console.log("Master product config saved to Supabase successfully.");
+        }
+      }
+    } catch (e) {
+      console.error("Error saving master product config:", e);
+      throw e;
+    }
+  }, []);
+
+  const deleteMasterProductConfig = useCallback(async (productId: number) => { // Cambiado a productId
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      // Realizar borrado suave: actualizar isHidden a true
+      await db.productRules.update(productId, { isHidden: true });
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
+
+      if (supabase) {
+        const { error } = await supabase
+          .from('product_rules')
+          .update({ isHidden: true })
+          .eq('productId', productId); // Usar productId para la condición
+
+        if (error) {
+          console.error("Error soft-deleting master product config from Supabase:", error);
+        } else {
+          console.log("Master product config soft-deleted from Supabase successfully.");
+        }
+      }
+      showSuccess(`Configuración de producto eliminada (ocultada).`);
+
+      // Si el producto eliminado estaba en el inventario actual, actualizarlo
+      if (state.inventoryData.some(item => item.productId === productId)) {
+        const updatedInventory = state.inventoryData.filter(item => item.productId !== productId);
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: updatedInventory });
+        if (state.sessionId && state.inventoryType) {
+          await saveCurrentSession(updatedInventory, state.inventoryType, new Date());
+        }
+      }
+
+    } catch (e) {
+      console.error("Error soft-deleting master product config:", e);
+      showError('Error al eliminar la configuración de producto.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [state.inventoryData, state.sessionId, state.inventoryType, saveCurrentSession]);
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
@@ -239,81 +466,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
-  const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
-    try {
-      // Cargar solo las configuraciones que no están ocultas
-      const localConfigs = await db.productRules.where('isHidden').notEqual(true).toArray();
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
-      return localConfigs;
-    } catch (e) {
-      console.error("Error fetching master product configs from Dexie:", e);
-      showError('Error al obtener las configuraciones de producto.');
-      return [];
-    }
-  }, []);
-
-  const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
-    try {
-      await db.productRules.put(config); // Dexie usa productId como clave
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
-
-      if (supabase) {
-        const { error } = await supabase
-          .from('product_rules')
-          .upsert(config, { onConflict: 'productId' }); // Usar productId como clave de conflicto
-
-        if (error) {
-          console.error("Error saving master product config to Supabase:", error);
-        } else {
-          console.log("Master product config saved to Supabase successfully.");
-        }
-      }
-    } catch (e) {
-      console.error("Error saving master product config:", e);
-      throw e;
-    }
-  }, []);
-
-  const deleteMasterProductConfig = useCallback(async (productId: number) => { // Cambiado a productId
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-
-    try {
-      // Realizar borrado suave: actualizar isHidden a true
-      await db.productRules.update(productId, { isHidden: true });
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
-
-      if (supabase) {
-        const { error } = await supabase
-          .from('product_rules')
-          .update({ isHidden: true })
-          .eq('productId', productId); // Usar productId para la condición
-
-        if (error) {
-          console.error("Error soft-deleting master product config from Supabase:", error);
-        } else {
-          console.log("Master product config soft-deleted from Supabase successfully.");
-        }
-      }
-      showSuccess(`Configuración de producto eliminada (ocultada).`);
-
-      // Si el producto eliminado estaba en el inventario actual, actualizarlo
-      if (state.inventoryData.some(item => item.productId === productId)) {
-        const updatedInventory = state.inventoryData.filter(item => item.productId !== productId);
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: updatedInventory });
-        if (state.sessionId && state.inventoryType) {
-          await saveCurrentSession(updatedInventory, state.inventoryType, new Date());
-        }
-      }
-
-    } catch (e) {
-      console.error("Error soft-deleting master product config:", e);
-      showError('Error al eliminar la configuración de producto.');
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, [state.inventoryData, state.sessionId, state.inventoryType, saveCurrentSession]);
-
+  // --- DB Processing Functions ---
   const processInventoryData = useCallback(
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
       dispatch({ type: 'SET_LOADING', payload: true });
@@ -444,7 +597,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Database inventory processing finished.");
       }
     },
-    []
+    [saveCurrentSession] // Añadir saveCurrentSession a las dependencias
   );
 
   // Nueva función para procesar DB solo para configuraciones maestras
@@ -498,7 +651,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           newProductsCount++;
           configsToUpdateOrAdd.push(masterConfig);
         } else {
-          // Si existe, actualizar nombre y proveedor si han cambiado, pero mantener isHidden
+          // Si existe, actualizar nombre y proveedor si han cambiado en la DB, pero mantener isHidden
           const updatedConfig = {
             ...masterConfig,
             productName: dbItem.Producto, // Actualizar nombre si ha cambiado
@@ -537,156 +690,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, []);
 
-
-  // --- Persistencia de Sesiones ---
-  const saveCurrentSession = useCallback(async (
-    data: InventoryItem[],
-    type: "weekly" | "monthly",
-    timestamp: Date,
-    orders?: { [supplier: string]: any[] }
-  ) => {
-    if (!data || data.length === 0) return;
-
-    const dateKey = format(timestamp, 'yyyy-MM-dd');
-    const effectiveness = calculateEffectiveness(data);
-
-    try {
-      // Recuperar la sesión existente para preservar ordersBySupplier si no se proporciona
-      const existingSession = await db.sessions.get(dateKey);
-      const ordersToSave = orders !== undefined ? orders : existingSession?.ordersBySupplier;
-
-      // Guardar en Dexie
-      await db.sessions.put({
-        dateKey,
-        inventoryType: type,
-        inventoryData: data,
-        timestamp,
-        effectiveness,
-        ordersBySupplier: ordersToSave,
-      });
-
-      // Si no hay sessionId, establecerlo
-      if (!state.sessionId) {
-        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
-      }
-
-      // Guardar en Supabase si está disponible
-      if (supabase) {
-        console.log("Attempting to save session to Supabase with data:", {
-          dateKey,
-          inventoryType: type,
-          inventoryDataLength: data.length,
-          timestamp,
-          effectiveness,
-          hasOrders: !!ordersToSave
-        });
-
-        const { data: supabaseData, error } = await supabase
-          .from('inventory_sessions')
-          .upsert({
-            dateKey,
-            inventoryType: type,
-            inventoryData: data,
-            timestamp,
-            effectiveness,
-            ordersBySupplier: ordersToSave,
-          }, {
-            onConflict: 'dateKey' // Usar dateKey como clave para upsert
-          });
-
-        if (error) {
-          console.error("Error saving session to Supabase:", error);
-          console.error("Error details:", {
-            message: error.message,
-            code: error.code,
-            hint: error.hint,
-            details: error.details
-          });
-          // No mostrar error al usuario, solo loguear
-        } else {
-          console.log("Session saved to Supabase successfully:", supabaseData);
-        }
-      } else {
-        console.log("Supabase client not available, skipping save to Supabase");
-      }
-
-      // showSuccess('Sesión guardada automáticamente.'); // Feedback handled by calling component
-    } catch (e) {
-      console.error("Error saving session:", e);
-      // showError('Error al guardar la sesión.'); // Feedback handled by calling component
-      throw e; // Re-throw to allow calling component to catch and show error feedback
-    }
-  }, [state.sessionId]);
-
-  const loadSession = useCallback(async (dateKey: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-
-    try {
-      const session = await db.sessions.get(dateKey);
-      if (session) {
-        dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData }); // Corregido: Añadido ')'
-        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
-        showSuccess(`Sesión del ${dateKey} cargada.`);
-      } else {
-        showError('No se encontró la sesión.');
-      }
-    } catch (e) {
-      console.error("Error loading session:", e);
-      showError('Error al cargar la sesión.');
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, []);
-
-  const deleteSession = useCallback(async (dateKey: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-
-    try {
-      // Eliminar de Dexie
-      await db.sessions.delete(dateKey);
-      
-      // Eliminar de Supabase si está disponible
-      if (supabase) {
-        const { error } = await supabase
-          .from('inventory_sessions')
-          .delete()
-          .eq('dateKey', dateKey);
-
-        if (error) {
-          console.error("Error deleting session from Supabase:", error);
-          // No mostrar error al usuario, solo loguear
-        } else {
-          console.log("Session deleted from Supabase successfully.");
-        }
-      }
-
-      showSuccess(`Sesión del ${dateKey} eliminada.`);
-
-      // Si la sesión eliminada era la que estaba cargada, resetear el estado
-      if (state.sessionId === dateKey) {
-        dispatch({ type: 'RESET_STATE' });
-        dispatch({ type: 'SET_SESSION_ID', payload: null });
-      }
-    } catch (e) {
-      console.error("Error deleting session:", e);
-      showError('Error al eliminar la sesión.');
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, [state.sessionId]);
-
-  const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
-    try {
-      return await db.sessions.orderBy('timestamp').reverse().toArray();
-    } catch (e) {
-      console.error("Error fetching session history:", e);
-      showError('Error al obtener el historial de sesiones.');
-      return [];
-    }
-  }, []);
 
   // Nueva función para sincronizar desde Supabase
   const syncFromSupabase = useCallback(async () => {
