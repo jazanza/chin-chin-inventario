@@ -626,7 +626,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const session = await db.sessions.get(dateKey);
       if (session) {
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData);
+        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData }); // Corregido: Añadido ')'
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         showSuccess(`Sesión del ${dateKey} cargada.`);
       } else {
