@@ -37,43 +37,17 @@ export class SessionDatabase extends Dexie {
   // Define la tabla principal para sesiones
   sessions!: Table<InventorySession, string>;
   // Define la tabla para reglas de producto (ahora MasterProductConfig)
-  productRules!: Table<MasterProductConfig, number>; // Cambiado a 'number' para productId
+  productRules!: Table<MasterProductConfig, number>; // Clave principal por productId
   // Define la tabla para configuraciones de proveedor
   supplierConfigs!: Table<SupplierConfig, string>;
 
   constructor() {
     super('ChinChinDB');
-    this.version(1).stores({
+    // Reset total de la base de datos: Versión muy alta para forzar recreación
+    this.version(10).stores({
       sessions: 'dateKey, timestamp',
-      productRules: 'productId', // Clave principal por productId
+      productRules: 'productId', // Clave principal por productId (número)
       supplierConfigs: 'supplierName', // Clave principal por nombre de proveedor
-    });
-    // Nueva versión para asegurar que productId sea numérico
-    this.version(2).stores({
-      sessions: 'dateKey, timestamp',
-      productRules: 'productId', // Re-declarar para asegurar el índice numérico
-      supplierConfigs: 'supplierName',
-    }).upgrade(async tx => {
-      console.log("Upgrading ChinChinDB to version 2. Ensuring productRules schema.");
-      // No se necesita migración de datos explícita si el problema es solo la aplicación de tipos en datos nuevos.
-      // Si los datos existentes tienen productIds de tipo string, serán ignorados por las consultas numéricas.
-      // La función processDbForMasterConfigs se encargará de rellenar con los tipos correctos.
-    });
-    // Versión 3 para manejar el cambio de clave primaria de productRules
-    this.version(3).stores({
-      sessions: 'dateKey, timestamp',
-      productRules: 'productId', // Asegurar que productId es la clave primaria
-      supplierConfigs: 'supplierName',
-    }).upgrade(async tx => {
-      console.log("Upgrading ChinChinDB to version 3. Ensuring productRules primary key is productId.");
-      // Si hubo un cambio de clave primaria de 'productName' a 'productId',
-      // Dexie no permite cambiar la clave primaria directamente.
-      // La estrategia más segura es recrear la tabla o migrar manualmente si hay datos.
-      // Dado que el problema es la persistencia de un tipo incorrecto,
-      // la re-declaración con el tipo correcto en la nueva versión debería ser suficiente
-      // para que los nuevos datos se inserten correctamente.
-      // Los datos antiguos con claves primarias de tipo string serán inaccesibles por productId numérico.
-      // Si se necesita migrar datos antiguos, se requeriría una lógica más compleja aquí.
     });
 
     // Manejar el evento de cambio de versión para forzar el cierre de conexiones antiguas

@@ -302,19 +302,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- Master Product Config Persistence ---
   const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
-      // Defensive check: if the table is empty, return early to prevent potential issues with queries on empty sets.
-      const count = await db.productRules.count();
-      if (count === 0) {
-        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: [] });
-        return [];
-      }
-
-      const localConfigs = await db.productRules.where('isHidden').notEqual(true).toArray();
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
-      return localConfigs;
+      // Consulta defensiva: Obtener todos los productos y luego filtrar en memoria
+      console.log("Attempting to load all master product configs from Dexie.");
+      const allConfigs = await db.productRules.toArray();
+      console.log(`Loaded ${allConfigs.length} master product configs from Dexie.`);
+      
+      const filteredConfigs = allConfigs.filter(config => !config.isHidden);
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: filteredConfigs });
+      return filteredConfigs;
     } catch (e) {
       console.error("Error fetching master product configs from Dexie:", e);
-      showError('Error al obtener las configuraciones de producto.');
+      // Fallback: Retornar array vacío en caso de error
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: [] });
+      showError('Error al obtener las configuraciones de producto. Cargando configuración vacía.');
       return [];
     }
   }, []);
@@ -509,7 +509,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
 
         // Cargar las configuraciones maestras existentes (incluyendo ocultas para referencia)
+        // Consulta defensiva: Obtener todos y filtrar en memoria
+        console.log("Attempting to load all master product configs for inventory processing.");
         const allMasterProductConfigs = await db.productRules.toArray();
+        console.log(`Loaded ${allMasterProductConfigs.length} master product configs for inventory processing.`);
         const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
 
         let processedInventory: InventoryItem[] = [];
@@ -646,7 +649,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      const existingMasterProductConfigs = await db.productRules.toArray(); // Obtener todas las configs, incluyendo ocultas
+      // Consulta defensiva: Obtener todos y filtrar en memoria
+      console.log("Attempting to load all master product configs for DB processing.");
+      const existingMasterProductConfigs = await db.productRules.toArray();
+      console.log(`Loaded ${existingMasterProductConfigs.length} existing master product configs for DB processing.`);
       const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productId, config]));
 
       const configsToUpdateOrAdd: MasterProductConfig[] = [];
