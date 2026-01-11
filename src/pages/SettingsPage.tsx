@@ -90,7 +90,7 @@ const SettingsPage = () => {
   // --- Handlers para MasterProductConfig ---
   const handleProductConfigChange = useCallback((
     productName: string,
-    field: "minProductOrder" | "supplier" | "multiple",
+    field: "minProductOrder" | "supplier", // 'multiple' eliminado
     value: string | number
   ) => {
     setEditableProductConfigs((prev) => {
@@ -101,14 +101,12 @@ const SettingsPage = () => {
           rules: [],
           minProductOrder: 0,
           supplier: "",
-          multiple: 1,
+          // Eliminado: multiple: 1,
         };
       }
 
       if (field === "supplier") {
         newConfigs[productName].supplier = value as string;
-      } else if (field === "multiple") {
-        newConfigs[productName].multiple = parseInt(value as string, 10) || 1;
       } else { // minProductOrder
         newConfigs[productName][field] = parseInt(value as string, 10) || 0;
       }
@@ -135,7 +133,7 @@ const SettingsPage = () => {
                 rules: config.rules,
                 minProductOrder: config.minProductOrder,
                 supplier: config.supplier,
-                multiple: config.multiple,
+                // Eliminado: multiple: config.multiple,
               }
             : item
         );
@@ -192,7 +190,7 @@ const SettingsPage = () => {
       if (sessionId && inventoryType && inventoryData.length > 0) {
         const updatedInventory = inventoryData.map(item =>
           item.productName === productName
-            ? { ...item, rules: [], minProductOrder: 0, supplier: 'Desconocido', multiple: 1 }
+            ? { ...item, rules: [], minProductOrder: 0, supplier: 'Desconocido' } // Eliminado: multiple: 1
             : item
         );
         setInventoryData(updatedInventory);
@@ -428,7 +426,7 @@ const SettingsPage = () => {
                           <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Mínimo por Producto</TableHead>
-                          <TableHead className className="text-xs sm:text-sm text-gray-700">Múltiplo</TableHead>
+                          {/* Eliminado: <TableHead className className="text-xs sm:text-sm text-gray-700">Múltiplo</TableHead> */}
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                         </TableRow>
@@ -466,6 +464,7 @@ const SettingsPage = () => {
                                     min="0"
                                   />
                                 </TableCell>
+                                {/* Eliminado:
                                 <TableCell className="py-2 px-2">
                                   <Input
                                     type="number"
@@ -476,6 +475,7 @@ const SettingsPage = () => {
                                     min="1"
                                   />
                                 </TableCell>
+                                */}
                                 <TableCell className="py-2 px-2 text-center">
                                   {savingStatus[config.productName] === 'saving' && (
                                     <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />

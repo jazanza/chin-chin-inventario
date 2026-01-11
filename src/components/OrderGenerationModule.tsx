@@ -15,17 +15,21 @@ interface OrderGenerationModuleProps {
 // Definir la interfaz para los ítems de pedido con la cantidad final editable
 export interface OrderItem {
   product: string;
-  quantityToOrder: number; // Cantidad sugerida antes de ajustar por múltiplos
-  adjustedQuantity: number; // Cantidad sugerida ajustada por múltiplos
+  quantityToOrder: number; // Cantidad sugerida (después de aplicar reglas y mínimo por producto)
   finalOrderQuantity: number; // Cantidad final que el usuario puede editar
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData } = useInventoryContext();
+  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData, supplierConfigs } = useInventoryContext();
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
 
-  // Calcula las órdenes sugeridas (adjustedQuantity) y las inicializa en finalOrders
+  // Mapear supplierConfigs para fácil acceso
+  const supplierConfigsMap = useMemo(() => {
+    return new Map(supplierConfigs.map(config => [config.supplierName, config]));
+  }, [supplierConfigs]);
+
+  // Calcula las órdenes sugeridas (quantityToOrder) y las inicializa en finalOrders
   const ordersBySupplier = useMemo(() => {
     const orders: { [supplier: string]: OrderItem[] } = {};
 
@@ -34,25 +38,24 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
       let quantityToOrder = 0;
 
-      // Aplicar la lógica de sugerencia basada en ruleMinStock y ruleOrderAmount
-      if (item.ruleMinStock !== undefined && item.ruleOrderAmount !== undefined) {
-        if (item.physicalQuantity <= item.ruleMinStock) {
-          quantityToOrder = item.ruleOrderAmount;
-        } else {
-          quantityToOrder = 0;
+      // Aplicar la lógica de sugerencia basada en reglas múltiples
+      if (item.rules && item.rules.length > 0) {
+        // Ordenar reglas de mayor a menor minStock para aplicar la más específica
+        const sortedRules = [...item.rules].sort((a, b) => b.minStock - a.minStock);
+        for (const rule of sortedRules) {
+          if (item.physicalQuantity <= rule.minStock) {
+            quantityToOrder = rule.orderAmount;
+            break; // Aplicar la primera regla que coincida (la más específica)
+          }
         }
-      } else {
-        // Si no hay reglas configuradas, no sugerir nada por defecto
-        quantityToOrder = 0;
       }
 
+      // Aplicar el mínimo por producto si la cantidad sugerida es mayor que 0 y menor que el mínimo
+      if (quantityToOrder > 0 && item.minProductOrder && quantityToOrder < item.minProductOrder) {
+        quantityToOrder = item.minProductOrder;
+      }
+      
       if (quantityToOrder < 0) quantityToOrder = 0;
-
-      let adjustedQuantity = quantityToOrder;
-
-      if (item.multiple && item.multiple > 1) {
-        adjustedQuantity = Math.ceil(quantityToOrder / item.multiple) * item.multiple;
-      }
 
       // Incluir el producto en la lista de pedidos del proveedor, independientemente de la cantidad
       if (!orders[item.supplier]) {
@@ -61,8 +64,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       orders[item.supplier].push({
         product: item.productName,
         quantityToOrder: Math.round(quantityToOrder),
-        adjustedQuantity: Math.round(adjustedQuantity),
-        finalOrderQuantity: Math.round(adjustedQuantity), // Inicializar con la cantidad ajustada
+        finalOrderQuantity: Math.round(quantityToOrder), // Inicializar con la cantidad sugerida
       });
     });
 
@@ -73,13 +75,13 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return orders;
   }, [inventoryData]);
 
-  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData cambia
+  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData o supplierConfigs cambian
   useEffect(() => {
     const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
     for (const supplier in ordersBySupplier) {
       initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => ({
         ...item,
-        finalOrderQuantity: item.adjustedQuantity,
+        finalOrderQuantity: item.quantityToOrder,
       }));
     }
     setFinalOrders(initialFinalOrders);
@@ -130,6 +132,18 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     }
     return null;
   }, [selectedSupplier, finalOrders]);
+
+  // Calcular el total de unidades a pedir para el proveedor seleccionado
+  const totalUnitsForSelectedSupplier = useMemo(() => {
+    if (!selectedSupplier || !finalOrders[selectedSupplier]) return 0;
+    return finalOrders[selectedSupplier].reduce((sum, order) => sum + order.finalOrderQuantity, 0);
+  }, [selectedSupplier, finalOrders]);
+
+  // Obtener el mínimo de compra del proveedor seleccionado
+  const minOrderValueForSelectedSupplier = useMemo(() => {
+    if (!selectedSupplier) return 0;
+    return supplierConfigsMap.get(selectedSupplier)?.minOrderValue ?? 0;
+  }, [selectedSupplier, supplierConfigsMap]);
 
   const copyOrderToClipboard = async (supplier: string) => {
     const supplierOrders = finalOrders[supplier]; // Usar finalOrders para copiar
@@ -214,12 +228,19 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                   </Button>
                 </div>
 
+                {minOrderValueForSelectedSupplier > 0 && totalUnitsForSelectedSupplier < minOrderValueForSelectedSupplier && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-800">
+                    <p className="font-semibold">¡Alerta!</p>
+                    <p>El total de unidades a pedir ({totalUnitsForSelectedSupplier}) es menor al mínimo de compra del proveedor ({minOrderValueForSelectedSupplier}).</p>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto custom-scrollbar">
                   <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
                     <TableHeader>
                       <TableRow className="border-b border-gray-200">
                         <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Sugerencia</TableHead>
+                        <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Sugerida</TableHead>
                         <TableHead className="text-xs sm:text-sm text-gray-700">Pedir</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -227,7 +248,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                       {finalOrders[selectedSupplier].map((order, idx) => (
                         <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{order.adjustedQuantity}</TableCell>
+                          <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{order.quantityToOrder}</TableCell>
                           <TableCell className="py-2 px-2 align-middle">
                             <div className="flex items-center space-x-1">
                               <Button

@@ -24,7 +24,7 @@ export interface InventoryItem {
   physicalQuantity: number;
   averageSales: number;
   supplier: string; // Ahora se deriva de MasterProductConfig o DB
-  multiple: number; // Ahora se deriva de MasterProductConfig o DB
+  // Eliminado: multiple: number;
   hasBeenEdited?: boolean;
   rules: ProductRule[]; // Lista de reglas de stock/pedido
   minProductOrder: number; // Mínimo de unidades a pedir para este producto
@@ -417,7 +417,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               rules: [], // Inicializar con array vacío
               minProductOrder: 0, // Inicializar con 0
               supplier: supplierName, // Usar el proveedor detectado inicialmente
-              multiple: matchedProductData?.multiple || 1, // Usar multiple de product-data.json o 1
+              // Eliminado: multiple: matchedProductData?.multiple || 1, // Usar multiple de product-data.json o 1
             };
             newMasterConfigsToSave.push(masterConfig);
             masterProductConfigsMap.set(dbItem.Producto, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
@@ -440,7 +440,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             physicalQuantity: dbItem.Stock_Actual,
             averageSales: matchedProductData?.averageSales || 0,
             supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
-            multiple: masterConfig.multiple, // Usar el múltiplo de la configuración maestra
+            // Eliminado: multiple: masterConfig.multiple, // Usar el múltiplo de la configuración maestra
             hasBeenEdited: false,
             rules: masterConfig.rules, // Usar las reglas de la configuración maestra
             minProductOrder: masterConfig.minProductOrder, // Usar el mínimo por producto de la configuración maestra
@@ -545,7 +545,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             rules: [], // Inicializar con array vacío
             minProductOrder: 0, // Inicializar con 0
             supplier: supplierName,
-            multiple: matchedProductData?.multiple || 1,
+            // Eliminado: multiple: matchedProductData?.multiple || 1,
           };
           newMasterConfigsToSave.push(masterConfig);
           masterProductConfigsMap.set(dbItem.Producto, masterConfig);

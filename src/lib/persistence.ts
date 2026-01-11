@@ -24,7 +24,7 @@ export interface MasterProductConfig {
   rules: ProductRule[]; // Lista de reglas de stock/pedido
   minProductOrder: number; // Mínimo de unidades a pedir para este producto
   supplier: string; // Ahora parte de la configuración global
-  multiple: number; // Ahora parte de la configuración global
+  // Eliminado: multiple: number;
 }
 
 // Define la estructura de la configuración por proveedor
