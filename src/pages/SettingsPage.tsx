@@ -76,7 +76,7 @@ const SettingsPage = () => {
   // --- Handlers para MasterProductConfig ---
   const handleProductConfigChange = useCallback((
     productName: string,
-    field: "supplier", // 'minProductOrder' eliminado
+    field: "supplier",
     value: string | number
   ) => {
     setEditableProductConfigs((prev) => {
@@ -186,32 +186,48 @@ const SettingsPage = () => {
 
   // --- Handlers para Product Rules (reglas múltiples) ---
   const handleAddRule = useCallback(async (productName: string) => {
-    setEditableProductConfigs(prev => {
-      const newConfigs = { ...prev };
-      const currentConfig = newConfigs[productName];
-      if (currentConfig) {
-        const newRule: ProductRule = { minStock: 0, orderAmount: 0 };
-        currentConfig.rules = [...(currentConfig.rules || []), newRule];
+    setSavingStatus(prev => ({ ...prev, [productName]: 'saving' }));
+    try {
+      const currentConfig = editableProductConfigs[productName];
+      if (!currentConfig) {
+        throw new Error("Product config not found for adding rule.");
       }
-      return newConfigs;
-    });
-    // Guardar automáticamente después de añadir una regla
-    const config = editableProductConfigs[productName];
-    if (config) {
-      setSavingStatus(prev => ({ ...prev, [productName]: 'saving' }));
-      try {
-        await saveMasterProductConfig({ ...config, rules: [...(config.rules || []), { minStock: 0, orderAmount: 0 }] });
-        setSavingStatus(prev => ({ ...prev, [productName]: 'saved' }));
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 2000);
-        showSuccess('Regla añadida y guardada.');
-      } catch (e) {
-        console.error("Error adding rule:", e);
-        setSavingStatus(prev => ({ ...prev, [productName]: 'error' }));
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 3000);
-        showError('Error al añadir la regla.');
+
+      const newRule: ProductRule = { minStock: 0, orderAmount: 0 };
+      const updatedRules = [...(currentConfig.rules || []), newRule];
+      const updatedConfig = { ...currentConfig, rules: updatedRules };
+
+      // Update local state first
+      setEditableProductConfigs(prev => ({
+        ...prev,
+        [productName]: updatedConfig,
+      }));
+
+      // Then save to persistence
+      await saveMasterProductConfig(updatedConfig);
+
+      setSavingStatus(prev => ({ ...prev, [productName]: 'saved' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 2000);
+      showSuccess('Regla añadida y guardada.');
+
+      // Also update the current inventoryData if a session is active
+      if (sessionId && inventoryType && inventoryData.length > 0) {
+        const updatedInventory = inventoryData.map(item =>
+          item.productName === productName
+            ? { ...item, rules: updatedRules }
+            : item
+        );
+        setInventoryData(updatedInventory);
+        await saveCurrentSession(updatedInventory, inventoryType, new Date());
       }
+
+    } catch (e) {
+      console.error("Error adding rule:", e);
+      setSavingStatus(prev => ({ ...prev, [productName]: 'error' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 3000);
+      showError('Error al añadir la regla.');
     }
-  }, [editableProductConfigs, saveMasterProductConfig]);
+  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, inventoryData, setInventoryData, saveCurrentSession]);
 
   const handleRuleChange = useCallback((
     productName: string,
@@ -351,7 +367,6 @@ const SettingsPage = () => {
                         <TableRow className="border-b border-gray-200">
                           <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
-                          {/* Eliminado: <TableHead className="text-xs sm:text-sm text-gray-700">Mínimo por Producto</TableHead> */}
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                         </TableRow>
@@ -379,18 +394,6 @@ const SettingsPage = () => {
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
-                                {/* Eliminado:
-                                <TableCell className="py-2 px-2">
-                                  <Input
-                                    type="number"
-                                    value={editableProductConfigs[config.productName]?.minProductOrder ?? 0}
-                                    onChange={(e) => handleProductConfigChange(config.productName, "minProductOrder", e.target.value)}
-                                    onBlur={() => handleProductInputBlur(config.productName)}
-                                    className="w-20 text-center text-xs sm:text-sm"
-                                    min="0"
-                                  />
-                                </TableCell>
-                                */}
                                 <TableCell className="py-2 px-2 text-center">
                                   {savingStatus[config.productName] === 'saving' && (
                                     <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
