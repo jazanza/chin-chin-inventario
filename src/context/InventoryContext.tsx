@@ -302,7 +302,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- Master Product Config Persistence ---
   const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
-      // Cargar solo las configuraciones que no están ocultas
       const localConfigs = await db.productRules.where('isHidden').notEqual(true).toArray();
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
       return localConfigs;
@@ -315,13 +314,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
     try {
-      await db.productRules.put(config); // Dexie usa productId como clave
+      // Asegurar que productId sea un número antes de guardar
+      const configToSave = { ...config, productId: Number(config.productId) };
+      await db.productRules.put(configToSave); // Dexie usa productId como clave
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
 
       if (supabase) {
         const { error } = await supabase
           .from('product_rules')
-          .upsert(config, { onConflict: 'productId' }); // Usar productId como clave de conflicto
+          .upsert(configToSave, { onConflict: 'productId' }); // Usar productId como clave de conflicto
 
         if (error) {
           console.error("Error saving master product config to Supabase:", error);
@@ -340,15 +341,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      // Realizar borrado suave: actualizar isHidden a true
-      await db.productRules.update(productId, { isHidden: true });
+      // Asegurar que productId sea un número antes de actualizar
+      const numericProductId = Number(productId);
+      await db.productRules.update(numericProductId, { isHidden: true });
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
 
       if (supabase) {
         const { error } = await supabase
           .from('product_rules')
           .update({ isHidden: true })
-          .eq('productId', productId); // Usar productId para la condición
+          .eq('productId', numericProductId); // Usar productId para la condición
 
         if (error) {
           console.error("Error soft-deleting master product config from Supabase:", error);
@@ -359,8 +361,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showSuccess(`Configuración de producto eliminada (ocultada).`);
 
       // Si el producto eliminado estaba en el inventario actual, actualizarlo
-      if (state.inventoryData.some(item => item.productId === productId)) {
-        const updatedInventory = state.inventoryData.filter(item => item.productId !== productId);
+      if (state.inventoryData.some(item => item.productId === numericProductId)) {
+        const updatedInventory = state.inventoryData.filter(item => item.productId !== numericProductId);
         dispatch({ type: 'SET_INVENTORY_DATA', payload: updatedInventory });
         if (state.sessionId && state.inventoryType) {
           await saveCurrentSession(updatedInventory, state.inventoryType, new Date());
@@ -498,6 +500,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const newMasterConfigsToSave: MasterProductConfig[] = [];
 
         rawInventoryItems.forEach((dbItem) => {
+          // Asegurar que ProductId exista y sea un número válido
+          if (dbItem.ProductId === null || dbItem.ProductId === undefined) {
+            console.warn("Skipping product due to missing ProductId:", dbItem);
+            return;
+          }
+          const currentProductId = Number(dbItem.ProductId); // Asegurar que sea un número desde el principio
+
           let supplierName = dbItem.SupplierName;
           const lowerCaseSupplierName = supplierName.toLowerCase();
 
@@ -516,23 +525,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplierName = "AC Bebidas (Coca Cola)";
           }
 
-          const matchedProductData = productData.find(
-            (p) => p.productName === dbItem.Producto
-          );
-
-          let masterConfig = masterProductConfigsMap.get(dbItem.ProductId);
+          let masterConfig = masterProductConfigsMap.get(currentProductId);
 
           if (!masterConfig) {
             // Si no existe una configuración maestra, crear una nueva con valores por defecto
             masterConfig = {
-              productId: dbItem.ProductId,
+              productId: currentProductId,
               productName: dbItem.Producto,
               rules: [], // Inicializar con array vacío
               supplier: supplierName, // Usar el proveedor detectado inicialmente
               isHidden: false, // Por defecto no oculto
             };
             newMasterConfigsToSave.push(masterConfig);
-            masterProductConfigsMap.set(dbItem.ProductId, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
+            masterProductConfigsMap.set(currentProductId, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
           } else {
             // Si ya existe, actualizar el nombre y proveedor si han cambiado en la DB, pero NO el isHidden
             masterConfig = {
@@ -548,7 +553,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           // Solo añadir al inventario si no está oculto
           if (!masterConfig.isHidden) {
             processedInventory.push({
-              productId: dbItem.ProductId,
+              productId: currentProductId,
               productName: dbItem.Producto,
               category: dbItem.Categoria,
               systemQuantity: dbItem.Stock_Actual,
@@ -600,7 +605,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     [saveCurrentSession] // Añadir saveCurrentSession a las dependencias
   );
 
-  // Nueva función para procesar DB solo para configuraciones maestras
   const processDbForMasterConfigs = useCallback(async (buffer: Uint8Array) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -623,6 +627,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       let newProductsCount = 0;
 
       rawInventoryItems.forEach((dbItem) => {
+        // Asegurar que ProductId exista y sea un número válido
+        if (dbItem.ProductId === null || dbItem.ProductId === undefined) {
+          console.warn("Skipping product due to missing ProductId:", dbItem);
+          return;
+        }
+        const currentProductId = Number(dbItem.ProductId); // Asegurar que sea un número desde el principio
+
         let supplierName = dbItem.SupplierName;
         const lowerCaseSupplierName = supplierName.toLowerCase();
 
@@ -637,12 +648,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           supplierName = "AC Bebidas (Coca Cola)";
         }
 
-        let masterConfig = masterProductConfigsMap.get(dbItem.ProductId);
+        let masterConfig = masterProductConfigsMap.get(currentProductId);
 
         if (!masterConfig) {
           // Si no existe, es un producto nuevo
           masterConfig = {
-            productId: dbItem.ProductId,
+            productId: currentProductId,
             productName: dbItem.Producto,
             rules: [], // Inicializar con array vacío
             supplier: supplierName,
