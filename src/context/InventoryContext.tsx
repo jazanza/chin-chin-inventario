@@ -162,6 +162,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const effectiveness = calculateEffectiveness(data);
 
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       // Recuperar la sesión existente para preservar ordersBySupplier si no se proporciona
       const existingSession = await db.sessions.get(dateKey);
       const ordersToSave = orders !== undefined ? orders : existingSession?.ordersBySupplier;
@@ -234,6 +235,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       const session = await db.sessions.get(dateKey);
       if (session) {
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
@@ -256,6 +258,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       // Eliminar de Dexie
       await db.sessions.delete(dateKey);
       
@@ -291,6 +294,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       return await db.sessions.orderBy('timestamp').reverse().toArray();
     } catch (e) {
       console.error("Error fetching session history:", e);
@@ -302,12 +306,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- Master Product Config Persistence ---
   const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
-      // Consulta defensiva: Obtener todos los productos y luego filtrar en memoria
+      if (!db.isOpen()) await db.open(); // Emergency validation
       console.log("Attempting to load all master product configs from Dexie.");
-      const allConfigs = await db.productRules.toArray();
+      const allConfigs = await db.productRules.toArray(); // Cargar todos los productos
       console.log(`Loaded ${allConfigs.length} master product configs from Dexie.`);
       
-      const filteredConfigs = allConfigs.filter(config => !config.isHidden);
+      const filteredConfigs = allConfigs.filter(config => !config.isHidden); // Filtrar en memoria
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: filteredConfigs });
       return filteredConfigs;
     } catch (e) {
@@ -321,10 +325,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       // Asegurar que productId sea un número antes de guardar
       const configToSave = { ...config, productId: Number(config.productId) };
       await db.productRules.put(configToSave); // Dexie usa productId como clave
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
+      
+      // Refrescar configs sin ocultos usando toArray() y filter()
+      const updatedConfigs = (await db.productRules.toArray()).filter(c => !c.isHidden);
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: updatedConfigs });
 
       if (supabase) {
         const { error } = await supabase
@@ -348,10 +356,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       // Asegurar que productId sea un número antes de actualizar
       const numericProductId = Number(productId);
       await db.productRules.update(numericProductId, { isHidden: true });
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Refrescar configs sin ocultos
+      
+      // Refrescar configs sin ocultos usando toArray() y filter()
+      const updatedConfigs = (await db.productRules.toArray()).filter(c => !c.isHidden);
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: updatedConfigs });
 
       if (supabase) {
         const { error } = await supabase
@@ -509,7 +521,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
 
         // Cargar las configuraciones maestras existentes (incluyendo ocultas para referencia)
-        // Consulta defensiva: Obtener todos y filtrar en memoria
+        if (!db.isOpen()) await db.open(); // Emergency validation
         console.log("Attempting to load all master product configs for inventory processing.");
         const allMasterProductConfigs = await db.productRules.toArray();
         console.log(`Loaded ${allMasterProductConfigs.length} master product configs for inventory processing.`);
@@ -519,8 +531,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const newMasterConfigsToSave: MasterProductConfig[] = [];
 
         rawInventoryItems.forEach((dbItem) => {
-          // Asegurar que ProductId exista y sea un número válido
-          if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId))) {
+          // Asegurar que ProductId exista y sea un número válido y no sea 0
+          if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
             console.warn("Skipping product due to invalid ProductId:", dbItem);
             return;
           }
@@ -591,8 +603,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         // Guardar las nuevas configuraciones maestras creadas o actualizadas
         if (newMasterConfigsToSave.length > 0) {
+          if (!db.isOpen()) await db.open(); // Emergency validation
           await db.productRules.bulkPut(newMasterConfigsToSave);
-          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Actualizar estado global sin ocultos
+          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: (await db.productRules.toArray()).filter(c => !c.isHidden) }); // Actualizar estado global sin ocultos
           console.log(`Saved ${newMasterConfigsToSave.length} new or updated master product configs.`);
         }
 
@@ -607,6 +620,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const effectiveness = calculateEffectiveness(processedInventory);
 
         // Guardar en Dexie
+        if (!db.isOpen()) await db.open(); // Emergency validation
         await db.sessions.put({
           dateKey,
           inventoryType: type,
@@ -649,7 +663,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      // Consulta defensiva: Obtener todos y filtrar en memoria
+      if (!db.isOpen()) await db.open(); // Emergency validation
       console.log("Attempting to load all master product configs for DB processing.");
       const existingMasterProductConfigs = await db.productRules.toArray();
       console.log(`Loaded ${existingMasterProductConfigs.length} existing master product configs for DB processing.`);
@@ -659,8 +673,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       let newProductsCount = 0;
 
       rawInventoryItems.forEach((dbItem) => {
-        // Asegurar que ProductId exista y sea un número válido
-        if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId))) {
+        // Asegurar que ProductId exista y sea un número válido y no sea 0
+        if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
           console.warn("Skipping product due to invalid ProductId:", dbItem);
           return;
         }
@@ -712,8 +726,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       });
 
       if (configsToUpdateOrAdd.length > 0) {
+        if (!db.isOpen()) await db.open(); // Emergency validation
         await db.productRules.bulkPut(configsToUpdateOrAdd);
-        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.where('isHidden').notEqual(true).toArray() }); // Actualizar estado global sin ocultos
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: (await db.productRules.toArray()).filter(c => !c.isHidden) }); // Actualizar estado global sin ocultos
         if (newProductsCount > 0) {
           showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra.`);
         } else {
@@ -745,6 +760,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
       // Sincronizar sesiones
       const localSessions = await db.sessions.toArray();
       if (localSessions.length === 0) {
@@ -776,6 +792,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       // Sincronizar reglas de producto
+      if (!db.isOpen()) await db.open(); // Emergency validation
       const localMasterProductConfigs = await db.productRules.toArray();
       if (localMasterProductConfigs.length === 0) {
         console.log("Attempting to fetch product rules from Supabase...");
