@@ -1,7 +1,7 @@
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
-import { db, InventorySession, MasterProductConfig, ProductRule, SupplierConfig } from "@/lib/persistence"; // Usar MasterProductConfig
+import { db, InventorySession, MasterProductConfig, ProductRule, SupplierConfig } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
@@ -23,8 +23,7 @@ export interface InventoryItem {
   systemQuantity: number;
   physicalQuantity: number;
   averageSales: number;
-  supplier: string; // Ahora se deriva de MasterProductConfig o DB
-  // Eliminado: multiple: number;
+  supplier: string;
   hasBeenEdited?: boolean;
   rules: ProductRule[]; // Lista de reglas de stock/pedido
   minProductOrder: number; // Mínimo de unidades a pedir para este producto
@@ -36,7 +35,7 @@ interface InventoryState {
   inventoryType: "weekly" | "monthly" | null;
   inventoryData: InventoryItem[];
   masterProductConfigs: MasterProductConfig[]; // Nuevo estado para las configuraciones maestras
-  supplierConfigs: SupplierConfig[]; // Nuevo estado para las configuraciones de proveedor
+  // Eliminado: supplierConfigs: SupplierConfig[]; // Nuevo estado para las configuraciones de proveedor
   loading: boolean;
   error: string | null;
   sessionId: string | null;
@@ -47,7 +46,7 @@ const initialState: InventoryState = {
   inventoryType: null,
   inventoryData: [],
   masterProductConfigs: [], // Inicializar vacío
-  supplierConfigs: [], // Inicializar vacío
+  // Eliminado: supplierConfigs: [], // Inicializar vacío
   loading: false,
   error: null,
   sessionId: null,
@@ -57,8 +56,8 @@ type InventoryAction =
   | { type: 'SET_DB_BUFFER'; payload: Uint8Array | null }
   | { type: 'SET_INVENTORY_TYPE'; payload: "weekly" | "monthly" | null }
   | { type: 'SET_INVENTORY_DATA'; payload: InventoryItem[] }
-  | { type: 'SET_MASTER_PRODUCT_CONFIGS'; payload: MasterProductConfig[] } // Nueva acción
-  | { type: 'SET_SUPPLIER_CONFIGS'; payload: SupplierConfig[] } // Nueva acción para proveedores
+  | { type: 'SET_MASTER_PRODUCT_CONFIGS'; payload: MasterProductConfig[] }
+  // Eliminado: | { type: 'SET_SUPPLIER_CONFIGS'; payload: SupplierConfig[] }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_SESSION_ID'; payload: string | null }
@@ -72,10 +71,10 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, inventoryType: action.payload, error: null };
     case 'SET_INVENTORY_DATA':
       return { ...state, inventoryData: action.payload, error: null };
-    case 'SET_MASTER_PRODUCT_CONFIGS': // Manejar la nueva acción
+    case 'SET_MASTER_PRODUCT_CONFIGS':
       return { ...state, masterProductConfigs: action.payload };
-    case 'SET_SUPPLIER_CONFIGS': // Manejar la nueva acción para proveedores
-      return { ...state, supplierConfigs: action.payload };
+    // Eliminado: case 'SET_SUPPLIER_CONFIGS':
+    // Eliminado:   return { ...state, supplierConfigs: action.payload };
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
@@ -86,8 +85,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return {
         ...initialState,
         dbBuffer: state.dbBuffer,
-        masterProductConfigs: state.masterProductConfigs, // Mantener las reglas de producto al resetear el estado del inventario
-        supplierConfigs: state.supplierConfigs, // Mantener las configuraciones de proveedor
+        masterProductConfigs: state.masterProductConfigs,
+        // Eliminado: supplierConfigs: state.supplierConfigs,
       };
     default:
       return state;
@@ -99,13 +98,13 @@ interface InventoryContextType extends InventoryState {
   setDbBuffer: (buffer: Uint8Array | null) => void;
   setInventoryType: (type: "weekly" | "monthly" | null) => void;
   setInventoryData: (data: InventoryItem[]) => void;
-  setMasterProductConfigs: (configs: MasterProductConfig[]) => void; // Nueva función
-  setSupplierConfigs: (configs: SupplierConfig[]) => void; // Nueva función para proveedores
+  setMasterProductConfigs: (configs: MasterProductConfig[]) => void;
+  // Eliminado: setSupplierConfigs: (configs: SupplierConfig[]) => void;
   processInventoryData: (
     buffer: Uint8Array,
     type: "weekly" | "monthly"
   ) => Promise<void>;
-  processDbForMasterConfigs: (buffer: Uint8Array) => Promise<void>; // Nueva función para SettingsPage
+  processDbForMasterConfigs: (buffer: Uint8Array) => Promise<void>;
   saveCurrentSession: (
     data: InventoryItem[],
     type: "weekly" | "monthly",
@@ -117,12 +116,12 @@ interface InventoryContextType extends InventoryState {
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
   syncFromSupabase: () => Promise<void>;
-  saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>; // Nueva función
-  deleteMasterProductConfig: (productName: string) => Promise<void>; // Nueva función
-  loadMasterProductConfigs: () => Promise<MasterProductConfig[]>; // Nueva función
-  saveSupplierConfig: (config: SupplierConfig) => Promise<void>; // Nueva función
-  deleteSupplierConfig: (supplierName: string) => Promise<void>; // Nueva función
-  loadSupplierConfigs: () => Promise<SupplierConfig[]>; // Nueva función
+  saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
+  deleteMasterProductConfig: (productName: string) => Promise<void>;
+  loadMasterProductConfigs: () => Promise<MasterProductConfig[]>;
+  // Eliminado: saveSupplierConfig: (config: SupplierConfig) => Promise<void>;
+  // Eliminado: deleteSupplierConfig: (supplierName: string) => Promise<void>;
+  // Eliminado: loadSupplierConfigs: () => Promise<SupplierConfig[]>;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
@@ -155,9 +154,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configs });
   }, []);
 
-  const setSupplierConfigs = useCallback((configs: SupplierConfig[]) => {
-    dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: configs });
-  }, []);
+  // Eliminado: const setSupplierConfigs = useCallback((configs: SupplierConfig[]) => {
+  // Eliminado:   dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: configs });
+  // Eliminado: }, []);
 
   const resetInventoryState = useCallback(() => {
     dispatch({ type: 'RESET_STATE' });
@@ -288,65 +287,65 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, []);
 
-  const loadSupplierConfigs = useCallback(async (): Promise<SupplierConfig[]> => {
-    try {
-      const localConfigs = await db.supplierConfigs.toArray();
-      dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: localConfigs });
-      return localConfigs;
-    } catch (e) {
-      console.error("Error fetching supplier configs from Dexie:", e);
-      showError('Error al obtener las configuraciones de proveedor.');
-      return [];
-    }
-  }, []);
+  // Eliminado: const loadSupplierConfigs = useCallback(async (): Promise<SupplierConfig[]> => {
+  // Eliminado:   try {
+  // Eliminado:     const localConfigs = await db.supplierConfigs.toArray();
+  // Eliminado:     dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: localConfigs });
+  // Eliminado:     return localConfigs;
+  // Eliminado:   } catch (e) {
+  // Eliminado:     console.error("Error fetching supplier configs from Dexie:", e);
+  // Eliminado:     showError('Error al obtener las configuraciones de proveedor.');
+  // Eliminado:     return [];
+  // Eliminado:   }
+  // Eliminado: }, []);
 
-  const saveSupplierConfig = useCallback(async (config: SupplierConfig) => {
-    try {
-      await db.supplierConfigs.put(config);
-      dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() }); // Refrescar configs
+  // Eliminado: const saveSupplierConfig = useCallback(async (config: SupplierConfig) => {
+  // Eliminado:   try {
+  // Eliminado:     await db.supplierConfigs.put(config);
+  // Eliminado:     dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() }); // Refrescar configs
 
-      if (supabase) {
-        const { error } = await supabase
-          .from('supplier_configs')
-          .upsert(config, { onConflict: 'supplierName' });
+  // Eliminado:     if (supabase) {
+  // Eliminado:       const { error } = await supabase
+  // Eliminado:         .from('supplier_configs')
+  // Eliminado:         .upsert(config, { onConflict: 'supplierName' });
 
-        if (error) {
-          console.error("Error saving supplier config to Supabase:", error);
-        } else {
-          console.log("Supplier config saved to Supabase successfully.");
-        }
-      }
-      // showSuccess(`Configuración para ${config.supplierName} guardada.`); // Feedback handled by SettingsPage
-    } catch (e) {
-      console.error("Error saving supplier config:", e);
-      // showError('Error al guardar la configuración de proveedor.'); // Feedback handled by SettingsPage
-      throw e; // Re-throw to allow SettingsPage to catch and show error feedback
-    }
-  }, []);
+  // Eliminado:       if (error) {
+  // Eliminado:         console.error("Error saving supplier config to Supabase:", error);
+  // Eliminado:       } else {
+  // Eliminado:         console.log("Supplier config saved to Supabase successfully.");
+  // Eliminado:       }
+  // Eliminado:     }
+  // Eliminado:     // showSuccess(`Configuración para ${config.supplierName} guardada.`); // Feedback handled by SettingsPage
+  // Eliminado:   } catch (e) {
+  // Eliminado:     console.error("Error saving supplier config:", e);
+  // Eliminado:     // showError('Error al guardar la configuración de proveedor.'); // Feedback handled by SettingsPage
+  // Eliminado:     throw e; // Re-throw to allow SettingsPage to catch and show error feedback
+  // Eliminado:   }
+  // Eliminado: }, []);
 
-  const deleteSupplierConfig = useCallback(async (supplierName: string) => {
-    try {
-      await db.supplierConfigs.delete(supplierName);
-      dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() }); // Refrescar configs
+  // Eliminado: const deleteSupplierConfig = useCallback(async (supplierName: string) => {
+  // Eliminado:   try {
+  // Eliminado:     await db.supplierConfigs.delete(supplierName);
+  // Eliminado:     dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() }); // Refrescar configs
 
-      if (supabase) {
-        const { error } = await supabase
-          .from('supplier_configs')
-          .delete()
-          .eq('supplierName', supplierName);
+  // Eliminado:     if (supabase) {
+  // Eliminado:       const { error } = await supabase
+  // Eliminado:         .from('supplier_configs')
+  // Eliminado:         .delete()
+  // Eliminado:         .eq('supplierName', supplierName);
 
-        if (error) {
-          console.error("Error deleting supplier config from Supabase:", error);
-        } else {
-          console.log("Supplier config deleted from Supabase successfully.");
-        }
-      }
-      showSuccess(`Configuración para ${supplierName} eliminada.`);
-    } catch (e) {
-      console.error("Error deleting supplier config:", e);
-      showError('Error al eliminar la configuración de proveedor.');
-    }
-  }, []);
+  // Eliminado:       if (error) {
+  // Eliminado:         console.error("Error deleting supplier config from Supabase:", error);
+  // Eliminado:       } else {
+  // Eliminado:         console.log("Supplier config deleted from Supabase successfully.");
+  // Eliminado:       }
+  // Eliminado:     }
+  // Eliminado:     showSuccess(`Configuración para ${supplierName} eliminada.`);
+  // Eliminado:   } catch (e) {
+  // Eliminado:     console.error("Error deleting supplier config:", e);
+  // Eliminado:     showError('Error al eliminar la configuración de proveedor.');
+  // Eliminado:   }
+  // Eliminado: }, []);
 
 
   const processInventoryData = useCallback(
@@ -376,13 +375,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const existingMasterProductConfigs = await db.productRules.toArray();
         const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productName, config]));
 
-        // Cargar las configuraciones de proveedor existentes
-        const existingSupplierConfigs = await db.supplierConfigs.toArray();
-        const supplierConfigsMap = new Map(existingSupplierConfigs.map(config => [config.supplierName, config]));
+        // Eliminado: Cargar las configuraciones de proveedor existentes
+        // Eliminado: const existingSupplierConfigs = await db.supplierConfigs.toArray();
+        // Eliminado: const supplierConfigsMap = new Map(existingSupplierConfigs.map(config => [config.supplierName, config]));
 
         let processedInventory: InventoryItem[] = [];
         const newMasterConfigsToSave: MasterProductConfig[] = [];
-        const newSupplierConfigsToSave: SupplierConfig[] = [];
+        // Eliminado: const newSupplierConfigsToSave: SupplierConfig[] = [];
 
         rawInventoryItems.forEach((dbItem) => {
           let supplierName = dbItem.SupplierName;
@@ -408,7 +407,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           );
 
           let masterConfig = masterProductConfigsMap.get(dbItem.Producto);
-          let supplierConfig = supplierConfigsMap.get(supplierName);
+          // Eliminado: let supplierConfig = supplierConfigsMap.get(supplierName);
 
           if (!masterConfig) {
             // Si no existe una configuración maestra, crear una nueva con valores por defecto
@@ -417,20 +416,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               rules: [], // Inicializar con array vacío
               minProductOrder: 0, // Inicializar con 0
               supplier: supplierName, // Usar el proveedor detectado inicialmente
-              // Eliminado: multiple: matchedProductData?.multiple || 1, // Usar multiple de product-data.json o 1
             };
             newMasterConfigsToSave.push(masterConfig);
             masterProductConfigsMap.set(dbItem.Producto, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
           }
 
-          if (!supplierConfig) {
-            supplierConfig = {
-              supplierName: supplierName,
-              minOrderValue: 0, // Inicializar con 0
-            };
-            newSupplierConfigsToSave.push(supplierConfig);
-            supplierConfigsMap.set(supplierName, supplierConfig);
-          }
+          // Eliminado: if (!supplierConfig) {
+          // Eliminado:   supplierConfig = {
+          // Eliminado:     supplierName: supplierName,
+          // Eliminado:     minOrderValue: 0, // Inicializar con 0
+          // Eliminado:   };
+          // Eliminado:   newSupplierConfigsToSave.push(supplierConfig);
+          // Eliminado:   supplierConfigsMap.set(supplierName, supplierConfig);
+          // Eliminado: }
 
           processedInventory.push({
             productId: matchedProductData?.productId || 0,
@@ -440,7 +438,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             physicalQuantity: dbItem.Stock_Actual,
             averageSales: matchedProductData?.averageSales || 0,
             supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
-            // Eliminado: multiple: masterConfig.multiple, // Usar el múltiplo de la configuración maestra
             hasBeenEdited: false,
             rules: masterConfig.rules, // Usar las reglas de la configuración maestra
             minProductOrder: masterConfig.minProductOrder, // Usar el mínimo por producto de la configuración maestra
@@ -454,12 +451,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log(`Saved ${newMasterConfigsToSave.length} new master product configs.`);
         }
 
-        // Guardar las nuevas configuraciones de proveedor creadas
-        if (newSupplierConfigsToSave.length > 0) {
-          await db.supplierConfigs.bulkPut(newSupplierConfigsToSave);
-          dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() });
-          console.log(`Saved ${newSupplierConfigsToSave.length} new supplier configs.`);
-        }
+        // Eliminado: Guardar las nuevas configuraciones de proveedor creadas
+        // Eliminado: if (newSupplierConfigsToSave.length > 0) {
+        // Eliminado:   await db.supplierConfigs.bulkPut(newSupplierConfigsToSave);
+        // Eliminado:   dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() });
+        // Eliminado:   console.log(`Saved ${newSupplierConfigsToSave.length} new supplier configs.`);
+        // Eliminado: }
 
         // Filtrar productos de los proveedores "KYR S.A.S" y "Desconocido"
         processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
@@ -511,11 +508,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const existingMasterProductConfigs = await db.productRules.toArray();
       const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productName, config]));
 
-      const existingSupplierConfigs = await db.supplierConfigs.toArray();
-      const supplierConfigsMap = new Map(existingSupplierConfigs.map(config => [config.supplierName, config]));
+      // Eliminado: const existingSupplierConfigs = await db.supplierConfigs.toArray();
+      // Eliminado: const supplierConfigsMap = new Map(existingSupplierConfigs.map(config => [config.supplierName, config]));
 
       const newMasterConfigsToSave: MasterProductConfig[] = [];
-      const newSupplierConfigsToSave: SupplierConfig[] = [];
+      // Eliminado: const newSupplierConfigsToSave: SupplierConfig[] = [];
 
       rawInventoryItems.forEach((dbItem) => {
         let supplierName = dbItem.SupplierName;
@@ -537,7 +534,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         );
 
         let masterConfig = masterProductConfigsMap.get(dbItem.Producto);
-        let supplierConfig = supplierConfigsMap.get(supplierName);
+        // Eliminado: let supplierConfig = supplierConfigsMap.get(supplierName);
 
         if (!masterConfig) {
           masterConfig = {
@@ -545,20 +542,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             rules: [], // Inicializar con array vacío
             minProductOrder: 0, // Inicializar con 0
             supplier: supplierName,
-            // Eliminado: multiple: matchedProductData?.multiple || 1,
           };
           newMasterConfigsToSave.push(masterConfig);
           masterProductConfigsMap.set(dbItem.Producto, masterConfig);
         }
 
-        if (!supplierConfig) {
-          supplierConfig = {
-            supplierName: supplierName,
-            minOrderValue: 0,
-          };
-          newSupplierConfigsToSave.push(supplierConfig);
-          supplierConfigsMap.set(supplierName, supplierConfig);
-        }
+        // Eliminado: if (!supplierConfig) {
+        // Eliminado:   supplierConfig = {
+        // Eliminado:     supplierName: supplierName,
+        // Eliminado:     minOrderValue: 0,
+        // Eliminado:   };
+        // Eliminado:   newSupplierConfigsToSave.push(supplierConfig);
+        // Eliminado:   supplierConfigsMap.set(supplierName, supplierConfig);
+        // Eliminado: }
       });
 
       if (newMasterConfigsToSave.length > 0) {
@@ -569,13 +565,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         showSuccess('No se encontraron nuevos productos para agregar a la configuración maestra.');
       }
 
-      if (newSupplierConfigsToSave.length > 0) {
-        await db.supplierConfigs.bulkPut(newSupplierConfigsToSave);
-        dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() });
-        showSuccess(`Se agregaron ${newSupplierConfigsToSave.length} nuevos proveedores a la configuración maestra.`);
-      } else {
-        showSuccess('No se encontraron nuevos proveedores para agregar a la configuración maestra.');
-      }
+      // Eliminado: if (newSupplierConfigsToSave.length > 0) {
+      // Eliminado:   await db.supplierConfigs.bulkPut(newSupplierConfigsToSave);
+      // Eliminado:   dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: await db.supplierConfigs.toArray() });
+      // Eliminado:   showSuccess(`Se agregaron ${newSupplierConfigsToSave.length} nuevos proveedores a la configuración maestra.`);
+      // Eliminado: } else {
+      // Eliminado:   showSuccess('No se encontraron nuevos proveedores para agregar a la configuración maestra.');
+      // Eliminado: }
 
     } catch (e: any) {
       console.error("Error processing database for master configs:", e);
@@ -802,28 +798,28 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Local product rules found, skipping Supabase rules sync.");
       }
 
-      // Sincronizar configuraciones de proveedor
-      const localSupplierConfigs = await db.supplierConfigs.toArray();
-      if (localSupplierConfigs.length === 0) {
-        console.log("Attempting to fetch supplier configs from Supabase...");
-        const { data: supplierConfigsData, error: supplierConfigsError } = await supabase
-          .from('supplier_configs')
-          .select('*');
+      // Eliminado: Sincronizar configuraciones de proveedor
+      // Eliminado: const localSupplierConfigs = await db.supplierConfigs.toArray();
+      // Eliminado: if (localSupplierConfigs.length === 0) {
+      // Eliminado:   console.log("Attempting to fetch supplier configs from Supabase...");
+      // Eliminado:   const { data: supplierConfigsData, error: supplierConfigsError } = await supabase
+      // Eliminado:     .from('supplier_configs')
+      // Eliminado:     .select('*');
 
-        if (supplierConfigsError) {
-          console.error("Error fetching supplier configs from Supabase:", supplierConfigsError);
-        } else if (supplierConfigsData && supplierConfigsData.length > 0) {
-          for (const config of supplierConfigsData) {
-            await db.supplierConfigs.put(config);
-          }
-          dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: supplierConfigsData });
-          console.log(`Synced ${supplierConfigsData.length} supplier configs from Supabase to local storage.`);
-        } else {
-          console.log("No supplier configs found in Supabase to sync.");
-        }
-      } else {
-        console.log("Local supplier configs found, skipping Supabase configs sync.");
-      }
+      // Eliminado:   if (supplierConfigsError) {
+      // Eliminado:     console.error("Error fetching supplier configs from Supabase:", supplierConfigsError);
+      // Eliminado:   } else if (supplierConfigsData && supplierConfigsData.length > 0) {
+      // Eliminado:     for (const config of supplierConfigsData) {
+      // Eliminado:       await db.supplierConfigs.put(config);
+      // Eliminado:     }
+      // Eliminado:     dispatch({ type: 'SET_SUPPLIER_CONFIGS', payload: supplierConfigsData });
+      // Eliminado:     console.log(`Synced ${supplierConfigsData.length} supplier configs from Supabase to local storage.`);
+      // Eliminado:   } else {
+      // Eliminado:     console.log("No supplier configs found in Supabase to sync.");
+      // Eliminado:   }
+      // Eliminado: } else {
+      // Eliminado:   console.log("Local supplier configs found, skipping Supabase configs sync.");
+      // Eliminado: }
 
     } catch (e) {
       console.error("Error during Supabase sync:", e);
@@ -843,37 +839,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // Cargar configuraciones maestras de producto y proveedor al inicio de la aplicación
   useEffect(() => {
     loadMasterProductConfigs();
-    loadSupplierConfigs();
-  }, [loadMasterProductConfigs, loadSupplierConfigs]);
+    // Eliminado: loadSupplierConfigs();
+  }, [loadMasterProductConfigs]); // Eliminado: loadSupplierConfigs
 
   const value = useMemo(() => ({
     ...state,
     setDbBuffer,
     setInventoryType,
     setInventoryData,
-    setMasterProductConfigs, // Añadir al valor del contexto
-    setSupplierConfigs, // Añadir al valor del contexto
-    processInventoryData,
-    processDbForMasterConfigs, // Añadir al valor del contexto
-    saveCurrentSession,
-    loadSession,
-    deleteSession,
-    getSessionHistory,
-    resetInventoryState,
-    syncFromSupabase,
-    saveMasterProductConfig, // Añadir al valor del contexto
-    deleteMasterProductConfig, // Añadir al valor del contexto
-    loadMasterProductConfigs, // Añadir al valor del contexto
-    saveSupplierConfig, // Añadir al valor del contexto
-    deleteSupplierConfig, // Añadir al valor del contexto
-    loadSupplierConfigs, // Añadir al valor del contexto
-  }), [
-    state,
-    setDbBuffer,
-    setInventoryType,
-    setInventoryData,
     setMasterProductConfigs,
-    setSupplierConfigs,
+    // Eliminado: setSupplierConfigs,
     processInventoryData,
     processDbForMasterConfigs,
     saveCurrentSession,
@@ -885,9 +860,30 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
-    saveSupplierConfig,
-    deleteSupplierConfig,
-    loadSupplierConfigs,
+    // Eliminado: saveSupplierConfig,
+    // Eliminado: deleteSupplierConfig,
+    // Eliminado: loadSupplierConfigs,
+  }), [
+    state,
+    setDbBuffer,
+    setInventoryType,
+    setInventoryData,
+    setMasterProductConfigs,
+    // Eliminado: setSupplierConfigs,
+    processInventoryData,
+    processDbForMasterConfigs,
+    saveCurrentSession,
+    loadSession,
+    deleteSession,
+    getSessionHistory,
+    resetInventoryState,
+    syncFromSupabase,
+    saveMasterProductConfig,
+    deleteMasterProductConfig,
+    loadMasterProductConfigs,
+    // Eliminado: saveSupplierConfig,
+    // Eliminado: deleteSupplierConfig,
+    // Eliminado: loadSupplierConfigs,
   ]);
 
   return (

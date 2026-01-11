@@ -14,17 +14,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, MinusCircle } from "lucide-react"; // Importar iconos
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils"; // Para combinar clases de Tailwind
-import { MasterProductConfig, ProductRule, SupplierConfig } from "@/lib/persistence";
+import { MasterProductConfig, ProductRule } from "@/lib/persistence"; // Eliminado: SupplierConfig
 import { FileUploader } from "@/components/FileUploader"; // Importar FileUploader
 
 const SettingsPage = () => {
   const {
     inventoryData,
     masterProductConfigs,
-    supplierConfigs, // Obtener configuraciones de proveedor del contexto
+    // Eliminado: supplierConfigs,
     saveMasterProductConfig,
     deleteMasterProductConfig,
-    saveSupplierConfig, // Función para guardar configuración de proveedor
+    // Eliminado: saveSupplierConfig,
     setInventoryData,
     saveCurrentSession,
     sessionId,
@@ -36,9 +36,9 @@ const SettingsPage = () => {
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
     [productName: string]: MasterProductConfig;
   }>({});
-  const [editableSupplierConfigs, setEditableSupplierConfigs] = useState<{
-    [supplierName: string]: SupplierConfig;
-  }>({});
+  // Eliminado: const [editableSupplierConfigs, setEditableSupplierConfigs] = useState<{
+  // Eliminado:   [supplierName: string]: SupplierConfig;
+  // Eliminado: }>({});
 
   const [savingStatus, setSavingStatus] = useState<{
     [key: string]: 'saving' | 'saved' | 'error' | null; // key puede ser productName o supplierName
@@ -55,14 +55,14 @@ const SettingsPage = () => {
     setEditableProductConfigs(initialConfigs);
   }, [masterProductConfigs]);
 
-  // Inicializar editableSupplierConfigs cuando supplierConfigs cambian
-  useEffect(() => {
-    const initialConfigs: { [supplierName: string]: SupplierConfig } = {};
-    supplierConfigs.forEach((config) => {
-      initialConfigs[config.supplierName] = config;
-    });
-    setEditableSupplierConfigs(initialConfigs);
-  }, [supplierConfigs]);
+  // Eliminado: Inicializar editableSupplierConfigs cuando supplierConfigs cambian
+  // Eliminado: useEffect(() => {
+  // Eliminado:   const initialConfigs: { [supplierName: string]: SupplierConfig } = {};
+  // Eliminado:   supplierConfigs.forEach((config) => {
+  // Eliminado:     initialConfigs[config.supplierName] = config;
+  // Eliminado:   });
+  // Eliminado:   setEditableSupplierConfigs(initialConfigs);
+  // Eliminado: }, [supplierConfigs]);
 
   // Agrupar productos por proveedor (usando el proveedor de la configuración maestra)
   const productsGroupedBySupplier = useMemo(() => {
@@ -90,7 +90,7 @@ const SettingsPage = () => {
   // --- Handlers para MasterProductConfig ---
   const handleProductConfigChange = useCallback((
     productName: string,
-    field: "minProductOrder" | "supplier", // 'multiple' eliminado
+    field: "minProductOrder" | "supplier",
     value: string | number
   ) => {
     setEditableProductConfigs((prev) => {
@@ -101,7 +101,6 @@ const SettingsPage = () => {
           rules: [],
           minProductOrder: 0,
           supplier: "",
-          // Eliminado: multiple: 1,
         };
       }
 
@@ -133,7 +132,6 @@ const SettingsPage = () => {
                 rules: config.rules,
                 minProductOrder: config.minProductOrder,
                 supplier: config.supplier,
-                // Eliminado: multiple: config.multiple,
               }
             : item
         );
@@ -190,7 +188,7 @@ const SettingsPage = () => {
       if (sessionId && inventoryType && inventoryData.length > 0) {
         const updatedInventory = inventoryData.map(item =>
           item.productName === productName
-            ? { ...item, rules: [], minProductOrder: 0, supplier: 'Desconocido' } // Eliminado: multiple: 1
+            ? { ...item, rules: [], minProductOrder: 0, supplier: 'Desconocido' }
             : item
         );
         setInventoryData(updatedInventory);
@@ -312,38 +310,38 @@ const SettingsPage = () => {
     }
   }, [editableProductConfigs, saveMasterProductConfig]);
 
-  // --- Handlers para SupplierConfig ---
-  const handleSupplierMinOrderChange = useCallback((
-    supplierName: string,
-    value: string
-  ) => {
-    setEditableSupplierConfigs(prev => {
-      const newConfigs = { ...prev };
-      if (!newConfigs[supplierName]) {
-        newConfigs[supplierName] = { supplierName, minOrderValue: 0 };
-      }
-      newConfigs[supplierName].minOrderValue = parseInt(value, 10) || 0;
-      return newConfigs;
-    });
-  }, []);
+  // Eliminado: Handlers para SupplierConfig
+  // Eliminado: const handleSupplierMinOrderChange = useCallback((
+  // Eliminado:   supplierName: string,
+  // Eliminado:   value: string
+  // Eliminado: ) => {
+  // Eliminado:   setEditableSupplierConfigs(prev => {
+  // Eliminado:     const newConfigs = { ...prev };
+  // Eliminado:     if (!newConfigs[supplierName]) {
+  // Eliminado:       newConfigs[supplierName] = { supplierName, minOrderValue: 0 };
+  // Eliminado:     }
+  // Eliminado:     newConfigs[supplierName].minOrderValue = parseInt(value, 10) || 0;
+  // Eliminado:     return newConfigs;
+  // Eliminado:   });
+  // Eliminado: }, []);
 
-  const handleSupplierMinOrderBlur = useCallback(async (supplierName: string) => {
-    const config = editableSupplierConfigs[supplierName];
-    if (!config) return;
+  // Eliminado: const handleSupplierMinOrderBlur = useCallback(async (supplierName: string) => {
+  // Eliminado:   const config = editableSupplierConfigs[supplierName];
+  // Eliminado:   if (!config) return;
 
-    setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: 'saving' }));
-    try {
-      await saveSupplierConfig(config);
-      setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: null })), 2000);
-      showSuccess(`Mínimo de compra para ${supplierName} guardado.`);
-    } catch (e) {
-      console.error("Error saving supplier min order:", e);
-      setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: null })), 3000);
-      showError('Error al guardar el mínimo de compra del proveedor.');
-    }
-  }, [editableSupplierConfigs, saveSupplierConfig]);
+  // Eliminado:   setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: 'saving' }));
+  // Eliminado:   try {
+  // Eliminado:     await saveSupplierConfig(config);
+  // Eliminado:     setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: 'saved' }));
+  // Eliminado:     setTimeout(() => setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: null })), 2000);
+  // Eliminado:     showSuccess(`Mínimo de compra para ${supplierName} guardado.`);
+  // Eliminado:   } catch (e) {
+  // Eliminado:     console.error("Error saving supplier min order:", e);
+  // Eliminado:     setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: 'error' }));
+  // Eliminado:     setTimeout(() => setSavingStatus(prev => ({ ...prev, [`supplier-${supplierName}`]: null })), 3000);
+  // Eliminado:     showError('Error al guardar el mínimo de compra del proveedor.');
+  // Eliminado:   }
+  // Eliminado: }, [editableSupplierConfigs, saveSupplierConfig]);
 
   const handleDbFileLoadedFromSettings = async (buffer: Uint8Array) => {
     setIsUploadingConfig(true);
@@ -395,27 +393,7 @@ const SettingsPage = () => {
                 <AccordionTrigger className="flex justify-between items-center py-3 px-4 text-base sm:text-lg font-semibold text-gray-800 hover:bg-gray-50">
                   <div className="flex items-center gap-2">
                     {supplier} ({products.length} productos)
-                    <div className="flex items-center gap-1 ml-4">
-                      <span className="text-sm font-normal text-gray-600">Mínimo de Compra:</span>
-                      <Input
-                        type="number"
-                        value={editableSupplierConfigs[supplier]?.minOrderValue ?? 0}
-                        onChange={(e) => handleSupplierMinOrderChange(supplier, e.target.value)}
-                        onBlur={() => handleSupplierMinOrderBlur(supplier)}
-                        onClick={(e) => e.stopPropagation()} // Evitar que el acordeón se cierre
-                        className="w-24 text-center text-xs sm:text-sm"
-                        min="0"
-                      />
-                      {savingStatus[`supplier-${supplier}`] === 'saving' && (
-                        <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
-                      )}
-                      {savingStatus[`supplier-${supplier}`] === 'saved' && (
-                        <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
-                      )}
-                      {savingStatus[`supplier-${supplier}`] === 'error' && (
-                        <XCircle className="h-4 w-4 text-red-500 inline-block" />
-                      )}
-                    </div>
+                    {/* Eliminado: Mínimo de Compra por proveedor */}
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-4 bg-gray-50">
@@ -426,7 +404,6 @@ const SettingsPage = () => {
                           <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Mínimo por Producto</TableHead>
-                          {/* Eliminado: <TableHead className className="text-xs sm:text-sm text-gray-700">Múltiplo</TableHead> */}
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                         </TableRow>
@@ -464,18 +441,6 @@ const SettingsPage = () => {
                                     min="0"
                                   />
                                 </TableCell>
-                                {/* Eliminado:
-                                <TableCell className="py-2 px-2">
-                                  <Input
-                                    type="number"
-                                    value={editableProductConfigs[config.productName]?.multiple ?? 1}
-                                    onChange={(e) => handleProductConfigChange(config.productName, "multiple", e.target.value)}
-                                    onBlur={() => handleProductInputBlur(config.productName)}
-                                    className="w-20 text-center text-xs sm:text-sm"
-                                    min="1"
-                                  />
-                                </TableCell>
-                                */}
                                 <TableCell className="py-2 px-2 text-center">
                                   {savingStatus[config.productName] === 'saving' && (
                                     <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />

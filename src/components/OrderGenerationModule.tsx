@@ -20,14 +20,14 @@ export interface OrderItem {
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData, supplierConfigs } = useInventoryContext();
+  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData /* Eliminado: , supplierConfigs */ } = useInventoryContext();
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
 
-  // Mapear supplierConfigs para fácil acceso
-  const supplierConfigsMap = useMemo(() => {
-    return new Map(supplierConfigs.map(config => [config.supplierName, config]));
-  }, [supplierConfigs]);
+  // Eliminado: Mapear supplierConfigs para fácil acceso
+  // Eliminado: const supplierConfigsMap = useMemo(() => {
+  // Eliminado:   return new Map(supplierConfigs.map(config => [config.supplierName, config]));
+  // Eliminado: }, [supplierConfigs]);
 
   // Calcula las órdenes sugeridas (quantityToOrder) y las inicializa en finalOrders
   const ordersBySupplier = useMemo(() => {
@@ -85,7 +85,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       }));
     }
     setFinalOrders(initialFinalOrders);
-  }, [ordersBySupplier]);
+  }, [ordersBySupplier]); // Eliminado: supplierConfigs
 
   // Manejar cambios en la cantidad final de pedido
   const handleFinalOrderQuantityChange = (
@@ -133,17 +133,17 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return null;
   }, [selectedSupplier, finalOrders]);
 
-  // Calcular el total de unidades a pedir para el proveedor seleccionado
-  const totalUnitsForSelectedSupplier = useMemo(() => {
-    if (!selectedSupplier || !finalOrders[selectedSupplier]) return 0;
-    return finalOrders[selectedSupplier].reduce((sum, order) => sum + order.finalOrderQuantity, 0);
-  }, [selectedSupplier, finalOrders]);
+  // Eliminado: Calcular el total de unidades a pedir para el proveedor seleccionado
+  // Eliminado: const totalUnitsForSelectedSupplier = useMemo(() => {
+  // Eliminado:   if (!selectedSupplier || !finalOrders[selectedSupplier]) return 0;
+  // Eliminado:   return finalOrders[selectedSupplier].reduce((sum, order) => sum + order.finalOrderQuantity, 0);
+  // Eliminado: }, [selectedSupplier, finalOrders]);
 
-  // Obtener el mínimo de compra del proveedor seleccionado
-  const minOrderValueForSelectedSupplier = useMemo(() => {
-    if (!selectedSupplier) return 0;
-    return supplierConfigsMap.get(selectedSupplier)?.minOrderValue ?? 0;
-  }, [selectedSupplier, supplierConfigsMap]);
+  // Eliminado: Obtener el mínimo de compra del proveedor seleccionado
+  // Eliminado: const minOrderValueForSelectedSupplier = useMemo(() => {
+  // Eliminado:   if (!selectedSupplier) return 0;
+  // Eliminado:   return supplierConfigsMap.get(selectedSupplier)?.minOrderValue ?? 0;
+  // Eliminado: }, [selectedSupplier, supplierConfigsMap]);
 
   const copyOrderToClipboard = async (supplier: string) => {
     const supplierOrders = finalOrders[supplier]; // Usar finalOrders para copiar
@@ -228,12 +228,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                   </Button>
                 </div>
 
-                {minOrderValueForSelectedSupplier > 0 && totalUnitsForSelectedSupplier < minOrderValueForSelectedSupplier && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-800">
-                    <p className="font-semibold">¡Alerta!</p>
-                    <p>El total de unidades a pedir ({totalUnitsForSelectedSupplier}) es menor al mínimo de compra del proveedor ({minOrderValueForSelectedSupplier}).</p>
-                  </div>
-                )}
+                {/* Eliminado: Alerta de mínimo de compra por proveedor */}
 
                 <div className="overflow-x-auto custom-scrollbar">
                   <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
