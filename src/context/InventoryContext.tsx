@@ -242,10 +242,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log("Product rule saved to Supabase successfully.");
         }
       }
-      showSuccess(`Regla para ${rule.productName} guardada.`);
+      // showSuccess(`Regla para ${rule.productName} guardada.`); // Feedback handled by SettingsPage
     } catch (e) {
       console.error("Error saving product rule:", e);
-      showError('Error al guardar la regla de producto.');
+      // showError('Error al guardar la regla de producto.'); // Feedback handled by SettingsPage
+      throw e; // Re-throw to allow SettingsPage to catch and show error feedback
     }
   }, []);
 
@@ -377,7 +378,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     data: InventoryItem[],
     type: "weekly" | "monthly",
     timestamp: Date,
-    orders?: { [supplier: string]: any[] }
+    orders?: { [supplier: string]: any[] } // Este es el *nuevo* orders a guardar
   ) => {
     if (!data || data.length === 0) return;
 
@@ -385,6 +386,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const effectiveness = calculateEffectiveness(data);
 
     try {
+      // Recuperar la sesión existente para preservar ordersBySupplier si no se proporciona
+      const existingSession = await db.sessions.get(dateKey);
+      const ordersToSave = orders !== undefined ? orders : existingSession?.ordersBySupplier;
+
       // Guardar en Dexie
       await db.sessions.put({
         dateKey,
@@ -392,7 +397,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         inventoryData: data,
         timestamp,
         effectiveness,
-        ordersBySupplier: orders,
+        ordersBySupplier: ordersToSave, // Usar los pedidos preservados o los nuevos
       });
 
       // Si no hay sessionId, establecerlo
@@ -408,7 +413,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           inventoryDataLength: data.length,
           timestamp,
           effectiveness,
-          hasOrders: !!orders
+          hasOrders: !!ordersToSave
         });
 
         const { data: supabaseData, error } = await supabase
@@ -419,7 +424,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             inventoryData: data,
             timestamp,
             effectiveness,
-            ordersBySupplier: orders,
+            ordersBySupplier: ordersToSave,
           }, {
             onConflict: 'dateKey' // Usar dateKey como clave para upsert
           });
@@ -440,10 +445,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Supabase client not available, skipping save to Supabase");
       }
 
-      showSuccess('Sesión guardada automáticamente.');
+      // showSuccess('Sesión guardada automáticamente.'); // Feedback handled by calling component
     } catch (e) {
       console.error("Error saving session:", e);
-      showError('Error al guardar la sesión.');
+      // showError('Error al guardar la sesión.'); // Feedback handled by calling component
+      throw e; // Re-throw to allow calling component to catch and show error feedback
     }
   }, [state.sessionId]);
 

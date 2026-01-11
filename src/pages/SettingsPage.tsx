@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
 import {
   Accordion,
@@ -11,8 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, Trash2 } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Trash2 } from "lucide-react"; // Importar iconos
 import { showSuccess, showError } from "@/utils/toast";
+import { cn } from "@/lib/utils"; // Para combinar clases de Tailwind
 
 const SettingsPage = () => {
   const {
@@ -20,13 +21,21 @@ const SettingsPage = () => {
     productRules,
     saveProductRule,
     deleteProductRule,
-    setInventoryData, // Para actualizar el proveedor en inventoryData
+    setInventoryData,
+    saveCurrentSession, // Necesario para guardar cambios de proveedor en la sesión
+    sessionId,
+    inventoryType,
     loading,
   } = useInventoryContext();
 
   // Estado local para las reglas que se están editando
   const [editableRules, setEditableRules] = useState<{
     [productName: string]: { minStock: number; orderAmount: number; supplier: string };
+  }>({});
+
+  // Estado para el feedback de guardado
+  const [savingStatus, setSavingStatus] = useState<{
+    [productName: string]: 'saving' | 'saved' | 'error' | null;
   }>({});
 
   // Inicializar editableRules cuando inventoryData o productRules cambian
@@ -68,51 +77,89 @@ const SettingsPage = () => {
     return Array.from(suppliers).sort();
   }, [inventoryData]);
 
-  const handleRuleChange = (
+  // Manejar cambios en los campos de input (Stock Mínimo, Cantidad a Pedir)
+  const handleRuleChange = useCallback((
     productName: string,
-    field: "minStock" | "orderAmount" | "supplier",
-    value: string | number
+    field: "minStock" | "orderAmount",
+    value: string
   ) => {
-    setEditableRules((prev) => {
-      const newRules = { ...prev };
-      if (!newRules[productName]) {
-        newRules[productName] = { minStock: 0, orderAmount: 0, supplier: "" };
-      }
+    const parsedValue = parseInt(value, 10) || 0;
+    setEditableRules((prev) => ({
+      ...prev,
+      [productName]: { ...prev[productName], [field]: parsedValue },
+    }));
+  }, []);
 
-      if (field === "supplier") {
-        newRules[productName].supplier = value as string;
-      } else {
-        newRules[productName][field] = parseInt(value as string, 10) || 0;
-      }
-      return newRules;
-    });
-  };
+  // Guardar regla de producto en blur (para inputs numéricos)
+  const handleInputBlur = useCallback(async (productName: string) => {
+    const rule = editableRules[productName];
+    if (!rule) return;
 
-  const handleSaveRule = async (productName: string) => {
-    const ruleToSave = editableRules[productName];
-    if (ruleToSave) {
+    setSavingStatus(prev => ({ ...prev, [productName]: 'saving' }));
+    try {
       await saveProductRule({
         productName,
-        minStock: ruleToSave.minStock,
-        orderAmount: ruleToSave.orderAmount,
+        minStock: rule.minStock,
+        orderAmount: rule.orderAmount,
       });
-
-      // Si el proveedor ha cambiado, actualizar inventoryData en el contexto
-      const currentItem = inventoryData.find(item => item.productName === productName);
-      if (currentItem && currentItem.supplier !== ruleToSave.supplier) {
-        const updatedInventory = inventoryData.map(item =>
-          item.productName === productName
-            ? { ...item, supplier: ruleToSave.supplier }
-            : item
-        );
-        setInventoryData(updatedInventory);
-        showSuccess(`Proveedor de ${productName} actualizado.`);
-      }
+      setSavingStatus(prev => ({ ...prev, [productName]: 'saved' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 2000);
+    } catch (e) {
+      console.error("Error saving rule on blur:", e);
+      setSavingStatus(prev => ({ ...prev, [productName]: 'error' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 3000);
+      showError('Error al guardar la regla.');
     }
-  };
+  }, [editableRules, saveProductRule]);
+
+  // Guardar cambio de proveedor (para select)
+  const handleSupplierChange = useCallback(async (productName: string, newSupplier: string) => {
+    setSavingStatus(prev => ({ ...prev, [productName]: 'saving' }));
+    try {
+      // Actualizar el estado local editableRules
+      setEditableRules(prev => ({
+        ...prev,
+        [productName]: { ...prev[productName], supplier: newSupplier }
+      }));
+
+      // Crear datos de inventario actualizados para el contexto
+      const updatedInventory = inventoryData.map(item =>
+        item.productName === productName
+          ? { ...item, supplier: newSupplier }
+          : item
+      );
+      
+      // Actualizar inventoryData en el contexto
+      setInventoryData(updatedInventory);
+
+      // Guardar explícitamente la sesión actual con los datos de inventario actualizados
+      if (sessionId && inventoryType) {
+        await saveCurrentSession(updatedInventory, inventoryType, new Date());
+      }
+
+      setSavingStatus(prev => ({ ...prev, [productName]: 'saved' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 2000);
+      showSuccess(`Proveedor de ${productName} actualizado.`);
+    } catch (e) {
+      console.error("Error changing supplier:", e);
+      setSavingStatus(prev => ({ ...prev, [productName]: 'error' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 3000);
+      showError('Error al cambiar el proveedor.');
+    }
+  }, [inventoryData, setInventoryData, saveCurrentSession, sessionId, inventoryType]);
 
   const handleDeleteRule = async (productName: string) => {
-    await deleteProductRule(productName);
+    setSavingStatus(prev => ({ ...prev, [productName]: 'saving' }));
+    try {
+      await deleteProductRule(productName);
+      setSavingStatus(prev => ({ ...prev, [productName]: 'saved' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 2000);
+    } catch (e) {
+      console.error("Error deleting rule:", e);
+      setSavingStatus(prev => ({ ...prev, [productName]: 'error' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productName]: null })), 3000);
+      showError('Error al eliminar la regla.');
+    }
   };
 
   if (loading) {
@@ -156,6 +203,7 @@ const SettingsPage = () => {
                           <TableHead className="text-xs sm:text-sm text-gray-700">Stock Mínimo</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
+                          <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead> {/* Nueva columna para el estado */}
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -169,6 +217,7 @@ const SettingsPage = () => {
                                 type="number"
                                 value={editableRules[item.productName]?.minStock ?? 0}
                                 onChange={(e) => handleRuleChange(item.productName, "minStock", e.target.value)}
+                                onBlur={() => handleInputBlur(item.productName)}
                                 className="w-20 text-center text-xs sm:text-sm"
                                 min="0"
                               />
@@ -178,6 +227,7 @@ const SettingsPage = () => {
                                 type="number"
                                 value={editableRules[item.productName]?.orderAmount ?? 0}
                                 onChange={(e) => handleRuleChange(item.productName, "orderAmount", e.target.value)}
+                                onBlur={() => handleInputBlur(item.productName)}
                                 className="w-20 text-center text-xs sm:text-sm"
                                 min="0"
                               />
@@ -185,7 +235,7 @@ const SettingsPage = () => {
                             <TableCell className="py-2 px-2">
                               <Select
                                 value={editableRules[item.productName]?.supplier ?? item.supplier}
-                                onValueChange={(value) => handleRuleChange(item.productName, "supplier", value)}
+                                onValueChange={(value) => handleSupplierChange(item.productName, value)}
                               >
                                 <SelectTrigger className="w-[120px] text-xs sm:text-sm">
                                   <SelectValue placeholder="Seleccionar proveedor" />
@@ -199,20 +249,24 @@ const SettingsPage = () => {
                                 </SelectContent>
                               </Select>
                             </TableCell>
-                            <TableCell className="py-2 px-2 text-center space-x-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleSaveRule(item.productName)}
-                                className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white h-7 w-7 p-0"
-                              >
-                                <Save className="h-3 w-3" />
-                              </Button>
+                            <TableCell className="py-2 px-2 text-center">
+                              {savingStatus[item.productName] === 'saving' && (
+                                <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
+                              )}
+                              {savingStatus[item.productName] === 'saved' && (
+                                <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
+                              )}
+                              {savingStatus[item.productName] === 'error' && (
+                                <XCircle className="h-4 w-4 text-red-500 inline-block" />
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2 px-2 text-center">
                               <Button
                                 variant="destructive"
                                 size="sm"
                                 onClick={() => handleDeleteRule(item.productName)}
                                 className="h-7 w-7 p-0"
+                                disabled={savingStatus[item.productName] === 'saving'}
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
