@@ -1,7 +1,7 @@
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
-import { db, InventorySession, ProductRuleConfig } from "@/lib/persistence";
+import { db, InventorySession, MasterProductConfig } from "@/lib/persistence"; // Usar MasterProductConfig
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
@@ -23,12 +23,11 @@ export interface InventoryItem {
   systemQuantity: number;
   physicalQuantity: number;
   averageSales: number;
-  supplier: string;
-  multiple: number;
+  supplier: string; // Ahora se deriva de MasterProductConfig o DB
+  multiple: number; // Ahora se deriva de MasterProductConfig o DB
   hasBeenEdited?: boolean;
-  // Nuevos campos para las reglas de pedido configurables
-  ruleMinStock?: number;
-  ruleOrderAmount?: number;
+  ruleMinStock?: number; // Se deriva de MasterProductConfig
+  ruleOrderAmount?: number; // Se deriva de MasterProductConfig
 }
 
 // --- Reducer Setup ---
@@ -36,7 +35,7 @@ interface InventoryState {
   dbBuffer: Uint8Array | null;
   inventoryType: "weekly" | "monthly" | null;
   inventoryData: InventoryItem[];
-  productRules: ProductRuleConfig[]; // Nuevo estado para las reglas de producto
+  masterProductConfigs: MasterProductConfig[]; // Nuevo estado para las configuraciones maestras
   loading: boolean;
   error: string | null;
   sessionId: string | null;
@@ -46,7 +45,7 @@ const initialState: InventoryState = {
   dbBuffer: null,
   inventoryType: null,
   inventoryData: [],
-  productRules: [], // Inicializar vacío
+  masterProductConfigs: [], // Inicializar vacío
   loading: false,
   error: null,
   sessionId: null,
@@ -56,7 +55,7 @@ type InventoryAction =
   | { type: 'SET_DB_BUFFER'; payload: Uint8Array | null }
   | { type: 'SET_INVENTORY_TYPE'; payload: "weekly" | "monthly" | null }
   | { type: 'SET_INVENTORY_DATA'; payload: InventoryItem[] }
-  | { type: 'SET_PRODUCT_RULES'; payload: ProductRuleConfig[] } // Nueva acción
+  | { type: 'SET_MASTER_PRODUCT_CONFIGS'; payload: MasterProductConfig[] } // Nueva acción
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_SESSION_ID'; payload: string | null }
@@ -70,8 +69,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, inventoryType: action.payload, error: null };
     case 'SET_INVENTORY_DATA':
       return { ...state, inventoryData: action.payload, error: null };
-    case 'SET_PRODUCT_RULES': // Manejar la nueva acción
-      return { ...state, productRules: action.payload };
+    case 'SET_MASTER_PRODUCT_CONFIGS': // Manejar la nueva acción
+      return { ...state, masterProductConfigs: action.payload };
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
@@ -82,7 +81,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return {
         ...initialState,
         dbBuffer: state.dbBuffer,
-        productRules: state.productRules, // Mantener las reglas de producto al resetear el estado del inventario
+        masterProductConfigs: state.masterProductConfigs, // Mantener las reglas de producto al resetear el estado del inventario
       };
     default:
       return state;
@@ -94,7 +93,7 @@ interface InventoryContextType extends InventoryState {
   setDbBuffer: (buffer: Uint8Array | null) => void;
   setInventoryType: (type: "weekly" | "monthly" | null) => void;
   setInventoryData: (data: InventoryItem[]) => void;
-  setProductRules: (rules: ProductRuleConfig[]) => void; // Nueva función
+  setMasterProductConfigs: (configs: MasterProductConfig[]) => void; // Nueva función
   processInventoryData: (
     buffer: Uint8Array,
     type: "weekly" | "monthly"
@@ -110,9 +109,9 @@ interface InventoryContextType extends InventoryState {
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
   syncFromSupabase: () => Promise<void>;
-  saveProductRule: (rule: ProductRuleConfig) => Promise<void>; // Nueva función
-  deleteProductRule: (productName: string) => Promise<void>; // Nueva función
-  loadProductRules: () => Promise<ProductRuleConfig[]>; // Nueva función
+  saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>; // Nueva función
+  deleteMasterProductConfig: (productName: string) => Promise<void>; // Nueva función
+  loadMasterProductConfigs: () => Promise<MasterProductConfig[]>; // Nueva función
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
@@ -141,8 +140,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_INVENTORY_DATA', payload: data });
   }, []);
 
-  const setProductRules = useCallback((rules: ProductRuleConfig[]) => {
-    dispatch({ type: 'SET_PRODUCT_RULES', payload: rules });
+  const setMasterProductConfigs = useCallback((configs: MasterProductConfig[]) => {
+    dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configs });
   }, []);
 
   const resetInventoryState = useCallback(() => {
@@ -214,46 +213,46 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
-  const loadProductRules = useCallback(async (): Promise<ProductRuleConfig[]> => {
+  const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
-      const localRules = await db.productRules.toArray();
-      dispatch({ type: 'SET_PRODUCT_RULES', payload: localRules });
-      return localRules;
+      const localConfigs = await db.productRules.toArray();
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
+      return localConfigs;
     } catch (e) {
-      console.error("Error fetching product rules from Dexie:", e);
-      showError('Error al obtener las reglas de producto.');
+      console.error("Error fetching master product configs from Dexie:", e);
+      showError('Error al obtener las configuraciones de producto.');
       return [];
     }
   }, []);
 
-  const saveProductRule = useCallback(async (rule: ProductRuleConfig) => {
+  const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
     try {
-      await db.productRules.put(rule);
-      dispatch({ type: 'SET_PRODUCT_RULES', payload: await db.productRules.toArray() }); // Refrescar reglas
+      await db.productRules.put(config);
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() }); // Refrescar configs
 
       if (supabase) {
         const { error } = await supabase
           .from('product_rules')
-          .upsert(rule, { onConflict: 'productName' });
+          .upsert(config, { onConflict: 'productName' });
 
         if (error) {
-          console.error("Error saving product rule to Supabase:", error);
+          console.error("Error saving master product config to Supabase:", error);
         } else {
-          console.log("Product rule saved to Supabase successfully.");
+          console.log("Master product config saved to Supabase successfully.");
         }
       }
-      // showSuccess(`Regla para ${rule.productName} guardada.`); // Feedback handled by SettingsPage
+      // showSuccess(`Configuración para ${config.productName} guardada.`); // Feedback handled by SettingsPage
     } catch (e) {
-      console.error("Error saving product rule:", e);
-      // showError('Error al guardar la regla de producto.'); // Feedback handled by SettingsPage
+      console.error("Error saving master product config:", e);
+      // showError('Error al guardar la configuración de producto.'); // Feedback handled by SettingsPage
       throw e; // Re-throw to allow SettingsPage to catch and show error feedback
     }
   }, []);
 
-  const deleteProductRule = useCallback(async (productName: string) => {
+  const deleteMasterProductConfig = useCallback(async (productName: string) => {
     try {
       await db.productRules.delete(productName);
-      dispatch({ type: 'SET_PRODUCT_RULES', payload: await db.productRules.toArray() }); // Refrescar reglas
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() }); // Refrescar configs
 
       if (supabase) {
         const { error } = await supabase
@@ -262,15 +261,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('productName', productName);
 
         if (error) {
-          console.error("Error deleting product rule from Supabase:", error);
+          console.error("Error deleting master product config from Supabase:", error);
         } else {
-          console.log("Product rule deleted from Supabase successfully.");
+          console.log("Master product config deleted from Supabase successfully.");
         }
       }
-      showSuccess(`Regla para ${productName} eliminada.`);
+      showSuccess(`Configuración para ${productName} eliminada.`);
     } catch (e) {
-      console.error("Error deleting product rule:", e);
-      showError('Error al eliminar la regla de producto.');
+      console.error("Error deleting master product config:", e);
+      showError('Error al eliminar la configuración de producto.');
     }
   }, []);
 
@@ -298,15 +297,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         );
         dbInstance.close();
 
-        // Cargar las reglas de producto existentes
-        const existingProductRules = await db.productRules.toArray();
-        const productRulesMap = new Map(existingProductRules.map(rule => [rule.productName, rule]));
+        // Cargar las configuraciones maestras existentes
+        const existingMasterProductConfigs = await db.productRules.toArray();
+        const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productName, config]));
 
-        let processedInventory = rawInventoryItems.map((dbItem) => {
-          const matchedProduct = productData.find(
-            (p) => p.productName === dbItem.Producto
-          );
+        let processedInventory: InventoryItem[] = [];
+        const newMasterConfigsToSave: MasterProductConfig[] = [];
 
+        rawInventoryItems.forEach((dbItem) => {
           let supplierName = dbItem.SupplierName;
           const lowerCaseSupplierName = supplierName.toLowerCase();
 
@@ -325,22 +323,46 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplierName = "AC Bebidas (Coca Cola)";
           }
 
-          const rule = productRulesMap.get(dbItem.Producto);
+          const matchedProductData = productData.find(
+            (p) => p.productName === dbItem.Producto
+          );
 
-          return {
-            productId: matchedProduct?.productId || 0,
+          let masterConfig = masterProductConfigsMap.get(dbItem.Producto);
+
+          if (!masterConfig) {
+            // Si no existe una configuración maestra, crear una nueva con valores por defecto
+            masterConfig = {
+              productName: dbItem.Producto,
+              minStock: 0,
+              orderAmount: 0,
+              supplier: supplierName, // Usar el proveedor detectado inicialmente
+              multiple: matchedProductData?.multiple || 1, // Usar multiple de product-data.json o 1
+            };
+            newMasterConfigsToSave.push(masterConfig);
+            masterProductConfigsMap.set(dbItem.Producto, masterConfig); // Añadir al mapa para futuras referencias en esta sesión
+          }
+
+          processedInventory.push({
+            productId: matchedProductData?.productId || 0,
             productName: dbItem.Producto,
             category: dbItem.Categoria,
             systemQuantity: dbItem.Stock_Actual,
             physicalQuantity: dbItem.Stock_Actual,
-            averageSales: matchedProduct?.averageSales || 0,
-            supplier: supplierName,
-            multiple: matchedProduct?.multiple || 1,
+            averageSales: matchedProductData?.averageSales || 0,
+            supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
+            multiple: masterConfig.multiple, // Usar el múltiplo de la configuración maestra
             hasBeenEdited: false,
-            ruleMinStock: rule?.minStock, // Añadir reglas al item de inventario
-            ruleOrderAmount: rule?.orderAmount,
-          };
+            ruleMinStock: masterConfig.minStock,
+            ruleOrderAmount: masterConfig.orderAmount,
+          });
         });
+
+        // Guardar las nuevas configuraciones maestras creadas
+        if (newMasterConfigsToSave.length > 0) {
+          await db.productRules.bulkPut(newMasterConfigsToSave);
+          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() }); // Actualizar estado global
+          console.log(`Saved ${newMasterConfigsToSave.length} new master product configs.`);
+        }
 
         // Filtrar productos de los proveedores "KYR S.A.S" y "Desconocido"
         processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
@@ -378,7 +400,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     data: InventoryItem[],
     type: "weekly" | "monthly",
     timestamp: Date,
-    orders?: { [supplier: string]: any[] } // Este es el *nuevo* orders a guardar
+    orders?: { [supplier: string]: any[] }
   ) => {
     if (!data || data.length === 0) return;
 
@@ -397,7 +419,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         inventoryData: data,
         timestamp,
         effectiveness,
-        ordersBySupplier: ordersToSave, // Usar los pedidos preservados o los nuevos
+        ordersBySupplier: ordersToSave,
       });
 
       // Si no hay sessionId, establecerlo
@@ -565,21 +587,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       // Sincronizar reglas de producto
-      const localProductRules = await db.productRules.toArray();
-      if (localProductRules.length === 0) {
+      const localMasterProductConfigs = await db.productRules.toArray();
+      if (localMasterProductConfigs.length === 0) {
         console.log("Attempting to fetch product rules from Supabase...");
-        const { data: rulesData, error: rulesError } = await supabase
+        const { data: configsData, error: configsError } = await supabase
           .from('product_rules')
           .select('*');
 
-        if (rulesError) {
-          console.error("Error fetching product rules from Supabase:", rulesError);
-        } else if (rulesData && rulesData.length > 0) {
-          for (const rule of rulesData) {
-            await db.productRules.put(rule);
+        if (configsError) {
+          console.error("Error fetching product rules from Supabase:", configsError);
+        } else if (configsData && configsData.length > 0) {
+          for (const config of configsData) {
+            await db.productRules.put(config);
           }
-          dispatch({ type: 'SET_PRODUCT_RULES', payload: rulesData });
-          console.log(`Synced ${rulesData.length} product rules from Supabase to local storage.`);
+          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configsData });
+          console.log(`Synced ${configsData.length} product rules from Supabase to local storage.`);
         } else {
           console.log("No product rules found in Supabase to sync.");
         }
@@ -602,17 +624,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.dbBuffer, state.inventoryType, state.sessionId, processInventoryData]);
 
-  // Cargar reglas de producto al inicio de la aplicación
+  // Cargar configuraciones maestras de producto al inicio de la aplicación
   useEffect(() => {
-    loadProductRules();
-  }, [loadProductRules]);
+    loadMasterProductConfigs();
+  }, [loadMasterProductConfigs]);
 
   const value = useMemo(() => ({
     ...state,
     setDbBuffer,
     setInventoryType,
     setInventoryData,
-    setProductRules, // Añadir al valor del contexto
+    setMasterProductConfigs, // Añadir al valor del contexto
     processInventoryData,
     saveCurrentSession,
     loadSession,
@@ -620,15 +642,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     getSessionHistory,
     resetInventoryState,
     syncFromSupabase,
-    saveProductRule, // Añadir al valor del contexto
-    deleteProductRule, // Añadir al valor del contexto
-    loadProductRules, // Añadir al valor del contexto
+    saveMasterProductConfig, // Añadir al valor del contexto
+    deleteMasterProductConfig, // Añadir al valor del contexto
+    loadMasterProductConfigs, // Añadir al valor del contexto
   }), [
     state,
     setDbBuffer,
     setInventoryType,
     setInventoryData,
-    setProductRules,
+    setMasterProductConfigs,
     processInventoryData,
     saveCurrentSession,
     loadSession,
@@ -636,9 +658,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     getSessionHistory,
     resetInventoryState,
     syncFromSupabase,
-    saveProductRule,
-    deleteProductRule,
-    loadProductRules,
+    saveMasterProductConfig,
+    deleteMasterProductConfig,
+    loadMasterProductConfigs,
   ]);
 
   return (

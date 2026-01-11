@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { InventorySession, ProductRuleConfig } from './persistence'; // Importar las interfaces
+import { InventorySession, MasterProductConfig } from './persistence'; // Importar las interfaces
 
 // Tipos para las variables de entorno
 interface ImportMetaEnv {
@@ -21,9 +21,9 @@ export interface Database {
         Update: Partial<InventorySession>;
       };
       product_rules: { // Nueva tabla para reglas de producto
-        Row: ProductRuleConfig;
-        Insert: ProductRuleConfig;
-        Update: Partial<ProductRuleConfig>;
+        Row: MasterProductConfig; // Usar MasterProductConfig
+        Insert: MasterProductConfig;
+        Update: Partial<MasterProductConfig>;
       };
     };
     Views: {

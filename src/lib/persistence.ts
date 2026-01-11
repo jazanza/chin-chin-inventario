@@ -12,18 +12,20 @@ export interface InventorySession {
   ordersBySupplier?: { [supplier: string]: OrderItem[] }; // Historial de pedidos
 }
 
-// Define la estructura de una Regla de Producto configurable por el usuario
-export interface ProductRuleConfig {
+// Define la estructura de una Regla de Producto configurable por el usuario (MasterProductConfig)
+export interface MasterProductConfig {
   productName: string; // Clave principal para la regla
   minStock: number;
   orderAmount: number;
+  supplier: string; // Ahora parte de la configuración global
+  multiple: number; // Ahora parte de la configuración global
 }
 
 export class SessionDatabase extends Dexie {
   // Define la tabla principal para sesiones
   sessions!: Table<InventorySession, string>;
-  // Define la tabla para reglas de producto
-  productRules!: Table<ProductRuleConfig, string>;
+  // Define la tabla para reglas de producto (ahora MasterProductConfig)
+  productRules!: Table<MasterProductConfig, string>;
 
   constructor() {
     super('ChinChinDB');
