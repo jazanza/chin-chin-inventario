@@ -34,6 +34,11 @@ const SettingsPage = () => {
     [productName: string]: MasterProductConfig;
   }>({});
 
+  // Estado para el feedback de guardado
+  const [savingStatus, setSavingStatus] = useState<{
+    [productName: string]: 'saving' | 'saved' | 'error' | null;
+  }>({});
+
   // Inicializar editableConfigs cuando masterProductConfigs cambian
   useEffect(() => {
     const initialConfigs: {
@@ -202,13 +207,24 @@ const SettingsPage = () => {
     );
   }
 
-  if (inventoryData.length === 0 && masterProductConfigs.length === 0) {
+  // Mostrar mensaje si no hay configuraciones maestras y no hay datos de inventario cargados
+  if (masterProductConfigs.length === 0 && inventoryData.length === 0) {
     return (
       <div className="p-4 text-center text-gray-500">
-        Por favor, carga un archivo de base de datos y selecciona un tipo de inventario para que los productos aparezcan aquí y puedas configurar sus reglas.
+        No hay productos configurados. Por favor, carga un archivo de base de datos y selecciona un tipo de inventario para que los productos aparezcan aquí y puedas configurar sus reglas.
       </div>
     );
   }
+
+  // Si hay configuraciones maestras pero no hay datos de inventario cargados, aún se pueden editar las reglas
+  if (masterProductConfigs.length === 0 && inventoryData.length > 0) {
+    return (
+      <div className="p-4 text-center text-gray-500">
+        No hay reglas de producto configuradas. Carga un archivo de base de datos para que se generen las configuraciones iniciales y puedas editarlas.
+      </div>
+    );
+  }
+
 
   return (
     <div className="w-full p-4 bg-white text-gray-900">
