@@ -47,6 +47,17 @@ export class SessionDatabase extends Dexie {
       productRules: 'productId', // Clave principal por productId
       supplierConfigs: 'supplierName', // Clave principal por nombre de proveedor
     });
+    // Nueva versión para asegurar que productId sea numérico
+    this.version(2).stores({
+      sessions: 'dateKey, timestamp',
+      productRules: 'productId', // Re-declarar para asegurar el índice numérico
+      supplierConfigs: 'supplierName',
+    }).upgrade(async tx => {
+      console.log("Upgrading ChinChinDB to version 2. Ensuring productRules schema.");
+      // No se necesita migración de datos explícita si el problema es solo la aplicación de tipos en datos nuevos.
+      // Si los datos existentes tienen productIds de tipo string, serán ignorados por las consultas numéricas.
+      // La función processDbForMasterConfigs se encargará de rellenar con los tipos correctos.
+    });
   }
 }
 

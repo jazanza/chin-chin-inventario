@@ -492,6 +492,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         );
         dbInstance.close();
 
+        if (rawInventoryItems.length === 0) {
+          console.warn("No inventory items found in the database for processing.");
+          dispatch({ type: 'SET_INVENTORY_DATA', payload: [] });
+          dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
+          dispatch({ type: 'SET_SESSION_ID', payload: format(new Date(), 'yyyy-MM-dd') });
+          showError('No se encontraron productos de inventario en la base de datos.');
+          return;
+        }
+
         // Cargar las configuraciones maestras existentes (incluyendo ocultas para referencia)
         const allMasterProductConfigs = await db.productRules.toArray();
         const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
@@ -501,8 +510,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         rawInventoryItems.forEach((dbItem) => {
           // Asegurar que ProductId exista y sea un número válido
-          if (dbItem.ProductId === null || dbItem.ProductId === undefined) {
-            console.warn("Skipping product due to missing ProductId:", dbItem);
+          if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId))) {
+            console.warn("Skipping product due to invalid ProductId:", dbItem);
             return;
           }
           const currentProductId = Number(dbItem.ProductId); // Asegurar que sea un número desde el principio
@@ -524,6 +533,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
             supplierName = "AC Bebidas (Coca Cola)";
           }
+
+          const matchedProductData = productData.find(
+            (p) => p.productName === dbItem.Producto
+          );
 
           let masterConfig = masterProductConfigsMap.get(currentProductId);
 
@@ -620,6 +633,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       );
       dbInstance.close();
 
+      if (rawInventoryItems.length === 0) {
+        console.warn("No products found in the database for master configuration.");
+        showError('No se encontraron productos en la base de datos para configurar.');
+        return;
+      }
+
       const existingMasterProductConfigs = await db.productRules.toArray(); // Obtener todas las configs, incluyendo ocultas
       const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productId, config]));
 
@@ -628,8 +647,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       rawInventoryItems.forEach((dbItem) => {
         // Asegurar que ProductId exista y sea un número válido
-        if (dbItem.ProductId === null || dbItem.ProductId === undefined) {
-          console.warn("Skipping product due to missing ProductId:", dbItem);
+        if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId))) {
+          console.warn("Skipping product due to invalid ProductId:", dbItem);
           return;
         }
         const currentProductId = Number(dbItem.ProductId); // Asegurar que sea un número desde el principio
@@ -662,7 +681,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           newProductsCount++;
           configsToUpdateOrAdd.push(masterConfig);
         } else {
-          // Si existe, actualizar nombre y proveedor si han cambiado en la DB, pero mantener isHidden
+          // Si existe, actualizar nombre y proveedor si han cambiado, pero mantener isHidden
           const updatedConfig = {
             ...masterConfig,
             productName: dbItem.Producto, // Actualizar nombre si ha cambiado
