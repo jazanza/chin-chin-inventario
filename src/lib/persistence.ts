@@ -22,14 +22,13 @@ export interface ProductRule {
 export interface MasterProductConfig {
   productName: string; // Clave principal para la regla
   rules: ProductRule[]; // Lista de reglas de stock/pedido
-  minProductOrder: number; // Mínimo de unidades a pedir para este producto
+  // Eliminado: minProductOrder: number; // Mínimo de unidades a pedir para este producto
   supplier: string; // Ahora parte de la configuración global
 }
 
 // Define la estructura de la configuración por proveedor
 export interface SupplierConfig {
   supplierName: string; // Clave principal para el proveedor
-  // Eliminado: minOrderValue: number; // Mínimo de unidades a pedir a este proveedor
 }
 
 export class SessionDatabase extends Dexie {

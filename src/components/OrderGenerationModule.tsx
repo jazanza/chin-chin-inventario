@@ -15,19 +15,14 @@ interface OrderGenerationModuleProps {
 // Definir la interfaz para los ítems de pedido con la cantidad final editable
 export interface OrderItem {
   product: string;
-  quantityToOrder: number; // Cantidad sugerida (después de aplicar reglas y mínimo por producto)
+  quantityToOrder: number; // Cantidad sugerida (después de aplicar reglas)
   finalOrderQuantity: number; // Cantidad final que el usuario puede editar
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData /* Eliminado: , supplierConfigs */ } = useInventoryContext();
+  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData } = useInventoryContext();
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
-
-  // Eliminado: Mapear supplierConfigs para fácil acceso
-  // Eliminado: const supplierConfigsMap = useMemo(() => {
-  // Eliminado:   return new Map(supplierConfigs.map(config => [config.supplierName, config]));
-  // Eliminado: }, [supplierConfigs]);
 
   // Calcula las órdenes sugeridas (quantityToOrder) y las inicializa en finalOrders
   const ordersBySupplier = useMemo(() => {
@@ -48,11 +43,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
             break; // Aplicar la primera regla que coincida (la más específica)
           }
         }
-      }
-
-      // Aplicar el mínimo por producto si la cantidad sugerida es mayor que 0 y menor que el mínimo
-      if (quantityToOrder > 0 && item.minProductOrder && quantityToOrder < item.minProductOrder) {
-        quantityToOrder = item.minProductOrder;
       }
       
       if (quantityToOrder < 0) quantityToOrder = 0;
@@ -75,7 +65,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return orders;
   }, [inventoryData]);
 
-  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData o supplierConfigs cambian
+  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData cambia
   useEffect(() => {
     const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
     for (const supplier in ordersBySupplier) {
@@ -85,7 +75,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       }));
     }
     setFinalOrders(initialFinalOrders);
-  }, [ordersBySupplier]); // Eliminado: supplierConfigs
+  }, [ordersBySupplier]);
 
   // Manejar cambios en la cantidad final de pedido
   const handleFinalOrderQuantityChange = (
@@ -132,18 +122,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     }
     return null;
   }, [selectedSupplier, finalOrders]);
-
-  // Eliminado: Calcular el total de unidades a pedir para el proveedor seleccionado
-  // Eliminado: const totalUnitsForSelectedSupplier = useMemo(() => {
-  // Eliminado:   if (!selectedSupplier || !finalOrders[selectedSupplier]) return 0;
-  // Eliminado:   return finalOrders[selectedSupplier].reduce((sum, order) => sum + order.finalOrderQuantity, 0);
-  // Eliminado: }, [selectedSupplier, finalOrders]);
-
-  // Eliminado: Obtener el mínimo de compra del proveedor seleccionado
-  // Eliminado: const minOrderValueForSelectedSupplier = useMemo(() => {
-  // Eliminado:   if (!selectedSupplier) return 0;
-  // Eliminado:   return supplierConfigsMap.get(selectedSupplier)?.minOrderValue ?? 0;
-  // Eliminado: }, [selectedSupplier, supplierConfigsMap]);
 
   const copyOrderToClipboard = async (supplier: string) => {
     const supplierOrders = finalOrders[supplier]; // Usar finalOrders para copiar
@@ -227,8 +205,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                     Copiar Pedido
                   </Button>
                 </div>
-
-                {/* Eliminado: Alerta de mínimo de compra por proveedor */}
 
                 <div className="overflow-x-auto custom-scrollbar">
                   <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
