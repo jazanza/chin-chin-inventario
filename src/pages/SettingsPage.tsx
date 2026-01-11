@@ -11,10 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2 } from "lucide-react"; // Importar iconos
+import { Loader2, CheckCircle, XCircle, Trash2, Upload } from "lucide-react"; // Importar iconos
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils"; // Para combinar clases de Tailwind
 import { MasterProductConfig } from "@/lib/persistence";
+import { FileUploader } from "@/components/FileUploader"; // Importar FileUploader
 
 const SettingsPage = () => {
   const {
@@ -27,6 +28,7 @@ const SettingsPage = () => {
     sessionId,
     inventoryType,
     loading,
+    processDbForMasterConfigs, // Nueva función para procesar DB solo para master configs
   } = useInventoryContext();
 
   // Estado local para las reglas que se están editando
@@ -38,6 +40,9 @@ const SettingsPage = () => {
   const [savingStatus, setSavingStatus] = useState<{
     [productName: string]: 'saving' | 'saved' | 'error' | null;
   }>({});
+
+  // Estado de carga para el uploader de configuración
+  const [isUploadingConfig, setIsUploadingConfig] = useState(false);
 
   // Inicializar editableConfigs cuando masterProductConfigs cambian
   useEffect(() => {
@@ -53,6 +58,7 @@ const SettingsPage = () => {
   // Agrupar productos por proveedor (usando el proveedor de la configuración maestra)
   const productsGroupedBySupplier = useMemo(() => {
     const grouped: { [supplier: string]: MasterProductConfig[] } = {};
+    // Usar Object.values(editableConfigs) para asegurar que los cambios locales se reflejen
     Object.values(editableConfigs).forEach((config) => {
       if (!grouped[config.supplier]) {
         grouped[config.supplier] = [];
@@ -199,7 +205,19 @@ const SettingsPage = () => {
     }
   };
 
-  if (loading) {
+  const handleDbFileLoadedFromSettings = async (buffer: Uint8Array) => {
+    setIsUploadingConfig(true);
+    try {
+      await processDbForMasterConfigs(buffer);
+    } catch (error) {
+      console.error("Error uploading DB for master configs:", error);
+      showError("Error al cargar el archivo DB para configuraciones maestras.");
+    } finally {
+      setIsUploadingConfig(false);
+    }
+  };
+
+  if (loading || isUploadingConfig) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <p className="text-base sm:text-lg text-center text-gray-700">Cargando configuración...</p>
@@ -207,24 +225,20 @@ const SettingsPage = () => {
     );
   }
 
-  // Mostrar mensaje si no hay configuraciones maestras y no hay datos de inventario cargados
-  if (masterProductConfigs.length === 0 && inventoryData.length === 0) {
+  // Mostrar uploader si no hay configuraciones maestras
+  if (masterProductConfigs.length === 0) {
     return (
-      <div className="p-4 text-center text-gray-500">
-        No hay productos configurados. Por favor, carga un archivo de base de datos y selecciona un tipo de inventario para que los productos aparezcan aquí y puedas configurar sus reglas.
+      <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 text-gray-900">Configuración de Pedidos</h1>
+          <p className="text-base sm:text-lg text-gray-700 mb-6">
+            No hay productos configurados. Por favor, carga un archivo de base de datos (.db) para inicializar la lista de productos y sus reglas.
+          </p>
+          <FileUploader onFileLoaded={handleDbFileLoadedFromSettings} loading={isUploadingConfig} />
+        </div>
       </div>
     );
   }
-
-  // Si hay configuraciones maestras pero no hay datos de inventario cargados, aún se pueden editar las reglas
-  if (masterProductConfigs.length === 0 && inventoryData.length > 0) {
-    return (
-      <div className="p-4 text-center text-gray-500">
-        No hay reglas de producto configuradas. Carga un archivo de base de datos para que se generen las configuraciones iniciales y puedas editarlas.
-      </div>
-    );
-  }
-
 
   return (
     <div className="w-full p-4 bg-white text-gray-900">
@@ -247,10 +261,8 @@ const SettingsPage = () => {
                       <TableHeader>
                         <TableRow className="border-b border-gray-200">
                           <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                          <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Stock Actual</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Stock Mínimo</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Cant. a Pedir</TableHead>
-                          <TableHead className="text-xs sm:text-sm text-gray-700">Múltiplo</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead> {/* Nueva columna para el estado */}
                           <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
@@ -258,11 +270,9 @@ const SettingsPage = () => {
                       </TableHeader>
                       <TableBody>
                         {products.map((config) => {
-                          const currentInventoryItem = inventoryData.find(item => item.productName === config.productName);
                           return (
                             <TableRow key={config.productName} className="border-b border-gray-100 hover:bg-gray-100">
                               <TableCell className="py-2 px-2 text-xs sm:text-sm font-medium">{config.productName}</TableCell>
-                              <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{currentInventoryItem?.systemQuantity ?? '-'}</TableCell>
                               <TableCell className="py-2 px-2">
                                 <Input
                                   type="number"
@@ -281,16 +291,6 @@ const SettingsPage = () => {
                                   onBlur={() => handleInputBlur(config.productName)}
                                   className="w-20 text-center text-xs sm:text-sm"
                                   min="0"
-                                />
-                              </TableCell>
-                              <TableCell className="py-2 px-2">
-                                <Input
-                                  type="number"
-                                  value={editableConfigs[config.productName]?.multiple ?? 1}
-                                  onChange={(e) => handleConfigChange(config.productName, "multiple", e.target.value)}
-                                  onBlur={() => handleInputBlur(config.productName)}
-                                  className="w-20 text-center text-xs sm:text-sm"
-                                  min="1"
                                 />
                               </TableCell>
                               <TableCell className="py-2 px-2">

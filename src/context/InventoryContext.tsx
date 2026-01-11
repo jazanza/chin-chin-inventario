@@ -98,6 +98,7 @@ interface InventoryContextType extends InventoryState {
     buffer: Uint8Array,
     type: "weekly" | "monthly"
   ) => Promise<void>;
+  processDbForMasterConfigs: (buffer: Uint8Array) => Promise<void>; // Nueva función para SettingsPage
   saveCurrentSession: (
     data: InventoryItem[],
     type: "weekly" | "monthly",
@@ -395,6 +396,79 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     []
   );
 
+  // Nueva función para procesar DB solo para configuraciones maestras
+  const processDbForMasterConfigs = useCallback(async (buffer: Uint8Array) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    console.log(`Starting database processing for master configs.`);
+
+    try {
+      await initDb();
+      const dbInstance = loadDb(buffer);
+      // Usar la consulta mensual para obtener la lista más completa de productos
+      const rawInventoryItems: InventoryItemFromDB[] = queryData(
+        dbInstance,
+        MONTHLY_INVENTORY_QUERY
+      );
+      dbInstance.close();
+
+      const existingMasterProductConfigs = await db.productRules.toArray();
+      const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productName, config]));
+
+      const newMasterConfigsToSave: MasterProductConfig[] = [];
+
+      rawInventoryItems.forEach((dbItem) => {
+        let supplierName = dbItem.SupplierName;
+        const lowerCaseSupplierName = supplierName.toLowerCase();
+
+        if (lowerCaseSupplierName.includes("finca yaruqui") || lowerCaseSupplierName.includes("elbe")) {
+          supplierName = "ELBE S.A.";
+        } else if (lowerCaseSupplierName.includes("ac bebidas")) {
+          supplierName = "AC Bebidas (Coca Cola)";
+        }
+
+        const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
+        if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
+          supplierName = "AC Bebidas (Coca Cola)";
+        }
+
+        const matchedProductData = productData.find(
+          (p) => p.productName === dbItem.Producto
+        );
+
+        let masterConfig = masterProductConfigsMap.get(dbItem.Producto);
+
+        if (!masterConfig) {
+          masterConfig = {
+            productName: dbItem.Producto,
+            minStock: 0,
+            orderAmount: 0,
+            supplier: supplierName,
+            multiple: matchedProductData?.multiple || 1,
+          };
+          newMasterConfigsToSave.push(masterConfig);
+          masterProductConfigsMap.set(dbItem.Producto, masterConfig);
+        }
+      });
+
+      if (newMasterConfigsToSave.length > 0) {
+        await db.productRules.bulkPut(newMasterConfigsToSave);
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: await db.productRules.toArray() });
+        showSuccess(`Se agregaron ${newMasterConfigsToSave.length} nuevos productos a la configuración maestra.`);
+      } else {
+        showSuccess('No se encontraron nuevos productos para agregar a la configuración maestra.');
+      }
+    } catch (e: any) {
+      console.error("Error processing database for master configs:", e);
+      showError(`Error al procesar el archivo DB para configuraciones: ${e.message}`);
+      dispatch({ type: 'SET_ERROR', payload: e.message });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+      console.log("Database master config processing finished.");
+    }
+  }, []);
+
+
   // --- Persistencia de Sesiones ---
   const saveCurrentSession = useCallback(async (
     data: InventoryItem[],
@@ -636,6 +710,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setInventoryData,
     setMasterProductConfigs, // Añadir al valor del contexto
     processInventoryData,
+    processDbForMasterConfigs, // Añadir al valor del contexto
     saveCurrentSession,
     loadSession,
     deleteSession,
@@ -652,6 +727,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setInventoryData,
     setMasterProductConfigs,
     processInventoryData,
+    processDbForMasterConfigs,
     saveCurrentSession,
     loadSession,
     deleteSession,
