@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { InventorySession, MasterProductConfig } from './persistence'; // Importar las interfaces
+import { InventorySession, MasterProductConfig, SupplierConfig } from './persistence'; // Importar las interfaces
 
 // Tipos para las variables de entorno
 interface ImportMetaEnv {
@@ -24,6 +24,11 @@ export interface Database {
         Row: MasterProductConfig; // Usar MasterProductConfig
         Insert: MasterProductConfig;
         Update: Partial<MasterProductConfig>;
+      };
+      supplier_configs: { // Nueva tabla para configuraciones de proveedor
+        Row: SupplierConfig;
+        Insert: SupplierConfig;
+        Update: Partial<SupplierConfig>;
       };
     };
     Views: {

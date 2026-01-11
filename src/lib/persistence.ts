@@ -12,13 +12,25 @@ export interface InventorySession {
   ordersBySupplier?: { [supplier: string]: OrderItem[] }; // Historial de pedidos
 }
 
+// Define la estructura de una Regla de Pedido individual
+export interface ProductRule {
+  minStock: number;
+  orderAmount: number;
+}
+
 // Define la estructura de una Regla de Producto configurable por el usuario (MasterProductConfig)
 export interface MasterProductConfig {
   productName: string; // Clave principal para la regla
-  minStock: number;
-  orderAmount: number;
+  rules: ProductRule[]; // Lista de reglas de stock/pedido
+  minProductOrder: number; // Mínimo de unidades a pedir para este producto
   supplier: string; // Ahora parte de la configuración global
   multiple: number; // Ahora parte de la configuración global
+}
+
+// Define la estructura de la configuración por proveedor
+export interface SupplierConfig {
+  supplierName: string; // Clave principal para el proveedor
+  minOrderValue: number; // Mínimo de unidades a pedir a este proveedor
 }
 
 export class SessionDatabase extends Dexie {
@@ -26,12 +38,15 @@ export class SessionDatabase extends Dexie {
   sessions!: Table<InventorySession, string>;
   // Define la tabla para reglas de producto (ahora MasterProductConfig)
   productRules!: Table<MasterProductConfig, string>;
+  // Define la tabla para configuraciones de proveedor
+  supplierConfigs!: Table<SupplierConfig, string>;
 
   constructor() {
     super('ChinChinDB');
     this.version(1).stores({
       sessions: 'dateKey, timestamp',
       productRules: 'productName', // Clave principal por nombre de producto
+      supplierConfigs: 'supplierName', // Clave principal por nombre de proveedor
     });
   }
 }
