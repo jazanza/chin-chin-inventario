@@ -302,6 +302,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- Master Product Config Persistence ---
   const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
+      // Defensive check: if the table is empty, return early to prevent potential issues with queries on empty sets.
+      const count = await db.productRules.count();
+      if (count === 0) {
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: [] });
+        return [];
+      }
+
       const localConfigs = await db.productRules.where('isHidden').notEqual(true).toArray();
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: localConfigs });
       return localConfigs;
@@ -681,7 +688,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           newProductsCount++;
           configsToUpdateOrAdd.push(masterConfig);
         } else {
-          // Si existe, actualizar nombre y proveedor si han cambiado, pero mantener isHidden
+          // Si existe, actualizar nombre y proveedor si han cambiado en la DB, pero mantener isHidden
           const updatedConfig = {
             ...masterConfig,
             productName: dbItem.Producto, // Actualizar nombre si ha cambiado
