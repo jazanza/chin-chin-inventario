@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { InventorySession, ProductRuleConfig } from './persistence'; // Importar las interfaces
 
 // Tipos para las variables de entorno
 interface ImportMetaEnv {
@@ -8,6 +9,36 @@ interface ImportMetaEnv {
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+// Definir la estructura de la base de datos para Supabase
+export interface Database {
+  public: {
+    Tables: {
+      inventory_sessions: {
+        Row: InventorySession;
+        Insert: InventorySession;
+        Update: Partial<InventorySession>;
+      };
+      product_rules: { // Nueva tabla para reglas de producto
+        Row: ProductRuleConfig;
+        Insert: ProductRuleConfig;
+        Update: Partial<ProductRuleConfig>;
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
+  };
 }
 
 // Obtener las variables de entorno
@@ -26,7 +57,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Crear el cliente de Supabase solo si las variables están presentes
 export const supabase = supabaseUrl && supabaseAnonKey ? 
-  createClient(supabaseUrl, supabaseAnonKey) : 
+  createClient<Database>(supabaseUrl, supabaseAnonKey) : 
   null;
 
 // Verificar si el cliente se creó correctamente

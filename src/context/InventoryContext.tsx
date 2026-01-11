@@ -1,11 +1,10 @@
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json";
-import { db, InventorySession } from "@/lib/persistence";
+import { db, InventorySession, ProductRuleConfig } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
-// Importar el cliente de Supabase
 import { supabase } from "@/lib/supabase";
 
 // Interfaz para los datos de inventario tal como vienen de la DB
@@ -27,6 +26,9 @@ export interface InventoryItem {
   supplier: string;
   multiple: number;
   hasBeenEdited?: boolean;
+  // Nuevos campos para las reglas de pedido configurables
+  ruleMinStock?: number;
+  ruleOrderAmount?: number;
 }
 
 // --- Reducer Setup ---
@@ -34,6 +36,7 @@ interface InventoryState {
   dbBuffer: Uint8Array | null;
   inventoryType: "weekly" | "monthly" | null;
   inventoryData: InventoryItem[];
+  productRules: ProductRuleConfig[]; // Nuevo estado para las reglas de producto
   loading: boolean;
   error: string | null;
   sessionId: string | null;
@@ -43,6 +46,7 @@ const initialState: InventoryState = {
   dbBuffer: null,
   inventoryType: null,
   inventoryData: [],
+  productRules: [], // Inicializar vacío
   loading: false,
   error: null,
   sessionId: null,
@@ -52,6 +56,7 @@ type InventoryAction =
   | { type: 'SET_DB_BUFFER'; payload: Uint8Array | null }
   | { type: 'SET_INVENTORY_TYPE'; payload: "weekly" | "monthly" | null }
   | { type: 'SET_INVENTORY_DATA'; payload: InventoryItem[] }
+  | { type: 'SET_PRODUCT_RULES'; payload: ProductRuleConfig[] } // Nueva acción
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_SESSION_ID'; payload: string | null }
@@ -65,6 +70,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, inventoryType: action.payload, error: null };
     case 'SET_INVENTORY_DATA':
       return { ...state, inventoryData: action.payload, error: null };
+    case 'SET_PRODUCT_RULES': // Manejar la nueva acción
+      return { ...state, productRules: action.payload };
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
@@ -74,9 +81,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
     case 'RESET_STATE':
       return {
         ...initialState,
-        // Mantener el dbBuffer si ya estaba cargado, pero resetear todo lo demás
-        // Si queremos forzar una nueva carga de DB, el handleStartNewSession lo pondrá a null
         dbBuffer: state.dbBuffer,
+        productRules: state.productRules, // Mantener las reglas de producto al resetear el estado del inventario
       };
     default:
       return state;
@@ -88,6 +94,7 @@ interface InventoryContextType extends InventoryState {
   setDbBuffer: (buffer: Uint8Array | null) => void;
   setInventoryType: (type: "weekly" | "monthly" | null) => void;
   setInventoryData: (data: InventoryItem[]) => void;
+  setProductRules: (rules: ProductRuleConfig[]) => void; // Nueva función
   processInventoryData: (
     buffer: Uint8Array,
     type: "weekly" | "monthly"
@@ -102,8 +109,10 @@ interface InventoryContextType extends InventoryState {
   deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
-  // Nueva función para sincronizar desde Supabase
   syncFromSupabase: () => Promise<void>;
+  saveProductRule: (rule: ProductRuleConfig) => Promise<void>; // Nueva función
+  deleteProductRule: (productName: string) => Promise<void>; // Nueva función
+  loadProductRules: () => Promise<ProductRuleConfig[]>; // Nueva función
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
@@ -130,6 +139,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const setInventoryData = useCallback((data: InventoryItem[]) => {
     dispatch({ type: 'SET_INVENTORY_DATA', payload: data });
+  }, []);
+
+  const setProductRules = useCallback((rules: ProductRuleConfig[]) => {
+    dispatch({ type: 'SET_PRODUCT_RULES', payload: rules });
   }, []);
 
   const resetInventoryState = useCallback(() => {
@@ -201,6 +214,66 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
+  const loadProductRules = useCallback(async (): Promise<ProductRuleConfig[]> => {
+    try {
+      const localRules = await db.productRules.toArray();
+      dispatch({ type: 'SET_PRODUCT_RULES', payload: localRules });
+      return localRules;
+    } catch (e) {
+      console.error("Error fetching product rules from Dexie:", e);
+      showError('Error al obtener las reglas de producto.');
+      return [];
+    }
+  }, []);
+
+  const saveProductRule = useCallback(async (rule: ProductRuleConfig) => {
+    try {
+      await db.productRules.put(rule);
+      dispatch({ type: 'SET_PRODUCT_RULES', payload: await db.productRules.toArray() }); // Refrescar reglas
+
+      if (supabase) {
+        const { error } = await supabase
+          .from('product_rules')
+          .upsert(rule, { onConflict: 'productName' });
+
+        if (error) {
+          console.error("Error saving product rule to Supabase:", error);
+        } else {
+          console.log("Product rule saved to Supabase successfully.");
+        }
+      }
+      showSuccess(`Regla para ${rule.productName} guardada.`);
+    } catch (e) {
+      console.error("Error saving product rule:", e);
+      showError('Error al guardar la regla de producto.');
+    }
+  }, []);
+
+  const deleteProductRule = useCallback(async (productName: string) => {
+    try {
+      await db.productRules.delete(productName);
+      dispatch({ type: 'SET_PRODUCT_RULES', payload: await db.productRules.toArray() }); // Refrescar reglas
+
+      if (supabase) {
+        const { error } = await supabase
+          .from('product_rules')
+          .delete()
+          .eq('productName', productName);
+
+        if (error) {
+          console.error("Error deleting product rule from Supabase:", error);
+        } else {
+          console.log("Product rule deleted from Supabase successfully.");
+        }
+      }
+      showSuccess(`Regla para ${productName} eliminada.`);
+    } catch (e) {
+      console.error("Error deleting product rule:", e);
+      showError('Error al eliminar la regla de producto.');
+    }
+  }, []);
+
+
   const processInventoryData = useCallback(
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
       dispatch({ type: 'SET_LOADING', payload: true });
@@ -223,6 +296,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           inventoryQuery
         );
         dbInstance.close();
+
+        // Cargar las reglas de producto existentes
+        const existingProductRules = await db.productRules.toArray();
+        const productRulesMap = new Map(existingProductRules.map(rule => [rule.productName, rule]));
 
         let processedInventory = rawInventoryItems.map((dbItem) => {
           const matchedProduct = productData.find(
@@ -247,6 +324,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplierName = "AC Bebidas (Coca Cola)";
           }
 
+          const rule = productRulesMap.get(dbItem.Producto);
+
           return {
             productId: matchedProduct?.productId || 0,
             productName: dbItem.Producto,
@@ -257,6 +336,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplier: supplierName,
             multiple: matchedProduct?.multiple || 1,
             hasBeenEdited: false,
+            ruleMinStock: rule?.minStock, // Añadir reglas al item de inventario
+            ruleOrderAmount: rule?.orderAmount,
           };
         });
 
@@ -438,7 +519,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Nueva función para sincronizar desde Supabase
   const syncFromSupabase = useCallback(async () => {
-    // Solo intentar sincronizar si Supabase está disponible
     if (!supabase) {
       console.log("Supabase not available, skipping sync.");
       return;
@@ -448,56 +528,61 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      // Verificar si hay sesiones locales
+      // Sincronizar sesiones
       const localSessions = await db.sessions.toArray();
-      
-      // Si ya hay sesiones locales, no sincronizar (para evitar sobrescritura)
-      if (localSessions.length > 0) {
-        console.log("Local sessions found, skipping Supabase sync.");
-        return;
-      }
+      if (localSessions.length === 0) {
+        console.log("Attempting to fetch sessions from Supabase...");
+        const { data: sessionsData, error: sessionsError } = await supabase
+          .from('inventory_sessions')
+          .select('*')
+          .order('timestamp', { ascending: false });
 
-      console.log("Attempting to fetch sessions from Supabase...");
-      
-      // Obtener sesiones desde Supabase
-      const { data, error } = await supabase
-        .from('inventory_sessions')
-        .select('*')
-        .order('timestamp', { ascending: false });
-
-      if (error) {
-        console.error("Error fetching sessions from Supabase:", error);
-        console.error("Error details:", {
-          message: error.message,
-          code: error.code,
-          hint: error.hint,
-          details: error.details
-        });
-        // No mostrar error al usuario, solo loguear
-        return;
-      }
-
-      console.log("Successfully fetched sessions from Supabase:", data?.length || 0, "sessions found");
-
-      // Guardar sesiones en Dexie
-      if (data && data.length > 0) {
-        for (const session of data) {
-          await db.sessions.put({
-            dateKey: session.dateKey,
-            inventoryType: session.inventoryType,
-            inventoryData: session.inventoryData,
-            timestamp: new Date(session.timestamp),
-            effectiveness: session.effectiveness,
-            ordersBySupplier: session.ordersBySupplier,
-          });
+        if (sessionsError) {
+          console.error("Error fetching sessions from Supabase:", sessionsError);
+        } else if (sessionsData && sessionsData.length > 0) {
+          for (const session of sessionsData) {
+            await db.sessions.put({
+              dateKey: session.dateKey,
+              inventoryType: session.inventoryType,
+              inventoryData: session.inventoryData,
+              timestamp: new Date(session.timestamp),
+              effectiveness: session.effectiveness,
+              ordersBySupplier: session.ordersBySupplier,
+            });
+          }
+          console.log(`Synced ${sessionsData.length} sessions from Supabase to local storage.`);
+        } else {
+          console.log("No sessions found in Supabase to sync.");
         }
-        console.log(`Synced ${data.length} sessions from Supabase to local storage.`);
       } else {
-        console.log("No sessions found in Supabase to sync.");
+        console.log("Local sessions found, skipping Supabase sessions sync.");
       }
+
+      // Sincronizar reglas de producto
+      const localProductRules = await db.productRules.toArray();
+      if (localProductRules.length === 0) {
+        console.log("Attempting to fetch product rules from Supabase...");
+        const { data: rulesData, error: rulesError } = await supabase
+          .from('product_rules')
+          .select('*');
+
+        if (rulesError) {
+          console.error("Error fetching product rules from Supabase:", rulesError);
+        } else if (rulesData && rulesData.length > 0) {
+          for (const rule of rulesData) {
+            await db.productRules.put(rule);
+          }
+          dispatch({ type: 'SET_PRODUCT_RULES', payload: rulesData });
+          console.log(`Synced ${rulesData.length} product rules from Supabase to local storage.`);
+        } else {
+          console.log("No product rules found in Supabase to sync.");
+        }
+      } else {
+        console.log("Local product rules found, skipping Supabase rules sync.");
+      }
+
     } catch (e) {
       console.error("Error during Supabase sync:", e);
-      // No mostrar error al usuario, solo loguear
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -511,23 +596,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.dbBuffer, state.inventoryType, state.sessionId, processInventoryData]);
 
+  // Cargar reglas de producto al inicio de la aplicación
+  useEffect(() => {
+    loadProductRules();
+  }, [loadProductRules]);
+
   const value = useMemo(() => ({
     ...state,
     setDbBuffer,
     setInventoryType,
     setInventoryData,
-    processInventoryData,
-    saveCurrentSession,
-    loadSession,
-    deleteSession,
-    getSessionHistory,
-    resetInventoryState,
-    syncFromSupabase, // Añadir la nueva función al contexto
-  }), [
-    state,
-    setDbBuffer,
-    setInventoryType,
-    setInventoryData,
+    setProductRules, // Añadir al valor del contexto
     processInventoryData,
     saveCurrentSession,
     loadSession,
@@ -535,6 +614,25 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     getSessionHistory,
     resetInventoryState,
     syncFromSupabase,
+    saveProductRule, // Añadir al valor del contexto
+    deleteProductRule, // Añadir al valor del contexto
+    loadProductRules, // Añadir al valor del contexto
+  }), [
+    state,
+    setDbBuffer,
+    setInventoryType,
+    setInventoryData,
+    setProductRules,
+    processInventoryData,
+    saveCurrentSession,
+    loadSession,
+    deleteSession,
+    getSessionHistory,
+    resetInventoryState,
+    syncFromSupabase,
+    saveProductRule,
+    deleteProductRule,
+    loadProductRules,
   ]);
 
   return (

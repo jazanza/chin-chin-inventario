@@ -3,9 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Copy, Minus, Plus } from "lucide-react";
-import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
+import { InventoryItem, useInventoryContext } from "@/context/InventoryContext";
 import { showSuccess, showError } from "@/utils/toast";
-import { productOrderRules } from "@/lib/order-rules";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +13,7 @@ interface OrderGenerationModuleProps {
 }
 
 // Definir la interfaz para los ítems de pedido con la cantidad final editable
-export interface OrderItem { // Exportar para usar en persistence.ts
+export interface OrderItem {
   product: string;
   quantityToOrder: number; // Cantidad sugerida antes de ajustar por múltiplos
   adjustedQuantity: number; // Cantidad sugerida ajustada por múltiplos
@@ -22,7 +21,7 @@ export interface OrderItem { // Exportar para usar en persistence.ts
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData } = useInventoryContext(); // Obtener del contexto
+  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData } = useInventoryContext();
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
 
@@ -33,12 +32,17 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     inventoryData.forEach(item => {
       if (!item.supplier) return;
 
-      const rule = productOrderRules.get(item.productName);
       let quantityToOrder = 0;
 
-      if (rule) {
-        quantityToOrder = rule(item.physicalQuantity);
+      // Aplicar la lógica de sugerencia basada en ruleMinStock y ruleOrderAmount
+      if (item.ruleMinStock !== undefined && item.ruleOrderAmount !== undefined) {
+        if (item.physicalQuantity <= item.ruleMinStock) {
+          quantityToOrder = item.ruleOrderAmount;
+        } else {
+          quantityToOrder = 0;
+        }
       } else {
+        // Si no hay reglas configuradas, no sugerir nada por defecto
         quantityToOrder = 0;
       }
 
@@ -215,7 +219,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                     <TableHeader>
                       <TableRow className="border-b border-gray-200">
                         <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                        <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Sugerencia</TableHead> {/* Centrado */}
+                        <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Sugerencia</TableHead>
                         <TableHead className="text-xs sm:text-sm text-gray-700">Pedir</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -223,7 +227,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                       {finalOrders[selectedSupplier].map((order, idx) => (
                         <TableRow key={idx} className="border-b border-gray-100 hover:bg-gray-100">
                           <TableCell className="py-2 px-2 text-xs sm:text-sm">{order.product}</TableCell>
-                          <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{order.adjustedQuantity}</TableCell> {/* Centrado */}
+                          <TableCell className="py-2 px-2 text-xs sm:text-sm text-center">{order.adjustedQuantity}</TableCell>
                           <TableCell className="py-2 px-2 align-middle">
                             <div className="flex items-center space-x-1">
                               <Button

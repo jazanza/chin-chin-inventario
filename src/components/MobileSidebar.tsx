@@ -44,6 +44,17 @@ export const MobileSidebar = () => {
           >
             Pedidos
           </NavLink>
+          <NavLink
+            to="/configuracion"
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-lg px-3 py-2 text-gray-700 transition-all hover:text-gray-900 ${
+                isActive ? "bg-blue-100 text-blue-700 font-semibold" : ""
+              }`
+            }
+            onClick={closeSheet}
+          >
+            Configuración
+          </NavLink>
         </nav>
       </SheetContent>
     </Sheet>

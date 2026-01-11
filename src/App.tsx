@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import InventoryDashboard from "./pages/InventoryDashboard";
 import OrdersPage from "./pages/OrdersPage";
+import SettingsPage from "./pages/SettingsPage"; // Importar la nueva página
 import NotFound from "./pages/NotFound";
 import { Layout } from "./components/Layout";
 import { InventoryProvider, useInventoryContext } from "./context/InventoryContext";
@@ -50,6 +51,7 @@ const App = () => (
               <Route index element={<Navigate to="/inventario" replace />} />
               <Route path="inventario" element={<InventoryDashboard />} />
               <Route path="pedidos" element={<OrdersPage />} />
+              <Route path="configuracion" element={<SettingsPage />} /> {/* Nueva ruta */}
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>

@@ -1,6 +1,6 @@
 import Dexie, { Table } from 'dexie';
-import { InventoryItem } from '@/context/InventoryContext'; // Asumo que esta interfaz existe
-import { OrderItem } from '@/components/OrderGenerationModule'; // Importar OrderItem
+import { InventoryItem } from '@/context/InventoryContext';
+import { OrderItem } from '@/components/OrderGenerationModule';
 
 // Define la estructura de una Sesión
 export interface InventorySession {
@@ -12,15 +12,24 @@ export interface InventorySession {
   ordersBySupplier?: { [supplier: string]: OrderItem[] }; // Historial de pedidos
 }
 
+// Define la estructura de una Regla de Producto configurable por el usuario
+export interface ProductRuleConfig {
+  productName: string; // Clave principal para la regla
+  minStock: number;
+  orderAmount: number;
+}
+
 export class SessionDatabase extends Dexie {
-  // Define la tabla principal
+  // Define la tabla principal para sesiones
   sessions!: Table<InventorySession, string>;
+  // Define la tabla para reglas de producto
+  productRules!: Table<ProductRuleConfig, string>;
 
   constructor() {
     super('ChinChinDB');
     this.version(1).stores({
-      // 'dateKey' es la clave principal. 'timestamp' será indexada para consultas
-      sessions: 'dateKey, timestamp', 
+      sessions: 'dateKey, timestamp',
+      productRules: 'productName', // Clave principal por nombre de producto
     });
   }
 }
