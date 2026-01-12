@@ -257,7 +257,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp.toISOString(), // Convertir Date a ISO string
+          timestamp: sessionToSave.timestamp, // Revertido a Date
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
           // sync_pending no se envía a Supabase
@@ -430,9 +430,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       
       if (supabase && state.isOnline) {
         // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
-        const { error } = await supabase
-          .from('product_rules')
-          .update({ isHidden: true } as any) // Castear a any
+        const { error } = await (supabase
+          .from('product_rules') as any) // Castear a any
+          .update({ isHidden: true }) // Eliminado 'as any' del objeto
           .eq('productId', numericProductId);
 
         if (error) {
@@ -716,7 +716,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
-            timestamp: newSession.timestamp.toISOString(), // Convertir Date a ISO string
+            timestamp: newSession.timestamp, // Revertido a Date
             effectiveness: newSession.effectiveness,
             ordersBySupplier: newSession.ordersBySupplier,
           };
@@ -860,6 +860,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           // Marcar como sincronizado en Dexie para los que se subieron con éxito
           for (const config of pendingForSupabase) {
             await db.productRules.update(config.productId, { sync_pending: false });
+            // Actualizar el estado local de masterProductConfigs si es necesario
+            const currentMasterConfigs = state.masterProductConfigs.map(mc => 
+              mc.productId === config.productId ? { ...mc, sync_pending: false } : mc
+            );
+            dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: currentMasterConfigs });
           }
           let successMessage = '';
           if (newProductsCount > 0) {
@@ -898,7 +903,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_LOADING', payload: false });
       console.log("Database master config processing finished.");
     }
-  }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
+  }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus, state.masterProductConfigs]);
 
 
   // --- Auto-Retry Mechanism ---
@@ -922,7 +927,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp.toISOString(), // Convertir Date a ISO string
+          timestamp: session.timestamp, // Revertido a Date
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
@@ -1004,7 +1009,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp.toISOString(), // Convertir Date a ISO string
+          timestamp: session.timestamp, // Revertido a Date
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
