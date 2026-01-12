@@ -188,13 +188,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       return;
     }
 
-    const pendingSessions = await db.sessions.where({ sync_pending: true }).count();
-    const pendingProductRules = await db.productRules.where({ sync_pending: true }).count();
+    try {
+      if (!db.isOpen()) await db.open(); // Ensure DB is open
+      // Explicitly query for boolean true values
+      const pendingSessions = await db.sessions.where('sync_pending').equals(true).count();
+      const pendingProductRules = await db.productRules.where('sync_pending').equals(true).count();
 
-    if (pendingSessions > 0 || pendingProductRules > 0) {
-      dispatch({ type: 'SET_SYNC_STATUS', payload: 'pending' });
-    } else {
-      dispatch({ type: 'SET_SYNC_STATUS', payload: 'synced' });
+      if (pendingSessions > 0 || pendingProductRules > 0) {
+        dispatch({ type: 'SET_SYNC_STATUS', payload: 'pending' });
+      } else {
+        dispatch({ type: 'SET_SYNC_STATUS', payload: 'synced' });
+      }
+    } catch (e) {
+      console.error("Error checking sync status from Dexie:", e);
+      dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
+      // Do not show toast here, as it might be frequent
     }
   }, [state.isOnline]);
 
@@ -321,7 +329,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const getSessionHistory = useCallback(async (): Promise<InventorySession[]> => {
     try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
+      if (!db.isOpen()) await db.open(); // Ensure DB is open
       return await db.sessions.orderBy('timestamp').reverse().toArray();
     } catch (e) {
       console.error("Error fetching session history:", e);
@@ -333,7 +341,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- Master Product Config Persistence ---
   const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
     try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
+      if (!db.isOpen()) await db.open(); // Ensure DB is open
       const allConfigs = await db.productRules.toArray();
       const filteredConfigs = allConfigs.filter(config => !config.isHidden);
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: filteredConfigs });
@@ -827,10 +835,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     console.log("Attempting to retry pending syncs...");
 
     try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
+      if (!db.isOpen()) await db.open(); // Ensure DB is open
 
       // Retry pending sessions
-      const pendingSessions = await db.sessions.where({ sync_pending: true }).toArray();
+      const pendingSessions = await db.sessions.where('sync_pending').equals(true).toArray(); // Explicitly query for true
       for (const session of pendingSessions) {
         console.log(`Retrying session: ${session.dateKey}`);
         // Crear una copia y eliminar sync_pending antes de enviar a Supabase
@@ -848,7 +856,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       // Retry pending product configs
-      const pendingProductRules = await db.productRules.where({ sync_pending: true }).toArray();
+      const pendingProductRules = await db.productRules.where('sync_pending').equals(true).toArray(); // Explicitly query for true
       for (const config of pendingProductRules) {
         console.log(`Retrying product config: ${config.productName} (${config.productId})`);
         // Crear una copia y eliminar sync_pending antes de enviar a Supabase
@@ -897,7 +905,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     console.log("Starting force full sync...");
 
     try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
+      if (!db.isOpen()) await db.open(); // Ensure DB is open
 
       // 1. Upload all local data to Supabase
       const localSessions = await db.sessions.toArray();
@@ -977,7 +985,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     console.log("Performing initial sync from Supabase...");
 
     try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
+      if (!db.isOpen()) await db.open(); // Ensure DB is open
 
       // Sincronizar sesiones
       const { data: sessionsData, error: sessionsError } = await supabase
