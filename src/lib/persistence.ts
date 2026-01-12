@@ -45,11 +45,33 @@ export class SessionDatabase extends Dexie {
 
   constructor() {
     super('ChinChinDB');
-    // Incrementamos la versión para que Dexie aplique los cambios de esquema (sync_pending)
+    // Versión 10: Esquema anterior sin sync_pending ni isHidden
+    this.version(10).stores({
+      sessions: 'dateKey, timestamp',
+      productRules: 'productId',
+      supplierConfigs: 'supplierName',
+    });
+    // Versión 11: Añade sync_pending a sessions y productRules, y isHidden a productRules
     this.version(11).stores({
       sessions: 'dateKey, timestamp, sync_pending', // Añadir sync_pending al índice
       productRules: 'productId, sync_pending', // Añadir sync_pending al índice
       supplierConfigs: 'supplierName',
+    }).upgrade(async (tx) => {
+      // Migrar sesiones existentes para añadir sync_pending: false
+      await tx.table('sessions').toCollection().modify((session) => {
+        if (session.sync_pending === undefined) {
+          session.sync_pending = false; // Asumir que las sesiones antiguas están sincronizadas
+        }
+      });
+      // Migrar configuraciones de producto existentes para añadir sync_pending: false y isHidden: false
+      await tx.table('productRules').toCollection().modify((config) => {
+        if (config.sync_pending === undefined) {
+          config.sync_pending = false; // Asumir que las configuraciones antiguas están sincronizadas
+        }
+        if (config.isHidden === undefined) {
+          config.isHidden = false; // Asumir que los productos antiguos no están ocultos
+        }
+      });
     });
 
     // Manejar el evento de cambio de versión para forzar el cierre de conexiones antiguas
