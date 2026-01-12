@@ -241,8 +241,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       if (supabase && state.isOnline) {
-        // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-        const { sync_pending, ...supabaseSession } = sessionToSave;
+        // Mapear explícitamente los campos para Supabase
+        const supabaseSession = {
+          dateKey: sessionToSave.dateKey,
+          inventoryType: sessionToSave.inventoryType,
+          inventoryData: sessionToSave.inventoryData,
+          timestamp: sessionToSave.timestamp,
+          effectiveness: sessionToSave.effectiveness,
+          ordersBySupplier: sessionToSave.ordersBySupplier,
+        };
         const { error } = await supabase
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' });
@@ -364,8 +371,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await db.productRules.put(configToSave);
       
       if (supabase && state.isOnline) {
-        // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-        const { sync_pending, ...supabaseConfig } = configToSave;
+        // Mapear explícitamente los campos para Supabase
+        const supabaseConfig = {
+          productId: configToSave.productId,
+          productName: configToSave.productName,
+          rules: configToSave.rules,
+          supplier: configToSave.supplier,
+          isHidden: configToSave.isHidden || false, // Asegurar que isHidden siempre sea booleano
+        };
         const { error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' });
@@ -668,8 +681,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
 
         if (supabase && state.isOnline) {
-          // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-          const { sync_pending, ...supabaseSession } = newSession;
+          // Mapear explícitamente los campos para Supabase
+          const supabaseSession = {
+            dateKey: newSession.dateKey,
+            inventoryType: newSession.inventoryType,
+            inventoryData: newSession.inventoryData,
+            timestamp: newSession.timestamp,
+            effectiveness: newSession.effectiveness,
+            ordersBySupplier: newSession.ordersBySupplier,
+          };
           const { error } = await supabase
             .from('inventory_sessions')
             .upsert(supabaseSession, { onConflict: 'dateKey' });
@@ -778,11 +798,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         await db.productRules.bulkPut(configsToUpdateOrAdd);
         // Intentar sincronizar inmediatamente los nuevos/actualizados
         if (supabase && state.isOnline) {
-          // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-          const supabaseConfigs = configsToUpdateOrAdd.map(c => {
-            const { sync_pending, ...rest } = c;
-            return rest;
-          });
+          // Mapear explícitamente los campos para Supabase
+          const supabaseConfigs = configsToUpdateOrAdd.map(c => ({
+            productId: c.productId,
+            productName: c.productName,
+            rules: c.rules,
+            supplier: c.supplier,
+            isHidden: c.isHidden || false,
+          }));
           const { error } = await supabase
             .from('product_rules')
             .upsert(supabaseConfigs, { onConflict: 'productId' });
@@ -842,8 +865,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray(); // Explicitly query for true
       for (const session of pendingSessions) {
         console.log(`Retrying session: ${session.dateKey}`);
-        // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-        const { sync_pending, ...supabaseSession } = session;
+        // Mapear explícitamente los campos para Supabase
+        const supabaseSession = {
+          dateKey: session.dateKey,
+          inventoryType: session.inventoryType,
+          inventoryData: session.inventoryData,
+          timestamp: session.timestamp,
+          effectiveness: session.effectiveness,
+          ordersBySupplier: session.ordersBySupplier,
+        };
         const { error } = await supabase
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' });
@@ -860,8 +890,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray(); // Explicitly query for true
       for (const config of pendingProductRules) {
         console.log(`Retrying product config: ${config.productName} (${config.productId})`);
-        // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-        const { sync_pending, ...supabaseConfig } = config;
+        // Mapear explícitamente los campos para Supabase
+        const supabaseConfig = {
+          productId: config.productId,
+          productName: config.productName,
+          rules: config.rules,
+          supplier: config.supplier,
+          isHidden: config.isHidden || false,
+        };
         const { error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' });
@@ -911,8 +947,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       // 1. Upload all local data to Supabase
       const localSessions = await db.sessions.toArray();
       for (const session of localSessions) {
-        // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-        const { sync_pending, ...supabaseSession } = session;
+        // Mapear explícitamente los campos para Supabase
+        const supabaseSession = {
+          dateKey: session.dateKey,
+          inventoryType: session.inventoryType,
+          inventoryData: session.inventoryData,
+          timestamp: session.timestamp,
+          effectiveness: session.effectiveness,
+          ordersBySupplier: session.ordersBySupplier,
+        };
         const { error } = await supabase
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' });
@@ -926,8 +969,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const localProductRules = await db.productRules.toArray();
       for (const config of localProductRules) {
-        // Crear una copia y eliminar sync_pending antes de enviar a Supabase
-        const { sync_pending, ...supabaseConfig } = config;
+        // Mapear explícitamente los campos para Supabase
+        const supabaseConfig = {
+          productId: config.productId,
+          productName: config.productName,
+          rules: config.rules,
+          supplier: config.supplier,
+          isHidden: config.isHidden || false,
+        };
         const { error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' });
