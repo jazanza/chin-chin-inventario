@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 interface OrderGenerationModuleProps {
-  inventoryData: InventoryItem[];
+  inventoryData: InventoryItem[]; // Ahora recibe la lista filtrada
 }
 
 // Definir la interfaz para los ítems de pedido con la cantidad final editable
@@ -20,7 +20,7 @@ export interface OrderItem {
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, inventoryData: currentInventoryData } = useInventoryContext();
+  const { saveCurrentSession, inventoryType, sessionId, filteredInventoryData } = useInventoryContext(); // Obtener filteredInventoryData
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
 
@@ -28,7 +28,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   const ordersBySupplier = useMemo(() => {
     const orders: { [supplier: string]: OrderItem[] } = {};
 
-    inventoryData.forEach(item => {
+    inventoryData.forEach(item => { // Usar inventoryData (que ya es filteredInventoryData)
       if (!item.supplier) return;
 
       let quantityToOrder = 0;
@@ -63,7 +63,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     }
 
     return orders;
-  }, [inventoryData]);
+  }, [inventoryData]); // Depende de inventoryData (filteredInventoryData)
 
   // Sincronizar finalOrders con ordersBySupplier cuando inventoryData cambia
   useEffect(() => {
@@ -97,8 +97,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
         }
       }
       // Guardar la sesión con los pedidos actualizados
-      if (sessionId && inventoryType && currentInventoryData) {
-        saveCurrentSession(currentInventoryData, inventoryType, new Date(), newOrders);
+      if (sessionId && inventoryType && filteredInventoryData) { // Usar filteredInventoryData
+        saveCurrentSession(filteredInventoryData, inventoryType, new Date(), newOrders);
       }
       return newOrders;
     });
@@ -143,8 +143,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       showSuccess(`Pedido para ${supplier} copiado al portapapeles.`);
 
       // Guardar los pedidos en la sesión actual
-      if (sessionId && inventoryType && currentInventoryData) {
-        await saveCurrentSession(currentInventoryData, inventoryType, new Date(), finalOrders);
+      if (sessionId && inventoryType && filteredInventoryData) { // Usar filteredInventoryData
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders);
         showSuccess('Pedidos guardados en la sesión.');
       }
     } catch (err) {

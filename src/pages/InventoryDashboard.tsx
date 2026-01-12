@@ -12,13 +12,13 @@ const InventoryDashboard = () => {
   const { 
     dbBuffer, 
     inventoryType, 
-    inventoryData, 
+    filteredInventoryData, // Ahora usamos filteredInventoryData
     loading, 
     error, 
     sessionId, 
     setDbBuffer, 
     setInventoryType, 
-    setInventoryData, 
+    setRawInventoryItemsFromDb, // Nuevo setter para raw items
     resetInventoryState,
     getSessionHistory,
     syncFromSupabase,
@@ -79,12 +79,18 @@ const InventoryDashboard = () => {
     setShowFileUploader(false); // Ocultar FileUploader una vez que el archivo está cargado
   };
 
-  const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
-    setInventoryType(type);
+  const handleInventoryChange = (updatedData: InventoryItem[]) => {
+    // Cuando la tabla edita, actualiza la lista filtrada, que luego se guarda en la sesión
+    // No necesitamos un setter para rawInventoryItemsFromDb aquí, ya que la tabla edita la lista filtrada
+    // y saveCurrentSession tomará la lista filtrada directamente.
+    // Sin embargo, para que el useMemo de filteredInventoryData pueda preservar los cambios,
+    // necesitamos que el estado 'rawInventoryItemsFromDb' no se modifique directamente por la tabla.
+    // La tabla debe llamar a saveCurrentSession directamente con los datos actualizados.
+    // La lógica de saveCurrentSession ya está ajustada para recibir la lista filtrada.
   };
 
-  const handleInventoryChange = (updatedData: InventoryItem[]) => {
-    setInventoryData(updatedData); // Actualizar el estado global del inventario
+  const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
+    setInventoryType(type);
   };
 
   const handleStartNewSession = useCallback(() => {
@@ -109,7 +115,7 @@ const InventoryDashboard = () => {
   }
 
   // 1. Si una sesión está completamente cargada (nueva o del historial), mostrar la InventoryTable
-  if (sessionId && inventoryType && inventoryData.length > 0) {
+  if (sessionId && inventoryType && filteredInventoryData.length > 0) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col p-4">
         <div className="flex justify-between items-center mb-6">
@@ -123,7 +129,7 @@ const InventoryDashboard = () => {
         {error ? (
           <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
         ) : (
-          <InventoryTable inventoryData={inventoryData} onInventoryChange={handleInventoryChange} />
+          <InventoryTable inventoryData={filteredInventoryData} onInventoryChange={handleInventoryChange} />
         )}
       </div>
     );

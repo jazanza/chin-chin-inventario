@@ -1,4 +1,4 @@
-import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
+import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import productData from "@/data/product-data.json"; // Mantener por ahora, aunque su uso se reducirá
 import { db, InventorySession, MasterProductConfig, ProductRule, SupplierConfig } from "@/lib/persistence";
@@ -43,7 +43,7 @@ type SyncStatus = 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
 interface InventoryState {
   dbBuffer: Uint8Array | null;
   inventoryType: "weekly" | "monthly" | null;
-  inventoryData: InventoryItem[];
+  rawInventoryItemsFromDb: InventoryItem[]; // Renombrado de inventoryData
   masterProductConfigs: MasterProductConfig[]; // Nuevo estado para las configuraciones maestras
   loading: boolean;
   error: string | null;
@@ -55,7 +55,7 @@ interface InventoryState {
 const initialState: InventoryState = {
   dbBuffer: null,
   inventoryType: null,
-  inventoryData: [],
+  rawInventoryItemsFromDb: [], // Inicializar vacío
   masterProductConfigs: [], // Inicializar vacío
   loading: false,
   error: null,
@@ -67,7 +67,7 @@ const initialState: InventoryState = {
 type InventoryAction =
   | { type: 'SET_DB_BUFFER'; payload: Uint8Array | null }
   | { type: 'SET_INVENTORY_TYPE'; payload: "weekly" | "monthly" | null }
-  | { type: 'SET_INVENTORY_DATA'; payload: InventoryItem[] }
+  | { type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB'; payload: InventoryItem[] } // Nuevo tipo de acción
   | { type: 'SET_MASTER_PRODUCT_CONFIGS'; payload: MasterProductConfig[] }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -82,8 +82,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, dbBuffer: action.payload, error: null };
     case 'SET_INVENTORY_TYPE':
       return { ...state, inventoryType: action.payload, error: null };
-    case 'SET_INVENTORY_DATA':
-      return { ...state, inventoryData: action.payload, error: null };
+    case 'SET_RAW_INVENTORY_ITEMS_FROM_DB': // Nuevo caso
+      return { ...state, rawInventoryItemsFromDb: action.payload, error: null };
     case 'SET_MASTER_PRODUCT_CONFIGS':
       return { ...state, masterProductConfigs: action.payload };
     case 'SET_LOADING':
@@ -110,9 +110,10 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
 
 // --- Context Type ---
 interface InventoryContextType extends InventoryState {
+  filteredInventoryData: InventoryItem[]; // Propiedad computada para los componentes
   setDbBuffer: (buffer: Uint8Array | null) => void;
   setInventoryType: (type: "weekly" | "monthly" | null) => void;
-  setInventoryData: (data: InventoryItem[]) => void;
+  setRawInventoryItemsFromDb: (data: InventoryItem[]) => void; // Nuevo setter
   setMasterProductConfigs: (configs: MasterProductConfig[]) => void;
   processInventoryData: (
     buffer: Uint8Array,
@@ -120,7 +121,7 @@ interface InventoryContextType extends InventoryState {
   ) => Promise<void>;
   processDbForMasterConfigs: (buffer: Uint8Array) => Promise<void>;
   saveCurrentSession: (
-    data: InventoryItem[],
+    data: InventoryItem[], // Ahora espera la lista filtrada
     type: "weekly" | "monthly",
     timestamp: Date,
     orders?: { [supplier: string]: OrderItem[] } // Usar OrderItem[]
@@ -151,6 +152,7 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
 
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
+  const previousFilteredInventoryDataRef = useRef<InventoryItem[]>([]); // Ref para la lista filtrada anterior
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -161,8 +163,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
   }, []);
 
-  const setInventoryData = useCallback((data: InventoryItem[]) => {
-    dispatch({ type: 'SET_INVENTORY_DATA', payload: data });
+  const setRawInventoryItemsFromDb = useCallback((data: InventoryItem[]) => {
+    dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: data });
   }, []);
 
   const setMasterProductConfigs = useCallback((configs: MasterProductConfig[]) => {
@@ -217,9 +219,47 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.isOnline]);
 
+  // --- DERIVED STATE: filteredInventoryData ---
+  const filteredInventoryData = useMemo(() => {
+    if (!state.rawInventoryItemsFromDb || state.rawInventoryItemsFromDb.length === 0) {
+      previousFilteredInventoryDataRef.current = [];
+      return [];
+    }
+
+    const masterConfigsMap = new Map(state.masterProductConfigs.map(config => [config.productId, config]));
+    const previousDataMap = new Map(previousFilteredInventoryDataRef.current.map(item => [item.productId, item]));
+
+    const newFilteredData: InventoryItem[] = [];
+
+    state.rawInventoryItemsFromDb.forEach(item => {
+      const masterConfig = masterConfigsMap.get(item.productId);
+      
+      // Si no hay configuración maestra, o si está oculta, no incluirla
+      if (!masterConfig || masterConfig.isHidden) {
+        return;
+      }
+
+      // Fusionar con datos anteriores para preservar physicalQuantity y hasBeenEdited
+      const previousItem = previousDataMap.get(item.productId);
+      newFilteredData.push({
+        ...item,
+        physicalQuantity: previousItem ? previousItem.physicalQuantity : item.systemQuantity,
+        hasBeenEdited: previousItem ? previousItem.hasBeenEdited : false,
+        // Asegurarse de que las reglas y el proveedor vengan de la configuración maestra
+        rules: masterConfig.rules,
+        supplier: masterConfig.supplier,
+      });
+    });
+
+    // Actualizar la referencia para la próxima renderización
+    previousFilteredInventoryDataRef.current = newFilteredData;
+    return newFilteredData;
+  }, [state.rawInventoryItemsFromDb, state.masterProductConfigs]);
+
+
   // --- Core Persistence Functions (Sessions) ---
   const saveCurrentSession = useCallback(async (
-    data: InventoryItem[],
+    data: InventoryItem[], // Ahora espera la lista filtrada
     type: "weekly" | "monthly",
     timestamp: Date,
     orders?: { [supplier: string]: OrderItem[] } // Usar OrderItem[]
@@ -237,7 +277,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const sessionToSave: InventorySession = {
         dateKey,
         inventoryType: type,
-        inventoryData: data,
+        inventoryData: data, // Guardar la lista filtrada con las cantidades físicas
         timestamp,
         effectiveness,
         ordersBySupplier: ordersToSave,
@@ -293,7 +333,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const session = await db.sessions.get(dateKey);
       if (session) {
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: session.inventoryData });
+        // Cargar directamente en rawInventoryItemsFromDb, el useMemo se encargará de filtrar y fusionar
+        dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: session.inventoryData }); 
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         showSuccess(`Sesión del ${dateKey} cargada.`);
       } else {
@@ -406,15 +447,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
       }
       // Refrescar configs sin ocultos después de guardar
-      const updatedConfigs = (await db.productRules.toArray()).filter(c => !c.isHidden);
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: updatedConfigs });
+      // No es necesario filtrar aquí, loadMasterProductConfigs ya lo hace
+      await loadMasterProductConfigs(); 
       updateSyncStatus();
     } catch (e) {
       console.error("Error saving master product config:", e);
       showError('Error al guardar la configuración del producto localmente.');
       throw e;
     }
-  }, [state.isOnline, updateSyncStatus]);
+  }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
 
   const deleteMasterProductConfig = useCallback(async (productId: number) => {
     dispatch({ type: 'SET_LOADING', payload: true });
@@ -424,49 +465,46 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (!db.isOpen()) await db.open(); // Emergency validation
       const numericProductId = Number(productId);
       
+      const currentConfig = await db.productRules.get(numericProductId);
+      if (!currentConfig) {
+        throw new Error(`Product config with ID ${numericProductId} not found.`);
+      }
+
+      const newIsHidden = !currentConfig.isHidden; // Toggle the isHidden status
+
       // Realizar soft delete localmente y marcar como pendiente
-      await db.productRules.update(numericProductId, { isHidden: true, sync_pending: true });
+      await db.productRules.update(numericProductId, { isHidden: newIsHidden, sync_pending: true });
       
       if (supabase && state.isOnline) {
         // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
         const { error } = await (supabase
           .from('product_rules') as any) // Castear a any
-          .update({ isHidden: true })
+          .update({ isHidden: newIsHidden })
           .eq('productId', numericProductId);
 
         if (error) {
-          console.error("Error soft-deleting master product config from Supabase:", error);
-          showError('Error al sincronizar ocultamiento de producto con la nube. Se reintentará.');
+          console.error("Error toggling master product config from Supabase:", error);
+          showError('Error al sincronizar el estado de visibilidad del producto con la nube. Se reintentará.');
           // Keep sync_pending: true in Dexie
         } else {
           await db.productRules.update(numericProductId, { sync_pending: false }); // Marcar como sincronizado en Dexie
-          console.log("Master product config soft-deleted from Supabase successfully.");
+          console.log("Master product config visibility toggled in Supabase successfully.");
         }
       } else {
-        console.log("Supabase client not available or offline, skipping soft-delete to Supabase. Marked as sync_pending.");
+        console.log("Supabase client not available or offline, skipping visibility toggle to Supabase. Marked as sync_pending.");
       }
-      showSuccess(`Configuración de producto ocultada.`);
+      showSuccess(`Configuración de producto ${newIsHidden ? 'ocultada' : 'restaurada'}.`);
 
-      // Refrescar configs sin ocultos
-      const updatedConfigs = (await db.productRules.toArray()).filter(c => !c.isHidden);
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: updatedConfigs });
-
-      // Si el producto oculto estaba en el inventario actual, actualizarlo para que no aparezca
-      if (state.inventoryData.some(item => item.productId === numericProductId)) {
-        const updatedInventory = state.inventoryData.filter(item => item.productId !== numericProductId);
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: updatedInventory });
-        if (state.sessionId && state.inventoryType) {
-          await saveCurrentSession(updatedInventory, state.inventoryType, new Date());
-        }
-      }
+      // Refrescar configs (esto disparará la re-evaluación de filteredInventoryData)
+      await loadMasterProductConfigs(); 
       updateSyncStatus();
     } catch (e) {
-      console.error("Error soft-deleting master product config:", e);
-      showError('Error al ocultar la configuración de producto.');
+      console.error("Error toggling master product config:", e);
+      showError('Error al cambiar la visibilidad de la configuración de producto.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [state.inventoryData, state.sessionId, state.inventoryType, saveCurrentSession, state.isOnline, updateSyncStatus]);
+  }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
@@ -585,7 +623,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         if (rawInventoryItems.length === 0) {
           console.warn("No inventory items found in the database for processing.");
-          dispatch({ type: 'SET_INVENTORY_DATA', payload: [] });
+          dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: [] }); // Actualizar el nuevo estado
           dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
           dispatch({ type: 'SET_SESSION_ID', payload: format(new Date(), 'yyyy-MM-dd') });
           showError('No se encontraron productos de inventario en la base de datos.');
@@ -652,6 +690,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             configsToUpsertToSupabase.push(masterConfig);
           }
           configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
+
+          // Añadir el item al inventario procesado (sin filtrar por isHidden aquí)
+          processedInventory.push({
+            productId: currentProductId,
+            productName: dbItem.Producto,
+            category: dbItem.Categoria,
+            systemQuantity: dbItem.Stock_Actual,
+            physicalQuantity: dbItem.Stock_Actual, // Default
+            averageSales: 0, // No disponible en esta consulta
+            supplier: masterConfig.supplier, // Usar el proveedor de la config maestra
+            hasBeenEdited: false, // Default
+            rules: masterConfig.rules, // Usar las reglas de la config maestra
+          });
         });
 
         // Actualizar Dexie con todas las configuraciones (nuevas y existentes con posibles cambios de nombre)
@@ -688,20 +739,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           showSuccess('Configuraciones de productos actualizadas localmente (pendientes de sincronizar).');
         }
 
+        // Filtrar productos "KYR S.A.S" y "Desconocido" después de procesar
+        const finalProcessedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
 
-        processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
-
-        dispatch({ type: 'SET_INVENTORY_DATA', payload: processedInventory });
+        dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: finalProcessedInventory }); // Actualizar el nuevo estado
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
 
         const dateKey = format(new Date(), 'yyyy-MM-dd');
-        const effectiveness = calculateEffectiveness(processedInventory);
+        const effectiveness = calculateEffectiveness(finalProcessedInventory); // Calcular con la lista completa
 
         // Guardar en Dexie y luego intentar sincronizar
         const newSession: InventorySession = {
           dateKey,
           inventoryType: type,
-          inventoryData: processedInventory,
+          inventoryData: finalProcessedInventory, // Guardar la lista completa para la sesión
           timestamp: new Date(),
           effectiveness,
           sync_pending: true, // Marcar como pendiente
@@ -1191,9 +1242,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const value = useMemo(() => ({
     ...state,
+    filteredInventoryData, // Exponer la propiedad computada
     setDbBuffer,
     setInventoryType,
-    setInventoryData,
+    setRawInventoryItemsFromDb, // Nuevo setter
     setMasterProductConfigs,
     processInventoryData,
     processDbForMasterConfigs,
@@ -1206,14 +1258,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
-    handleVisibilityChangeSync, // Añadido
+    handleVisibilityChangeSync,
     resetAllProductConfigs,
     clearLocalDatabase,
   }), [
     state,
+    filteredInventoryData, // Añadir como dependencia
     setDbBuffer,
     setInventoryType,
-    setInventoryData,
+    setRawInventoryItemsFromDb,
     setMasterProductConfigs,
     processInventoryData,
     processDbForMasterConfigs,

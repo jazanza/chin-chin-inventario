@@ -10,14 +10,15 @@ import debounce from "lodash.debounce"; // Importar debounce
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
-  onInventoryChange: (updatedData: InventoryItem[]) => void;
+  onInventoryChange: (updatedData: InventoryItem[]) => void; // Mantener para compatibilidad, pero la lógica de guardado se mueve
 }
 
 export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
-  const { saveCurrentSession, inventoryType, sessionId } = useInventoryContext(); // Obtener del contexto
+  const { saveCurrentSession, inventoryType, sessionId, rawInventoryItemsFromDb } = useInventoryContext(); // Obtener del contexto
   const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
 
   useEffect(() => {
+    // Cuando inventoryData (la lista filtrada del contexto) cambia, actualizamos el estado local
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
@@ -43,11 +44,11 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
       } else if (key === "hasBeenEdited") {
         updatedData[index][key] = value as boolean;
       }
-      onInventoryChange(updatedData); // Notificar al contexto de los cambios
-      debouncedSave(updatedData); // Llamar al guardado debounced
+      // onInventoryChange(updatedData); // Ya no es necesario notificar al padre de esta manera
+      debouncedSave(updatedData); // Llamar al guardado debounced con la lista actualizada
       return updatedData;
     });
-  }, [onInventoryChange, debouncedSave]);
+  }, [debouncedSave]);
 
   const handlePhysicalQuantityChange = useCallback((index: number, value: string) => {
     const newQuantity = parseInt(value, 10);

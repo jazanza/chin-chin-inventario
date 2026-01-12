@@ -2,7 +2,7 @@ import { OrderGenerationModule } from "@/components/OrderGenerationModule";
 import { useInventoryContext } from "@/context/InventoryContext"; // Importar el contexto
 
 const OrdersPage = () => {
-  const { inventoryData, loading, error } = useInventoryContext(); // Obtener datos del contexto
+  const { filteredInventoryData, loading, error } = useInventoryContext(); // Obtener datos del contexto
 
   if (loading) {
     return (
@@ -16,7 +16,7 @@ const OrdersPage = () => {
     );
   }
 
-  if (inventoryData.length === 0) {
+  if (filteredInventoryData.length === 0) {
     return (
       <div className="p-4 text-center text-gray-500">
         Por favor, carga un archivo de base de datos y selecciona un tipo de inventario en la sección de Inventario para generar pedidos.
@@ -26,7 +26,7 @@ const OrdersPage = () => {
 
   return (
     <div className="p-4">
-      <OrderGenerationModule inventoryData={inventoryData} />
+      <OrderGenerationModule inventoryData={filteredInventoryData} />
     </div>
   );
 };
