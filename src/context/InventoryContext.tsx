@@ -125,7 +125,7 @@ interface InventoryContextType extends InventoryState {
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
   deleteMasterProductConfig: (productId: number) => Promise<void>; // Cambiado a productId
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>; // Añadido includeHidden
-  forceFullSync: () => Promise<void>; // Nueva función para forzar la sincronización
+  performTotalSync: () => Promise<void>; // Nueva función para sincronización total
   forceSyncFromCloud: () => Promise<void>; // Nueva función para sincronización bidireccional
   resetAllProductConfigs: (buffer: Uint8Array) => Promise<void>; // Nueva función para reiniciar configs
   clearLocalDatabase: () => Promise<void>; // Nueva función para limpiar DB local
@@ -588,7 +588,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
 
         let processedInventory: InventoryItem[] = [];
-        const configsToUpsertToSupabase: MasterProductConfig[] = []; // Para los que se modificaron o son nuevos
+        const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
+        const configsToUpsertToSupabase: MasterProductConfig[] = [];
 
         rawInventoryItems.forEach((dbItem) => {
           if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -610,10 +611,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
             supplierNameFromDb = "AC Bebidas (Coca Cola)";
           }
-
-          const matchedProductData = productData.find(
-            (p) => p.productName === dbItem.Producto
-          );
 
           let masterConfig = masterProductConfigsMap.get(currentProductId);
           let configChanged = false;
@@ -645,26 +642,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             masterConfig.sync_pending = true; // Marcar para sincronizar si hubo cambios o es nuevo
             configsToUpsertToSupabase.push(masterConfig);
           }
-
-          if (!masterConfig.isHidden) {
-            processedInventory.push({
-              productId: currentProductId,
-              productName: dbItem.Producto,
-              category: dbItem.Categoria,
-              systemQuantity: dbItem.Stock_Actual,
-              physicalQuantity: dbItem.Stock_Actual,
-              averageSales: matchedProductData?.averageSales || 0,
-              supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
-              hasBeenEdited: false,
-              rules: masterConfig.rules, // Usar las reglas de la configuración maestra
-            });
-          }
+          configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
         });
 
         // Actualizar Dexie con todas las configuraciones (nuevas y existentes con posibles cambios de nombre)
-        if (configsToUpsertToSupabase.length > 0) {
-          await db.productRules.bulkPut(configsToUpsertToSupabase);
-          console.log(`Updated/Added ${configsToUpsertToSupabase.length} master product configs in Dexie.`);
+        if (configsToUpdateOrAddInDexie.length > 0) {
+          await db.productRules.bulkPut(configsToUpdateOrAddInDexie);
+          console.log(`Updated/Added ${configsToUpdateOrAddInDexie.length} master product configs in Dexie.`);
         }
         
         // Sincronizar con Supabase solo los que tienen sync_pending: true
@@ -781,6 +765,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
       const configsToUpsertToSupabase: MasterProductConfig[] = [];
       let newProductsCount = 0;
+      let updatedProductNamesCount = 0;
 
       for (const dbItem of rawInventoryItems) {
         if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -804,7 +789,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
 
         let masterConfig = masterProductConfigsMap.get(currentProductId);
-        let configChanged = false;
+        let configChangedForSync = false; // Flag para saber si este item debe ir a Supabase
 
         if (!masterConfig) {
           // Nuevo producto: usar datos del DB
@@ -817,20 +802,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             sync_pending: true, // Marcar como pendiente para Supabase
           };
           newProductsCount++;
-          configChanged = true;
+          configChangedForSync = true;
         } else {
-          // Producto existente: preservar reglas, proveedor y estado oculto. Solo actualizar nombre si cambió.
+          // Producto existente: preservar reglas, proveedor y estado oculto.
+          // Solo actualizar productName si ha cambiado.
           const updatedConfig = { ...masterConfig };
           if (updatedConfig.productName !== dbItem.Producto) {
             updatedConfig.productName = dbItem.Producto;
-            configChanged = true;
+            updatedProductNamesCount++;
+            configChangedForSync = true;
           }
-          // supplier, rules, isHidden se mantienen de la configuración existente
-          masterConfig = updatedConfig;
+          // Los campos supplier, rules, isHidden se mantienen de la configuración existente (masterConfig)
+          masterConfig = updatedConfig; // Usar la versión (potencialmente) actualizada para Dexie
         }
 
-        if (configChanged || masterConfig.sync_pending) {
-          masterConfig.sync_pending = true; // Asegurar que esté marcado si hubo cambios o ya estaba pendiente
+        // Si hubo un cambio (nuevo producto o nombre actualizado) o ya estaba pendiente, marcar para Supabase
+        if (configChangedForSync || masterConfig.sync_pending) {
+          masterConfig.sync_pending = true;
           configsToUpsertToSupabase.push(masterConfig);
         }
         configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
@@ -863,21 +851,32 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           for (const config of pendingForSupabase) {
             await db.productRules.update(config.productId, { sync_pending: false });
           }
+          let successMessage = '';
           if (newProductsCount > 0) {
-            showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra y se sincronizaron.`);
-          } else {
-            showSuccess('Configuraciones de productos actualizadas y sincronizadas.');
+            successMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
           }
+          if (updatedProductNamesCount > 0) {
+            successMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
+          }
+          if (successMessage === '') {
+            successMessage = 'Configuraciones de productos sincronizadas.';
+          }
+          showSuccess(successMessage.trim());
         }
       } else if (pendingForSupabase.length > 0) {
-        console.log("Supabase client not available or offline, skipping bulk upsert to Supabase. Marked as sync_pending.");
+        let localMessage = '';
         if (newProductsCount > 0) {
-          showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra (pendientes de sincronizar).`);
-        } else {
-          showSuccess('Configuraciones de productos actualizadas localmente (pendientes de sincronizar).');
+          localMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
         }
+        if (updatedProductNamesCount > 0) {
+          localMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
+        }
+        if (localMessage === '') {
+          localMessage = 'Configuraciones de productos actualizadas localmente.';
+        }
+        showSuccess(`${localMessage.trim()} (pendientes de sincronizar).`);
       } else {
-        showSuccess('No se encontraron nuevos productos para agregar o actualizar en la configuración maestra.');
+        showSuccess('No se encontraron nuevos productos o cambios de nombre para agregar/actualizar.');
       }
       await loadMasterProductConfigs(); // Recargar para actualizar el estado global
       updateSyncStatus();
@@ -971,26 +970,26 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   }, [state.isOnline, retryPendingSyncs]);
 
 
-  // --- Force Full Sync ---
-  const forceFullSync = useCallback(async () => {
-    if (!supabase || !state.isOnline || state.loading || state.syncStatus === 'syncing') {
-      showError('No se puede forzar la sincronización: sin conexión, Supabase no disponible o ya sincronizando.');
+  // --- NEW: Perform Total Sync (Upload local, then Download cloud) ---
+  const performTotalSync = useCallback(async () => {
+    if (!supabase || !state.isOnline || state.loading) {
+      showError('No se puede realizar la sincronización total: sin conexión o ya procesando.');
       return;
     }
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
     dispatch({ type: 'SET_ERROR', payload: null });
-    showSuccess('Iniciando sincronización completa...');
-    console.log("Starting force full sync...");
+    showSuccess('Iniciando sincronización total (subiendo cambios y descargando actualizaciones)...');
+    console.log("Starting total sync...");
 
     try {
-      if (!db.isOpen()) await db.open(); // Ensure DB is open
+      if (!db.isOpen()) await db.open();
 
-      // 1. Upload all local data to Supabase
-      const localSessions = await db.sessions.toArray();
-      for (const session of localSessions) {
-        // Mapear explícitamente los campos para Supabase
+      // 1. Upload all local pending data to Supabase
+      console.log("Uploading local pending sessions...");
+      const pendingLocalSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
+      for (const session of pendingLocalSessions) {
         const supabaseSession = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
@@ -1003,16 +1002,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) {
-          console.error(`Error uploading session ${session.dateKey} to Supabase:`, error);
-          await db.sessions.update(session.dateKey, { sync_pending: true }); // Mark as pending if upload fails
+          console.error(`Error uploading pending session ${session.dateKey} to Supabase:`, error);
+          // Keep sync_pending: true in Dexie if upload fails
         } else {
           await db.sessions.update(session.dateKey, { sync_pending: false });
         }
       }
-
-      const localProductRules = await db.productRules.toArray();
-      for (const config of localProductRules) {
-        // Mapear explícitamente los campos para Supabase
+      console.log("Uploading local pending product configs...");
+      const pendingLocalProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
+      for (const config of pendingLocalProductRules) {
         const supabaseConfig = {
           productId: config.productId,
           productName: config.productName,
@@ -1024,45 +1022,51 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' });
         if (error) {
-          console.error(`Error uploading product config ${config.productId} to Supabase:`, error);
-          await db.productRules.update(config.productId, { sync_pending: true }); // Mark as pending if upload fails
+          console.error(`Error uploading pending product config ${config.productId} to Supabase:`, error);
+          // Keep sync_pending: true in Dexie if upload fails
         } else {
           await db.productRules.update(config.productId, { sync_pending: false });
         }
       }
+      showSuccess('Cambios locales subidos a la nube.');
 
-      // 2. Download all Supabase data to local Dexie
+      // 2. Download all Supabase data to local Dexie (overwriting local versions)
+      console.log("Downloading all sessions from Supabase...");
       const { data: supabaseSessions, error: sessionsError } = await supabase
         .from('inventory_sessions')
         .select('*');
       if (sessionsError) throw sessionsError;
-
-      for (const session of supabaseSessions) {
-        await db.sessions.put({ ...session, sync_pending: false }); // Downloaded from Supabase, so not pending
+      if (supabaseSessions && supabaseSessions.length > 0) {
+        await db.sessions.bulkPut(supabaseSessions.map(s => ({ ...s, sync_pending: false })));
+      } else {
+        await db.sessions.clear(); // Clear local if no sessions in cloud
       }
 
+      console.log("Downloading all product configs from Supabase...");
       const { data: supabaseProductRules, error: productRulesError } = await supabase
         .from('product_rules')
         .select('*');
       if (productRulesError) throw productRulesError;
-
-      for (const config of supabaseProductRules) {
-        await db.productRules.put({ ...config, sync_pending: false }); // Downloaded from Supabase, so not pending
+      if (supabaseProductRules && supabaseProductRules.length > 0) {
+        await db.productRules.bulkPut(supabaseProductRules.map(c => ({ ...c, sync_pending: false })));
+      } else {
+        await db.productRules.clear(); // Clear local if no configs in cloud
       }
+      showSuccess('Configuraciones y sesiones descargadas de la nube.');
 
-      showSuccess('Sincronización completa finalizada con éxito.');
-      console.log("Force full sync completed successfully.");
+      showSuccess('Sincronización total finalizada con éxito.');
+      console.log("Total sync completed successfully.");
       await loadMasterProductConfigs(); // Recargar configs para reflejar cualquier cambio
     } catch (e: any) {
-      console.error("Error during forceFullSync:", e);
+      console.error("Error during performTotalSync:", e);
       dispatch({ type: 'SET_ERROR', payload: e.message });
-      showError(`Error en la sincronización completa: ${e.message}`);
+      showError(`Error en la sincronización total: ${e.message}`);
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
       updateSyncStatus(); // Final update based on current state
     }
-  }, [state.isOnline, state.loading, state.syncStatus, loadMasterProductConfigs, updateSyncStatus]);
+  }, [state.isOnline, state.loading, loadMasterProductConfigs, updateSyncStatus]);
 
 
   // Nueva función para sincronizar desde Supabase (usada en AppInitializer)
@@ -1126,6 +1130,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   }, [updateSyncStatus]);
 
   // --- NEW: Force Sync from Cloud (Product Rules) ---
+  // This function is now deprecated by performTotalSync, but kept for reference if needed.
   const forceSyncFromCloud = useCallback(async () => {
     if (!supabase || !state.isOnline || state.loading) {
       showError('No se puede sincronizar: sin conexión o ya procesando.');
@@ -1278,10 +1283,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
-    forceFullSync,
-    forceSyncFromCloud, // Añadido
-    resetAllProductConfigs, // Añadido
-    clearLocalDatabase, // Añadido
+    performTotalSync, // Añadido
+    forceSyncFromCloud, // Mantenido por ahora, pero no usado en UI
+    resetAllProductConfigs,
+    clearLocalDatabase,
   }), [
     state,
     setDbBuffer,
@@ -1299,7 +1304,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
-    forceFullSync,
+    performTotalSync,
     forceSyncFromCloud,
     resetAllProductConfigs,
     clearLocalDatabase,

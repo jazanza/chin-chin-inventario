@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 
 export const SyncStatusIndicator = () => {
-  const { syncStatus, forceFullSync, loading, isOnline } = useInventoryContext();
+  const { syncStatus, loading, isOnline } = useInventoryContext(); // Removed forceFullSync
 
   const getStatusIcon = () => {
     switch (syncStatus) {
@@ -49,7 +49,7 @@ export const SyncStatusIndicator = () => {
       case 'synced':
         return "Todos los datos están sincronizados con la nube.";
       case 'error':
-        return "Hubo un error al sincronizar con la nube. Intenta la sincronización forzada.";
+        return "Hubo un error al sincronizar con la nube. Intenta la sincronización total.";
       default:
         return "Estado de sincronización desconocido.";
     }
@@ -74,24 +74,6 @@ export const SyncStatusIndicator = () => {
           </TooltipTrigger>
           <TooltipContent>
             <p>{getTooltipContent()}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={forceFullSync}
-              disabled={loading || syncStatus === 'syncing' || !isOnline}
-              className="h-8 w-8 text-gray-600 hover:text-blue-600 hover:border-blue-600"
-            >
-              <RefreshCcw className={cn("h-4 w-4", syncStatus === 'syncing' && "animate-spin")} />
-              <span className="sr-only">Forzar Sincronización</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Forzar Sincronización Completa</p>
           </TooltipContent>
         </Tooltip>
       </div>

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff } from "lucide-react"; // Importar Eye y EyeOff
+import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Upload } from "lucide-react"; // Importar Eye, EyeOff y Upload
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
@@ -342,25 +342,25 @@ const SettingsPage = () => {
     );
   }
 
-  // Mostrar uploader si no hay configuraciones maestras
-  if (masterProductConfigs.length === 0 && !showHiddenProducts) { // Si no hay configs y no estamos mostrando ocultos
-    return (
-      <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 text-gray-900">Configuración de Pedidos</h1>
-          <p className="text-base sm:text-lg text-gray-700 mb-6">
-            No hay productos configurados. Por favor, carga un archivo de base de datos (.db) para inicializar la lista de productos y sus reglas.
-          </p>
-          <FileUploader onFileLoaded={handleDbFileLoadedFromSettings} loading={isUploadingConfig} />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full p-4 bg-white text-gray-900">
       <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-6 text-gray-900">Configuración de Pedidos</h1>
 
+      {/* Sección de Carga de Archivo DB */}
+      <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Actualizar Catálogo de Productos</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center gap-4">
+          <p className="text-center text-gray-700">
+            Sube un nuevo archivo .db de Aronium para detectar nuevos productos o actualizar nombres.
+            Tus configuraciones de proveedores, reglas y productos ocultos se mantendrán.
+          </p>
+          <FileUploader onFileLoaded={handleDbFileLoadedFromSettings} loading={isUploadingConfig} />
+        </CardContent>
+      </Card>
+
+      {/* Sección de Reglas de Pedido por Producto */}
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Reglas de Pedido por Producto</CardTitle>
@@ -377,142 +377,148 @@ const SettingsPage = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <Accordion type="multiple" className="w-full">
-            {Object.entries(productsGroupedBySupplier).map(([supplier, products]) => (
-              <AccordionItem key={supplier} value={supplier} className="border-b border-gray-200">
-                <AccordionTrigger className="flex justify-between items-center py-3 px-4 text-base sm:text-lg font-semibold text-gray-800 hover:bg-gray-50">
-                  <div className="flex items-center gap-2">
-                    {supplier} ({products.length} productos)
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="p-4 bg-gray-50">
-                  <div className="overflow-x-auto custom-scrollbar">
-                    <Table className="min-w-full bg-white text-gray-900 border-collapse">
-                      <TableHeader>
-                        <TableRow className="border-b border-gray-200">
-                          <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
-                          <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
-                          <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
-                          <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {products.map((config) => {
-                          const isHidden = config.isHidden;
-                          return (
-                            <React.Fragment key={config.productId}> {/* Usar productId como key */}
-                              <TableRow className={cn(
-                                "border-b border-gray-100 hover:bg-gray-100",
-                                isHidden && "bg-gray-50 text-gray-400 italic" // Estilo para productos ocultos
-                              )}>
-                                <TableCell className="py-2 px-2 text-xs sm:text-sm font-medium">{config.productName}</TableCell>
-                                <TableCell className="py-2 px-2">
-                                  <Select
-                                    value={editableProductConfigs[config.productId]?.supplier ?? config.supplier} // Usar productId
-                                    onValueChange={(value) => handleProductSupplierChange(config.productId, value)} // Usar productId
-                                    disabled={isHidden} // Deshabilitar si está oculto
-                                  >
-                                    <SelectTrigger className="w-[120px] text-xs sm:text-sm">
-                                      <SelectValue placeholder="Seleccionar proveedor" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {allSuppliers.map(sup => (
-                                        <SelectItem key={sup} value={sup}>
-                                          {sup}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell className="py-2 px-2 text-center">
-                                  {savingStatus[config.productId] === 'saving' && ( // Usar productId
-                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
-                                  )}
-                                  {savingStatus[config.productId] === 'saved' && ( // Usar productId
-                                    <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
-                                  )}
-                                  {savingStatus[config.productId] === 'error' && ( // Usar productId
-                                    <XCircle className="h-4 w-4 text-red-500 inline-block" />
-                                  )}
-                                  {isHidden && !savingStatus[config.productId] && (
-                                    <span className="text-xs text-gray-500">Oculto</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="py-2 px-2 text-center">
-                                  <Button
-                                    variant="outline" // Cambiado a outline para 'Ocultar'
-                                    size="sm"
-                                    onClick={() => handleHideProductConfig(config.productId)} // Usar productId
-                                    className={cn(
-                                      "h-7 w-7 p-0",
-                                      isHidden ? "text-green-600 border-green-600 hover:bg-green-600 hover:text-white" : "text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
-                                    )}
-                                    disabled={savingStatus[config.productId] === 'saving'} // Usar productId
-                                  >
-                                    {isHidden ? <Eye className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                              {/* Fila para las reglas múltiples */}
-                              <TableRow className={cn("bg-gray-50", isHidden && "bg-gray-100")}>
-                                <TableCell colSpan={5} className="py-2 px-2">
-                                  <div className="flex flex-col gap-2 pl-4">
-                                    <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
-                                    {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => ( // Usar productId
-                                      <div key={ruleIndex} className="flex items-center gap-2 text-xs">
-                                        <span>Si Stock es &lt;=</span>
-                                        <Input
-                                          type="number"
-                                          value={rule.minStock}
-                                          onChange={(e) => handleRuleChange(config.productId, ruleIndex, "minStock", e.target.value)} // Usar productId
-                                          onBlur={() => handleRuleBlur(config.productId)} // Usar productId
-                                          className="w-16 text-center"
-                                          min="0"
-                                          disabled={isHidden} // Deshabilitar si está oculto
-                                        />
-                                        <span>Pedir</span>
-                                        <Input
-                                          type="number"
-                                          value={rule.orderAmount}
-                                          onChange={(e) => handleRuleChange(config.productId, ruleIndex, "orderAmount", e.target.value)} // Usar productId
-                                          onBlur={() => handleRuleBlur(config.productId)} // Usar productId
-                                          className="w-16 text-center"
-                                          min="0"
-                                          disabled={isHidden} // Deshabilitar si está oculto
-                                        />
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={() => handleDeleteRule(config.productId, ruleIndex)} // Usar productId
-                                          className="h-6 w-6 text-red-500 hover:bg-red-100"
-                                          disabled={isHidden} // Deshabilitar si está oculto
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                      </div>
-                                    ))}
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleAddRule(config.productId)} // Usar productId
-                                      className="mt-2 w-fit text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs"
+          {masterProductConfigs.length === 0 && !showHiddenProducts ? (
+            <p className="text-center text-gray-500">
+              No hay productos configurados. Por favor, sube un archivo .db para inicializar la lista.
+            </p>
+          ) : (
+            <Accordion type="multiple" className="w-full">
+              {Object.entries(productsGroupedBySupplier).map(([supplier, products]) => (
+                <AccordionItem key={supplier} value={supplier} className="border-b border-gray-200">
+                  <AccordionTrigger className="flex justify-between items-center py-3 px-4 text-base sm:text-lg font-semibold text-gray-800 hover:bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      {supplier} ({products.length} productos)
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="p-4 bg-gray-50">
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <Table className="min-w-full bg-white text-gray-900 border-collapse">
+                        <TableHeader>
+                          <TableRow className="border-b border-gray-200">
+                            <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
+                            <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
+                            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
+                            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {products.map((config) => {
+                            const isHidden = config.isHidden;
+                            return (
+                              <React.Fragment key={config.productId}> {/* Usar productId como key */}
+                                <TableRow className={cn(
+                                  "border-b border-gray-100 hover:bg-gray-100",
+                                  isHidden && "bg-gray-50 text-gray-400 italic" // Estilo para productos ocultos
+                                )}>
+                                  <TableCell className="py-2 px-2 text-xs sm:text-sm font-medium">{config.productName}</TableCell>
+                                  <TableCell className="py-2 px-2">
+                                    <Select
+                                      value={editableProductConfigs[config.productId]?.supplier ?? config.supplier} // Usar productId
+                                      onValueChange={(value) => handleProductSupplierChange(config.productId, value)} // Usar productId
                                       disabled={isHidden} // Deshabilitar si está oculto
                                     >
-                                      <PlusCircle className="h-3 w-3 mr-1" /> Añadir Condición
+                                      <SelectTrigger className="w-[120px] text-xs sm:text-sm">
+                                        <SelectValue placeholder="Seleccionar proveedor" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {allSuppliers.map(sup => (
+                                          <SelectItem key={sup} value={sup}>
+                                            {sup}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell className="py-2 px-2 text-center">
+                                    {savingStatus[config.productId] === 'saving' && ( // Usar productId
+                                      <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
+                                    )}
+                                    {savingStatus[config.productId] === 'saved' && ( // Usar productId
+                                      <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
+                                    )}
+                                    {savingStatus[config.productId] === 'error' && ( // Usar productId
+                                      <XCircle className="h-4 w-4 text-red-500 inline-block" />
+                                    )}
+                                    {isHidden && !savingStatus[config.productId] && (
+                                      <span className="text-xs text-gray-500">Oculto</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="py-2 px-2 text-center">
+                                    <Button
+                                      variant="outline" // Cambiado a outline para 'Ocultar'
+                                      size="sm"
+                                      onClick={() => handleHideProductConfig(config.productId)} // Usar productId
+                                      className={cn(
+                                        "h-7 w-7 p-0",
+                                        isHidden ? "text-green-600 border-green-600 hover:bg-green-600 hover:text-white" : "text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+                                      )}
+                                      disabled={savingStatus[config.productId] === 'saving'} // Usar productId
+                                    >
+                                      {isHidden ? <Eye className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
                                     </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            </React.Fragment>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
+                                  </TableCell>
+                                </TableRow>
+                                {/* Fila para las reglas múltiples */}
+                                <TableRow className={cn("bg-gray-50", isHidden && "bg-gray-100")}>
+                                  <TableCell colSpan={5} className="py-2 px-2">
+                                    <div className="flex flex-col gap-2 pl-4">
+                                      <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
+                                      {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => ( // Usar productId
+                                        <div key={ruleIndex} className="flex items-center gap-2 text-xs">
+                                          <span>Si Stock es &lt;=</span>
+                                          <Input
+                                            type="number"
+                                            value={rule.minStock}
+                                            onChange={(e) => handleRuleChange(config.productId, ruleIndex, "minStock", e.target.value)} // Usar productId
+                                            onBlur={() => handleRuleBlur(config.productId)} // Usar productId
+                                            className="w-16 text-center"
+                                            min="0"
+                                            disabled={isHidden} // Deshabilitar si está oculto
+                                          />
+                                          <span>Pedir</span>
+                                          <Input
+                                            type="number"
+                                            value={rule.orderAmount}
+                                            onChange={(e) => handleRuleChange(config.productId, ruleIndex, "orderAmount", e.target.value)} // Usar productId
+                                            onBlur={() => handleRuleBlur(config.productId)} // Usar productId
+                                            className="w-16 text-center"
+                                            min="0"
+                                            disabled={isHidden} // Deshabilitar si está oculto
+                                          />
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => handleDeleteRule(config.productId, ruleIndex)} // Usar productId
+                                            className="h-6 w-6 text-red-500 hover:bg-red-100"
+                                            disabled={isHidden} // Deshabilitar si está oculto
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleAddRule(config.productId)} // Usar productId
+                                        className="mt-2 w-fit text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs"
+                                        disabled={isHidden} // Deshabilitar si está oculto
+                                      >
+                                        <PlusCircle className="h-3 w-3 mr-1" /> Añadir Condición
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              </React.Fragment>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
         </CardContent>
       </Card>
 
@@ -533,7 +539,8 @@ const SettingsPage = () => {
                 <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Esta acción eliminará *toda* la información guardada localmente en tu navegador (sesiones de inventario, configuraciones de productos).
-                  Si tienes sincronización con la nube, los datos se volverán a descargar. Si no, se perderán permanentemente.
+                  Una vez eliminados, los datos se recargarán automáticamente desde la nube (Supabase) si hay conexión.
+                  Si no hay conexión a la nube, los datos se perderán permanentemente.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

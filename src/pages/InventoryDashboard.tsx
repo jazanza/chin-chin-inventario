@@ -29,8 +29,7 @@ const InventoryDashboard = () => {
   const [hasSessionHistory, setHasSessionHistory] = useState(false);
   const [showFileUploader, setShowFileUploader] = useState(false);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
-  const [dbBufferForConfigOptions, setDbBufferForConfigOptions] = useState<Uint8Array | null>(null); // Para guardar el buffer temporalmente
-  const [showConfigOptions, setShowConfigOptions] = useState(false); // Para mostrar las opciones de configuración
+  // Eliminado dbBufferForConfigOptions y showConfigOptions ya que la carga de config se mueve a SettingsPage
 
   useEffect(() => {
     const checkHistory = async () => {
@@ -75,10 +74,9 @@ const InventoryDashboard = () => {
 
   const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer); // Guardar el buffer en el contexto para el inventario
-    setDbBufferForConfigOptions(buffer); // Guardar el buffer temporalmente para las opciones de configuración
+    // Ya no se necesita dbBufferForConfigOptions ni showConfigOptions aquí
     setInventoryType(null); // Reset inventory type selection
     setShowFileUploader(false); // Ocultar FileUploader una vez que el archivo está cargado
-    setShowConfigOptions(true); // Mostrar las opciones de configuración
   };
 
   const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
@@ -94,25 +92,10 @@ const InventoryDashboard = () => {
     setDbBuffer(null); // Forzar la carga de un nuevo archivo DB
     setInventoryType(null); // Asegurarse de que el tipo de inventario se seleccione de nuevo
     setShowFileUploader(true); // Mostrar el FileUploader para la nueva sesión
-    setShowConfigOptions(false); // Ocultar opciones de configuración
-    setDbBufferForConfigOptions(null); // Limpiar buffer temporal
+    // Limpiado dbBufferForConfigOptions y showConfigOptions
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
-  const handleUpdateOnlyNew = useCallback(async () => {
-    if (dbBufferForConfigOptions) {
-      await processDbForMasterConfigs(dbBufferForConfigOptions);
-      setShowConfigOptions(false); // Ocultar opciones después de procesar
-      setDbBufferForConfigOptions(null); // Limpiar buffer temporal
-    }
-  }, [dbBufferForConfigOptions, processDbForMasterConfigs]);
-
-  const handleResetAndReload = useCallback(async () => {
-    if (dbBufferForConfigOptions) {
-      await resetAllProductConfigs(dbBufferForConfigOptions);
-      setShowConfigOptions(false); // Ocultar opciones después de procesar
-      setDbBufferForConfigOptions(null); // Limpiar buffer temporal
-    }
-  }, [dbBufferForConfigOptions, resetAllProductConfigs]);
+  // Eliminados handleUpdateOnlyNew y handleResetAndReload ya que la lógica se mueve a SettingsPage
 
 
   // Lógica de renderizado condicional
@@ -152,51 +135,7 @@ const InventoryDashboard = () => {
     return <SessionManager onStartNewSession={handleStartNewSession} />;
   }
 
-  // 3. Si dbBuffer está cargado y se deben mostrar las opciones de configuración
-  if (dbBufferForConfigOptions && showConfigOptions) {
-    return (
-      <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-white text-gray-900 border-gray-200 shadow-md">
-          <CardHeader>
-            <CardTitle className="text-xl sm:text-2xl text-center text-gray-900">Opciones de Configuración</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <p className="text-center text-gray-700">Se ha cargado un archivo .db. ¿Cómo deseas procesar las configuraciones de productos?</p>
-            <Button
-              onClick={handleUpdateOnlyNew}
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-base"
-            >
-              Actualizar solo nuevos productos
-            </Button>
-            <Button
-              onClick={handleResetAndReload}
-              disabled={loading}
-              variant="destructive"
-              className="font-bold text-base"
-            >
-              Reiniciar toda la configuración
-            </Button>
-            <Button
-              onClick={() => {
-                setDbBuffer(null); // Limpiar el buffer del contexto
-                setDbBufferForConfigOptions(null); // Limpiar el buffer temporal
-                setShowConfigOptions(false); // Ocultar opciones
-                setShowFileUploader(true); // Volver al uploader
-              }}
-              variant="link"
-              className="text-blue-600 hover:text-blue-800"
-            >
-              Cancelar
-            </Button>
-          </CardContent>
-        </Card>
-        {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
-      </div>
-    );
-  }
-
-  // 4. Si no hay dbBuffer cargado, o se ha forzado el FileUploader (ej. se hizo clic en "Nueva Sesión")
+  // 3. Si no hay dbBuffer cargado, o se ha forzado el FileUploader (ej. se hizo clic en "Nueva Sesión")
   // Esto es para iniciar una sesión completamente nueva subiendo un archivo.
   if (!dbBuffer || showFileUploader) {
     return (
@@ -219,7 +158,7 @@ const InventoryDashboard = () => {
     );
   }
 
-  // 5. Si dbBuffer está cargado, pero el tipo de inventario aún no ha sido seleccionado
+  // 4. Si dbBuffer está cargado, pero el tipo de inventario aún no ha sido seleccionado
   if (dbBuffer && !inventoryType) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">

@@ -2,13 +2,13 @@ import { Outlet, NavLink, Navigate } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
 import { SyncStatusIndicator } from "./SyncStatusIndicator"; // Importar el nuevo componente
 import { Button } from "@/components/ui/button";
-import { CloudDownload } from "lucide-react";
+import { CloudDownload, RefreshCcw } from "lucide-react"; // Importar RefreshCcw para el icono de sincronización total
 import { useInventoryContext } from "@/context/InventoryContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 export const Layout = () => {
-  const { forceSyncFromCloud, loading, isOnline, syncStatus } = useInventoryContext();
+  const { performTotalSync, loading, isOnline, syncStatus } = useInventoryContext();
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -53,16 +53,16 @@ export const Layout = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={forceSyncFromCloud}
+                onClick={performTotalSync} // Llama a la nueva función de sincronización total
                 disabled={loading || !isOnline || syncStatus === 'syncing'}
                 className="ml-4 text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs sm:text-sm"
               >
-                <CloudDownload className="h-4 w-4 mr-1" />
-                Sincronizar con la Nube
+                <RefreshCcw className={cn("h-4 w-4 mr-1", syncStatus === 'syncing' && "animate-spin")} />
+                Sincronización Total
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Descargar configuraciones de productos desde la nube (sobrescribe lo local).</p>
+              <p>Sincroniza todos los cambios locales con la nube y descarga las últimas configuraciones.</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
