@@ -22,11 +22,11 @@ import { Switch } from "@/components/ui/switch"; // Importar Switch
 
 const SettingsPage = () => {
   const {
-    inventoryData,
+    filteredInventoryData, // <-- Corregido: Usar filteredInventoryData
     masterProductConfigs, // Ahora solo contiene productos no ocultos por defecto
     saveMasterProductConfig,
     deleteMasterProductConfig, // Ahora realiza un soft delete (ocultar)
-    setInventoryData,
+    // Eliminado setInventoryData
     saveCurrentSession,
     sessionId,
     inventoryType,
@@ -116,19 +116,9 @@ const SettingsPage = () => {
       setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
 
-      // Actualizar el inventoryData de la sesión actual si está activa
-      if (sessionId && inventoryType && inventoryData.length > 0) {
-        const updatedInventory = inventoryData.map(item =>
-          item.productId === productId // Usar productId
-            ? {
-                ...item,
-                rules: config.rules,
-                supplier: config.supplier,
-              }
-            : item
-        );
-        setInventoryData(updatedInventory);
-        await saveCurrentSession(updatedInventory, inventoryType, new Date());
+      // Actualizar la sesión actual con los datos de inventario filtrados más recientes
+      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
     } catch (e) {
       console.error("Error saving product config on blur:", e);
@@ -136,7 +126,7 @@ const SettingsPage = () => {
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
       showError('Error al guardar la configuración del producto.');
     }
-  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, inventoryData, setInventoryData, saveCurrentSession]);
+  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
   const handleProductSupplierChange = useCallback(async (productId: number, newSupplier: string) => { // Cambiado a productId
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
@@ -153,14 +143,8 @@ const SettingsPage = () => {
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
       showSuccess(`Proveedor de ${configToSave.productName} actualizado.`);
 
-      if (sessionId && inventoryType && inventoryData.length > 0) {
-        const updatedInventory = inventoryData.map(item =>
-          item.productId === productId // Usar productId
-            ? { ...item, supplier: newSupplier }
-            : item
-        );
-        setInventoryData(updatedInventory);
-        await saveCurrentSession(updatedInventory, inventoryType, new Date());
+      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
     } catch (e) {
       console.error("Error changing product supplier:", e);
@@ -168,7 +152,7 @@ const SettingsPage = () => {
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
       showError('Error al cambiar el proveedor del producto.');
     }
-  }, [editableProductConfigs, saveMasterProductConfig, inventoryData, setInventoryData, saveCurrentSession, sessionId, inventoryType]);
+  }, [editableProductConfigs, saveMasterProductConfig, filteredInventoryData, saveCurrentSession, sessionId, inventoryType]);
 
   const handleHideProductConfig = async (productId: number) => { // Cambiado a productId
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
@@ -180,11 +164,9 @@ const SettingsPage = () => {
       // Recargar las configuraciones maestras para que el producto oculto desaparezca de la vista
       await loadMasterProductConfigs(showHiddenProducts); // Usar el estado actual del toggle
 
-      // Si el producto oculto estaba en el inventario actual, actualizarlo
-      if (sessionId && inventoryType && inventoryData.length > 0) {
-        const updatedInventory = inventoryData.filter(item => item.productId !== productId);
-        setInventoryData(updatedInventory);
-        await saveCurrentSession(updatedInventory, inventoryType, new Date());
+      // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
+      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
     } catch (e) {
       console.error("Error hiding product config:", e);
@@ -221,14 +203,8 @@ const SettingsPage = () => {
       showSuccess('Regla añadida y guardada.');
 
       // Also update the current inventoryData if a session is active
-      if (sessionId && inventoryType && inventoryData.length > 0) {
-        const updatedInventory = inventoryData.map(item =>
-          item.productId === productId // Usar productId
-            ? { ...item, rules: updatedRules }
-            : item
-        );
-        setInventoryData(updatedInventory);
-        await saveCurrentSession(updatedInventory, inventoryType, new Date());
+      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
 
     } catch (e) {
@@ -237,7 +213,7 @@ const SettingsPage = () => {
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
       showError('Error al añadir la regla.');
     }
-  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, inventoryData, setInventoryData, saveCurrentSession]);
+  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
   const handleRuleChange = useCallback((
     productId: number, // Cambiado a productId
@@ -272,14 +248,8 @@ const SettingsPage = () => {
       showSuccess('Regla actualizada y guardada.');
 
       // Actualizar el inventoryData de la sesión actual si está activa
-      if (sessionId && inventoryType && inventoryData.length > 0) {
-        const updatedInventory = inventoryData.map(item =>
-          item.productId === productId // Usar productId
-            ? { ...item, rules: config.rules }
-            : item
-        );
-        setInventoryData(updatedInventory);
-        await saveCurrentSession(updatedInventory, inventoryType, new Date());
+      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
     } catch (e) {
       console.error("Error saving rule on blur:", e);
@@ -287,7 +257,7 @@ const SettingsPage = () => {
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
       showError('Error al guardar la regla.');
     }
-  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, inventoryData, setInventoryData, saveCurrentSession]);
+  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
   const handleDeleteRule = useCallback(async (productId: number, ruleIndex: number) => { // Cambiado a productId
     setEditableProductConfigs(prev => {
