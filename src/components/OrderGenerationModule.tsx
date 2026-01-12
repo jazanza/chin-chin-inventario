@@ -132,7 +132,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
     let orderText = "Buenos días, por favor para que nos ayuden con:\n\n";
     supplierOrders.forEach(order => {
-      if (order.finalOrderQuantity > 0) {
+      if (order.finalOrderQuantity > 0) { // Confirmado: usa finalOrderQuantity
         orderText += `- ${order.product} x ${order.finalOrderQuantity} u.\n`;
       }
     });

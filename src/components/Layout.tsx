@@ -1,5 +1,6 @@
 import { Outlet, NavLink, Navigate } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
+import { SyncStatusIndicator } from "./SyncStatusIndicator"; // Importar el nuevo componente
 
 
 export const Layout = () => {
@@ -40,6 +41,7 @@ export const Layout = () => {
             Configuración
           </NavLink>
         </nav>
+        <SyncStatusIndicator /> {/* Integrar el indicador de estado de sincronización */}
       </header>
       <main className="flex-1 flex flex-col p-4 sm:px-6 sm:py-0">
         <Outlet />

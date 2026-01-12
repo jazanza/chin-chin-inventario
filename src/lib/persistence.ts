@@ -11,6 +11,7 @@ export interface InventorySession {
   timestamp: Date;
   effectiveness: number; // Porcentaje de efectividad del inventario
   ordersBySupplier?: { [supplier: string]: OrderItem[] }; // Historial de pedidos
+  sync_pending?: boolean; // Nuevo campo para indicar si la sesión está pendiente de sincronizar con Supabase
 }
 
 // Define la estructura de una Regla de Pedido individual
@@ -26,6 +27,7 @@ export interface MasterProductConfig {
   rules: ProductRule[]; // Lista de reglas de stock/pedido
   supplier: string; // Proveedor asociado
   isHidden?: boolean; // Nuevo campo para el borrado suave
+  sync_pending?: boolean; // Nuevo campo para indicar si la configuración está pendiente de sincronizar con Supabase
 }
 
 // Define la estructura de la configuración por proveedor (sin cambios por ahora)
@@ -37,17 +39,17 @@ export class SessionDatabase extends Dexie {
   // Define la tabla principal para sesiones
   sessions!: Table<InventorySession, string>;
   // Define la tabla para reglas de producto (ahora MasterProductConfig)
-  productRules!: Table<MasterProductConfig, number>; // Clave principal por productId
+  productRules!: Table<MasterProductConfig, number>; // Clave principal por productId (número)
   // Define la tabla para configuraciones de proveedor
   supplierConfigs!: Table<SupplierConfig, string>;
 
   constructor() {
     super('ChinChinDB');
-    // Reset total de la base de datos: Versión muy alta para forzar recreación
-    this.version(10).stores({
-      sessions: 'dateKey, timestamp',
-      productRules: 'productId', // Clave principal por productId (número)
-      supplierConfigs: 'supplierName', // Clave principal por nombre de proveedor
+    // Incrementamos la versión para que Dexie aplique los cambios de esquema (sync_pending)
+    this.version(11).stores({
+      sessions: 'dateKey, timestamp, sync_pending', // Añadir sync_pending al índice
+      productRules: 'productId, sync_pending', // Añadir sync_pending al índice
+      supplierConfigs: 'supplierName',
     });
 
     // Manejar el evento de cambio de versión para forzar el cierre de conexiones antiguas

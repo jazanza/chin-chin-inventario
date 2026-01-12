@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import InventoryDashboard from "./pages/InventoryDashboard";
 import OrdersPage from "./pages/OrdersPage";
-import SettingsPage from "./pages/SettingsPage"; // Importar la nueva página
+import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 import { Layout } from "./components/Layout";
 import { InventoryProvider, useInventoryContext } from "./context/InventoryContext";
@@ -13,16 +13,17 @@ import { useEffect } from "react";
 
 // Componente para manejar la sincronización inicial
 const AppInitializer = () => {
-  const { syncFromSupabase, getSessionHistory } = useInventoryContext();
+  const { syncFromSupabase, getSessionHistory, loadMasterProductConfigs } = useInventoryContext();
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Verificar si hay sesiones locales
+        // Verificar si hay sesiones locales o configuraciones maestras
         const localSessions = await getSessionHistory();
+        const localMasterConfigs = await loadMasterProductConfigs(); // Cargar configs para verificar si hay algo local
         
-        // Si no hay sesiones locales, intentar sincronizar desde Supabase
-        if (localSessions.length === 0) {
+        // Si no hay sesiones locales NI configuraciones maestras locales, intentar sincronizar desde Supabase
+        if (localSessions.length === 0 && localMasterConfigs.length === 0) {
           await syncFromSupabase();
         }
       } catch (error) {
@@ -31,7 +32,7 @@ const AppInitializer = () => {
     };
 
     initializeApp();
-  }, [syncFromSupabase, getSessionHistory]);
+  }, [syncFromSupabase, getSessionHistory, loadMasterProductConfigs]);
 
   return null;
 };
@@ -51,7 +52,7 @@ const App = () => (
               <Route index element={<Navigate to="/inventario" replace />} />
               <Route path="inventario" element={<InventoryDashboard />} />
               <Route path="pedidos" element={<OrdersPage />} />
-              <Route path="configuracion" element={<SettingsPage />} /> {/* Nueva ruta */}
+              <Route path="configuracion" element={<SettingsPage />} />
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>
