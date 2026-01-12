@@ -59,16 +59,18 @@ export class SessionDatabase extends Dexie {
     }).upgrade(async (tx) => {
       // Migrar sesiones existentes para añadir sync_pending: false
       await tx.table('sessions').toCollection().modify((session) => {
-        if (session.sync_pending === undefined) {
+        // Asegurarse de que sync_pending sea siempre un booleano
+        if (session.sync_pending === undefined || session.sync_pending === null) {
           session.sync_pending = false; // Asumir que las sesiones antiguas están sincronizadas
         }
       });
       // Migrar configuraciones de producto existentes para añadir sync_pending: false y isHidden: false
       await tx.table('productRules').toCollection().modify((config) => {
-        if (config.sync_pending === undefined) {
+        // Asegurarse de que sync_pending y isHidden sean siempre booleanos
+        if (config.sync_pending === undefined || config.sync_pending === null) {
           config.sync_pending = false; // Asumir que las configuraciones antiguas están sincronizadas
         }
-        if (config.isHidden === undefined) {
+        if (config.isHidden === undefined || config.isHidden === null) {
           config.isHidden = false; // Asumir que los productos antiguos no están ocultos
         }
       });
