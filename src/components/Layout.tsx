@@ -1,11 +1,11 @@
-import { Outlet, NavLink, Navigate } from "react-router-dom";
+import { Outlet, NavLink } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
-import { SyncStatusIndicator } from "./SyncStatusIndicator"; // Importar el nuevo componente
+import { SyncStatusIndicator } from "./SyncStatusIndicator";
 import { Button } from "@/components/ui/button";
-import { CloudDownload, RefreshCcw } from "lucide-react"; // Importar RefreshCcw para el icono de sincronización total
+import { RefreshCcw } from "lucide-react";
 import { useInventoryContext } from "@/context/InventoryContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
+import { cn } from "@/lib/utils"; // Importar cn
 
 export const Layout = () => {
   const { performTotalSync, loading, isOnline, syncStatus } = useInventoryContext();
@@ -53,7 +53,7 @@ export const Layout = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={performTotalSync} // Llama a la nueva función de sincronización total
+                onClick={performTotalSync}
                 disabled={loading || !isOnline || syncStatus === 'syncing'}
                 className="ml-4 text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs sm:text-sm"
               >
@@ -66,12 +66,11 @@ export const Layout = () => {
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <SyncStatusIndicator /> {/* Integrar el indicador de estado de sincronización */}
+        <SyncStatusIndicator />
       </header>
       <main className="flex-1 flex flex-col p-4 sm:px-6 sm:py-0">
         <Outlet />
       </main>
-      
     </div>
   );
 };

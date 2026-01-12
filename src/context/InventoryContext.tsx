@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
+import { Database } from '@/lib/supabase'; // Importar tipos de base de datos
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -27,6 +28,13 @@ export interface InventoryItem {
   supplier: string;
   hasBeenEdited?: boolean;
   rules: ProductRule[]; // Lista de reglas de stock/pedido
+}
+
+// Definir tipos para los ítems de pedido con la cantidad final editable (necesario para sesiones)
+export interface OrderItem {
+  product: string;
+  quantityToOrder: number; // Cantidad sugerida (después de aplicar reglas)
+  finalOrderQuantity: number; // Cantidad final que el usuario puede editar
 }
 
 // --- Reducer Setup ---
@@ -115,7 +123,7 @@ interface InventoryContextType extends InventoryState {
     data: InventoryItem[],
     type: "weekly" | "monthly",
     timestamp: Date,
-    orders?: { [supplier: string]: any[] }
+    orders?: { [supplier: string]: OrderItem[] } // Usar OrderItem[]
   ) => Promise<void>;
   loadSession: (dateKey: string) => Promise<void>;
   deleteSession: (dateKey: string) => Promise<void>;
@@ -215,7 +223,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     data: InventoryItem[],
     type: "weekly" | "monthly",
     timestamp: Date,
-    orders?: { [supplier: string]: any[] }
+    orders?: { [supplier: string]: OrderItem[] } // Usar OrderItem[]
   ) => {
     if (!data || data.length === 0) return;
 
@@ -244,8 +252,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       if (supabase && state.isOnline) {
-        // Mapear explícitamente los campos para Supabase
-        const supabaseSession = {
+        // Mapear explícitamente los campos para Supabase usando tipos correctos
+        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
@@ -374,8 +382,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await db.productRules.put(configToSave);
       
       if (supabase && state.isOnline) {
-        // Mapear explícitamente los campos para Supabase
-        const supabaseConfig = {
+        // Mapear explícitamente los campos para Supabase usando tipos correctos
+        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
           productId: configToSave.productId,
           productName: configToSave.productName,
           rules: configToSave.rules,
@@ -653,7 +661,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         
         // Sincronizar con Supabase solo los que tienen sync_pending: true
         if (supabase && state.isOnline && configsToUpsertToSupabase.length > 0) {
-          const supabaseConfigs = configsToUpsertToSupabase.map(c => ({
+          const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = configsToUpsertToSupabase.map(c => ({
             productId: c.productId,
             productName: c.productName,
             rules: c.rules,
@@ -701,8 +709,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
 
         if (supabase && state.isOnline) {
-          // Mapear explícitamente los campos para Supabase
-          const supabaseSession = {
+          // Mapear explícitamente los campos para Supabase usando tipos correctos
+          const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
@@ -832,7 +840,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       // Sincronizar con Supabase solo los que tienen sync_pending: true
       const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
       if (supabase && state.isOnline && pendingForSupabase.length > 0) {
-        const supabaseConfigs = pendingForSupabase.map(c => ({
+        const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = pendingForSupabase.map(c => ({
           productId: c.productId,
           productName: c.productName,
           rules: c.rules,
@@ -907,8 +915,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray(); // Explicitly query for true
       for (const session of pendingSessions) {
         console.log(`Retrying session: ${session.dateKey}`);
-        // Mapear explícitamente los campos para Supabase
-        const supabaseSession = {
+        // Mapear explícitamente los campos para Supabase usando tipos correctos
+        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
@@ -932,8 +940,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray(); // Explicitly query for true
       for (const config of pendingProductRules) {
         console.log(`Retrying product config: ${config.productName} (${config.productId})`);
-        // Mapear explícitamente los campos para Supabase
-        const supabaseConfig = {
+        // Mapear explícitamente los campos para Supabase usando tipos correctos
+        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
           productId: config.productId,
           productName: config.productName,
           rules: config.rules,
@@ -990,7 +998,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log("Uploading local pending sessions...");
       const pendingLocalSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingLocalSessions) {
-        const supabaseSession = {
+        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
@@ -1011,7 +1019,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log("Uploading local pending product configs...");
       const pendingLocalProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingLocalProductRules) {
-        const supabaseConfig = {
+        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
           productId: config.productId,
           productName: config.productName,
           rules: config.rules,
@@ -1037,7 +1045,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .select('*');
       if (sessionsError) throw sessionsError;
       if (supabaseSessions && supabaseSessions.length > 0) {
-        await db.sessions.bulkPut(supabaseSessions.map(s => ({ ...s, sync_pending: false })));
+        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
+        const typedSessions: InventorySession[] = supabaseSessions.map(s => ({
+          dateKey: s.dateKey,
+          inventoryType: s.inventoryType,
+          inventoryData: s.inventoryData,
+          timestamp: new Date(s.timestamp), // Convertir string a Date
+          effectiveness: s.effectiveness,
+          ordersBySupplier: s.ordersBySupplier,
+          sync_pending: false
+        }));
+        await db.sessions.bulkPut(typedSessions);
       } else {
         await db.sessions.clear(); // Clear local if no sessions in cloud
       }
@@ -1048,7 +1066,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .select('*');
       if (productRulesError) throw productRulesError;
       if (supabaseProductRules && supabaseProductRules.length > 0) {
-        await db.productRules.bulkPut(supabaseProductRules.map(c => ({ ...c, sync_pending: false })));
+        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
+        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map(c => ({
+          productId: c.productId,
+          productName: c.productName,
+          rules: c.rules,
+          supplier: c.supplier,
+          isHidden: c.isHidden || false,
+          sync_pending: false
+        }));
+        await db.productRules.bulkPut(typedConfigs);
       } else {
         await db.productRules.clear(); // Clear local if no configs in cloud
       }
@@ -1093,8 +1120,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (sessionsError) {
         console.error("Error fetching sessions from Supabase during initial sync:", sessionsError);
       } else if (sessionsData && sessionsData.length > 0) {
-        for (const session of sessionsData) {
-          await db.sessions.put({ ...session, sync_pending: false }); // Downloaded, so not pending
+        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
+        const typedSessions: InventorySession[] = sessionsData.map(s => ({
+          dateKey: s.dateKey,
+          inventoryType: s.inventoryType,
+          inventoryData: s.inventoryData,
+          timestamp: new Date(s.timestamp), // Convertir string a Date
+          effectiveness: s.effectiveness,
+          ordersBySupplier: s.ordersBySupplier,
+          sync_pending: false // Downloaded, so not pending
+        }));
+        for (const session of typedSessions) {
+          await db.sessions.put(session);
         }
         console.log(`Synced ${sessionsData.length} sessions from Supabase to local storage.`);
       } else {
@@ -1109,10 +1146,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (configsError) {
         console.error("Error fetching product rules from Supabase during initial sync:", configsError);
       } else if (configsData && configsData.length > 0) {
-        for (const config of configsData) {
-          await db.productRules.put({ ...config, sync_pending: false }); // Downloaded, so not pending
+        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
+        const typedConfigs: MasterProductConfig[] = configsData.map(c => ({
+          productId: c.productId,
+          productName: c.productName,
+          rules: c.rules,
+          supplier: c.supplier,
+          isHidden: c.isHidden || false,
+          sync_pending: false // Downloaded, so not pending
+        }));
+        for (const config of typedConfigs) {
+          await db.productRules.put(config);
         }
-        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configsData.filter(c => !c.isHidden) });
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: typedConfigs.filter(c => !c.isHidden) });
         console.log(`Synced ${configsData.length} product rules from Supabase to local storage.`);
       } else {
         console.log("No product rules found in Supabase to sync.");
@@ -1158,9 +1204,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       // 3. Guardar las reglas descargadas en Dexie, marcadas como no pendientes
       if (supabaseProductRules && supabaseProductRules.length > 0) {
-        const configsToPut = supabaseProductRules.map(config => ({ ...config, sync_pending: false }));
-        await db.productRules.bulkPut(configsToPut);
-        showSuccess(`Se sincronizaron ${configsToPut.length} configuraciones de productos desde la nube.`);
+        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
+        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map(c => ({
+          productId: c.productId,
+          productName: c.productName,
+          rules: c.rules,
+          supplier: c.supplier,
+          isHidden: c.isHidden || false,
+          sync_pending: false
+        }));
+        await db.productRules.bulkPut(typedConfigs);
+        showSuccess(`Se sincronizaron ${typedConfigs.length} configuraciones de productos desde la nube.`);
       } else {
         showSuccess('No se encontraron configuraciones de productos en la nube para sincronizar.');
       }
