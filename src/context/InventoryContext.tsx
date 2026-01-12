@@ -257,12 +257,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp,
+          timestamp: sessionToSave.timestamp.toISOString(), // Convertir Date a ISO string
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
+          // sync_pending no se envía a Supabase
         };
-        const { error } = await supabase
-          .from('inventory_sessions')
+        const { error } = await (supabase
+          .from('inventory_sessions') as any) // Castear a any
           .upsert(supabaseSession, { onConflict: 'dateKey' });
 
         if (error) {
@@ -389,9 +390,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: configToSave.rules,
           supplier: configToSave.supplier,
           isHidden: configToSave.isHidden || false, // Asegurar que isHidden siempre sea booleano
+          // sync_pending no se envía a Supabase
         };
-        const { error } = await supabase
-          .from('product_rules')
+        const { error } = await (supabase
+          .from('product_rules') as any) // Castear a any
           .upsert(supabaseConfig, { onConflict: 'productId' });
 
         if (error) {
@@ -430,7 +432,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
         const { error } = await supabase
           .from('product_rules')
-          .update({ isHidden: true }) // No enviamos sync_pending a Supabase
+          .update({ isHidden: true } as any) // Castear a any
           .eq('productId', numericProductId);
 
         if (error) {
@@ -668,8 +670,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplier: c.supplier,
             isHidden: c.isHidden || false,
           }));
-          const { error: supabaseUpsertError } = await supabase
-            .from('product_rules')
+          const { error: supabaseUpsertError } = await (supabase
+            .from('product_rules') as any) // Castear a any
             .upsert(supabaseConfigs, { onConflict: 'productId' });
 
           if (supabaseUpsertError) {
@@ -714,12 +716,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
-            timestamp: newSession.timestamp,
+            timestamp: newSession.timestamp.toISOString(), // Convertir Date a ISO string
             effectiveness: newSession.effectiveness,
             ordersBySupplier: newSession.ordersBySupplier,
           };
-          const { error } = await supabase
-            .from('inventory_sessions')
+          const { error } = await (supabase
+            .from('inventory_sessions') as any) // Castear a any
             .upsert(supabaseSession, { onConflict: 'dateKey' });
 
           if (error) {
@@ -847,8 +849,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           supplier: c.supplier,
           isHidden: c.isHidden || false,
         }));
-        const { error: supabaseUpsertError } = await supabase
-          .from('product_rules')
+        const { error: supabaseUpsertError } = await (supabase
+          .from('product_rules') as any) // Castear a any
           .upsert(supabaseConfigs, { onConflict: 'productId' });
 
         if (supabaseUpsertError) {
@@ -920,12 +922,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp,
+          timestamp: session.timestamp.toISOString(), // Convertir Date a ISO string
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
-        const { error } = await supabase
-          .from('inventory_sessions')
+        const { error } = await (supabase
+          .from('inventory_sessions') as any) // Castear a any
           .upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) {
           console.error(`Failed to retry session ${session.dateKey}:`, error);
@@ -948,8 +950,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           supplier: config.supplier,
           isHidden: config.isHidden || false,
         };
-        const { error } = await supabase
-          .from('product_rules')
+        const { error } = await (supabase
+          .from('product_rules') as any) // Castear a any
           .upsert(supabaseConfig, { onConflict: 'productId' });
         if (error) {
           console.error(`Failed to retry product config ${config.productId}:`, error);
@@ -1002,12 +1004,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp,
+          timestamp: session.timestamp.toISOString(), // Convertir Date a ISO string
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
-        const { error } = await supabase
-          .from('inventory_sessions')
+        const { error } = await (supabase
+          .from('inventory_sessions') as any) // Castear a any
           .upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) {
           console.error(`Error uploading pending session ${session.dateKey} to Supabase:`, error);
@@ -1026,8 +1028,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           supplier: config.supplier,
           isHidden: config.isHidden || false,
         };
-        const { error } = await supabase
-          .from('product_rules')
+        const { error } = await (supabase
+          .from('product_rules') as any) // Castear a any
           .upsert(supabaseConfig, { onConflict: 'productId' });
         if (error) {
           console.error(`Error uploading pending product config ${config.productId} to Supabase:`, error);
@@ -1046,7 +1048,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (sessionsError) throw sessionsError;
       if (supabaseSessions && supabaseSessions.length > 0) {
         // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedSessions: InventorySession[] = supabaseSessions.map(s => ({
+        const typedSessions: InventorySession[] = supabaseSessions.map((s: Database['public']['Tables']['inventory_sessions']['Row']) => ({
           dateKey: s.dateKey,
           inventoryType: s.inventoryType,
           inventoryData: s.inventoryData,
@@ -1067,7 +1069,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (productRulesError) throw productRulesError;
       if (supabaseProductRules && supabaseProductRules.length > 0) {
         // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map(c => ({
+        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
           productId: c.productId,
           productName: c.productName,
           rules: c.rules,
@@ -1121,7 +1123,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.error("Error fetching sessions from Supabase during initial sync:", sessionsError);
       } else if (sessionsData && sessionsData.length > 0) {
         // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedSessions: InventorySession[] = sessionsData.map(s => ({
+        const typedSessions: InventorySession[] = sessionsData.map((s: Database['public']['Tables']['inventory_sessions']['Row']) => ({
           dateKey: s.dateKey,
           inventoryType: s.inventoryType,
           inventoryData: s.inventoryData,
@@ -1147,7 +1149,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.error("Error fetching product rules from Supabase during initial sync:", configsError);
       } else if (configsData && configsData.length > 0) {
         // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedConfigs: MasterProductConfig[] = configsData.map(c => ({
+        const typedConfigs: MasterProductConfig[] = configsData.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
           productId: c.productId,
           productName: c.productName,
           rules: c.rules,
@@ -1205,7 +1207,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       // 3. Guardar las reglas descargadas en Dexie, marcadas como no pendientes
       if (supabaseProductRules && supabaseProductRules.length > 0) {
         // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map(c => ({
+        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
           productId: c.productId,
           productName: c.productName,
           rules: c.rules,
