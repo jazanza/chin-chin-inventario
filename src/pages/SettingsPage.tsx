@@ -11,20 +11,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, MinusCircle } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff } from "lucide-react"; // Importar Eye y EyeOff
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
 import { FileUploader } from "@/components/FileUploader";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch"; // Importar Switch
 
 
 const SettingsPage = () => {
   const {
     inventoryData,
-    masterProductConfigs, // Ahora solo contiene productos no ocultos
+    masterProductConfigs, // Ahora solo contiene productos no ocultos por defecto
     saveMasterProductConfig,
-    deleteMasterProductConfig, // Ahora realiza un soft delete
+    deleteMasterProductConfig, // Ahora realiza un soft delete (ocultar)
     setInventoryData,
     saveCurrentSession,
     sessionId,
@@ -38,6 +39,7 @@ const SettingsPage = () => {
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
     [productId: number]: MasterProductConfig; // Cambiado a productId
   }>({});
+  const [showHiddenProducts, setShowHiddenProducts] = useState(false); // Nuevo estado para el toggle
 
   const [savingStatus, setSavingStatus] = useState<{
     [key: number]: 'saving' | 'saved' | 'error' | null; // key es productId
@@ -53,6 +55,12 @@ const SettingsPage = () => {
     });
     setEditableProductConfigs(initialConfigs);
   }, [masterProductConfigs]);
+
+  // Cargar configuraciones maestras (con o sin ocultos) cuando el toggle cambia
+  useEffect(() => {
+    loadMasterProductConfigs(showHiddenProducts);
+  }, [showHiddenProducts, loadMasterProductConfigs]);
+
 
   // Agrupar productos por proveedor (usando el proveedor de la configuración maestra)
   const productsGroupedBySupplier = useMemo(() => {
@@ -162,27 +170,27 @@ const SettingsPage = () => {
     }
   }, [editableProductConfigs, saveMasterProductConfig, inventoryData, setInventoryData, saveCurrentSession, sessionId, inventoryType]);
 
-  const handleDeleteProductConfig = async (productId: number) => { // Cambiado a productId
+  const handleHideProductConfig = async (productId: number) => { // Cambiado a productId
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
-      await deleteMasterProductConfig(productId); // Llama al soft delete
+      await deleteMasterProductConfig(productId); // Llama al soft delete (ocultar)
       setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
       
       // Recargar las configuraciones maestras para que el producto oculto desaparezca de la vista
-      await loadMasterProductConfigs();
+      await loadMasterProductConfigs(showHiddenProducts); // Usar el estado actual del toggle
 
-      // Si el producto eliminado estaba en el inventario actual, actualizarlo
+      // Si el producto oculto estaba en el inventario actual, actualizarlo
       if (sessionId && inventoryType && inventoryData.length > 0) {
         const updatedInventory = inventoryData.filter(item => item.productId !== productId);
         setInventoryData(updatedInventory);
         await saveCurrentSession(updatedInventory, inventoryType, new Date());
       }
     } catch (e) {
-      console.error("Error deleting product config:", e);
+      console.error("Error hiding product config:", e);
       setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al eliminar la configuración del producto.');
+      showError('Error al ocultar la configuración del producto.');
     }
   };
 
@@ -335,7 +343,7 @@ const SettingsPage = () => {
   }
 
   // Mostrar uploader si no hay configuraciones maestras
-  if (masterProductConfigs.length === 0) {
+  if (masterProductConfigs.length === 0 && !showHiddenProducts) { // Si no hay configs y no estamos mostrando ocultos
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <div className="text-center">
@@ -354,8 +362,19 @@ const SettingsPage = () => {
       <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-6 text-gray-900">Configuración de Pedidos</h1>
 
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Reglas de Pedido por Producto</CardTitle>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="show-hidden-products"
+              checked={showHiddenProducts}
+              onCheckedChange={setShowHiddenProducts}
+            />
+            <label htmlFor="show-hidden-products" className="text-sm font-medium text-gray-700">
+              {showHiddenProducts ? <EyeOff className="h-4 w-4 inline-block mr-1" /> : <Eye className="h-4 w-4 inline-block mr-1" />}
+              Mostrar ocultos
+            </label>
+          </div>
         </CardHeader>
         <CardContent>
           <Accordion type="multiple" className="w-full">
@@ -379,14 +398,19 @@ const SettingsPage = () => {
                       </TableHeader>
                       <TableBody>
                         {products.map((config) => {
+                          const isHidden = config.isHidden;
                           return (
                             <React.Fragment key={config.productId}> {/* Usar productId como key */}
-                              <TableRow className="border-b border-gray-100 hover:bg-gray-100">
+                              <TableRow className={cn(
+                                "border-b border-gray-100 hover:bg-gray-100",
+                                isHidden && "bg-gray-50 text-gray-400 italic" // Estilo para productos ocultos
+                              )}>
                                 <TableCell className="py-2 px-2 text-xs sm:text-sm font-medium">{config.productName}</TableCell>
                                 <TableCell className="py-2 px-2">
                                   <Select
                                     value={editableProductConfigs[config.productId]?.supplier ?? config.supplier} // Usar productId
                                     onValueChange={(value) => handleProductSupplierChange(config.productId, value)} // Usar productId
+                                    disabled={isHidden} // Deshabilitar si está oculto
                                   >
                                     <SelectTrigger className="w-[120px] text-xs sm:text-sm">
                                       <SelectValue placeholder="Seleccionar proveedor" />
@@ -410,21 +434,27 @@ const SettingsPage = () => {
                                   {savingStatus[config.productId] === 'error' && ( // Usar productId
                                     <XCircle className="h-4 w-4 text-red-500 inline-block" />
                                   )}
+                                  {isHidden && !savingStatus[config.productId] && (
+                                    <span className="text-xs text-gray-500">Oculto</span>
+                                  )}
                                 </TableCell>
                                 <TableCell className="py-2 px-2 text-center">
                                   <Button
-                                    variant="destructive"
+                                    variant="outline" // Cambiado a outline para 'Ocultar'
                                     size="sm"
-                                    onClick={() => handleDeleteProductConfig(config.productId)} // Usar productId
-                                    className="h-7 w-7 p-0"
+                                    onClick={() => handleHideProductConfig(config.productId)} // Usar productId
+                                    className={cn(
+                                      "h-7 w-7 p-0",
+                                      isHidden ? "text-green-600 border-green-600 hover:bg-green-600 hover:text-white" : "text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+                                    )}
                                     disabled={savingStatus[config.productId] === 'saving'} // Usar productId
                                   >
-                                    <Trash2 className="h-3 w-3" />
+                                    {isHidden ? <Eye className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
                                   </Button>
                                 </TableCell>
                               </TableRow>
                               {/* Fila para las reglas múltiples */}
-                              <TableRow className="bg-gray-50">
+                              <TableRow className={cn("bg-gray-50", isHidden && "bg-gray-100")}>
                                 <TableCell colSpan={5} className="py-2 px-2">
                                   <div className="flex flex-col gap-2 pl-4">
                                     <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
@@ -438,6 +468,7 @@ const SettingsPage = () => {
                                           onBlur={() => handleRuleBlur(config.productId)} // Usar productId
                                           className="w-16 text-center"
                                           min="0"
+                                          disabled={isHidden} // Deshabilitar si está oculto
                                         />
                                         <span>Pedir</span>
                                         <Input
@@ -447,12 +478,14 @@ const SettingsPage = () => {
                                           onBlur={() => handleRuleBlur(config.productId)} // Usar productId
                                           className="w-16 text-center"
                                           min="0"
+                                          disabled={isHidden} // Deshabilitar si está oculto
                                         />
                                         <Button
                                           variant="ghost"
                                           size="icon"
                                           onClick={() => handleDeleteRule(config.productId, ruleIndex)} // Usar productId
                                           className="h-6 w-6 text-red-500 hover:bg-red-100"
+                                          disabled={isHidden} // Deshabilitar si está oculto
                                         >
                                           <Trash2 className="h-3 w-3" />
                                         </Button>
@@ -463,6 +496,7 @@ const SettingsPage = () => {
                                       size="sm"
                                       onClick={() => handleAddRule(config.productId)} // Usar productId
                                       className="mt-2 w-fit text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs"
+                                      disabled={isHidden} // Deshabilitar si está oculto
                                     >
                                       <PlusCircle className="h-3 w-3 mr-1" /> Añadir Condición
                                     </Button>

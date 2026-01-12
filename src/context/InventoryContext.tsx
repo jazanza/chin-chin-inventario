@@ -124,7 +124,7 @@ interface InventoryContextType extends InventoryState {
   syncFromSupabase: () => Promise<void>;
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
   deleteMasterProductConfig: (productId: number) => Promise<void>; // Cambiado a productId
-  loadMasterProductConfigs: () => Promise<MasterProductConfig[]>;
+  loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>; // Añadido includeHidden
   forceFullSync: () => Promise<void>; // Nueva función para forzar la sincronización
   forceSyncFromCloud: () => Promise<void>; // Nueva función para sincronización bidireccional
   resetAllProductConfigs: (buffer: Uint8Array) => Promise<void>; // Nueva función para reiniciar configs
@@ -350,11 +350,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   }, []);
 
   // --- Master Product Config Persistence ---
-  const loadMasterProductConfigs = useCallback(async (): Promise<MasterProductConfig[]> => {
+  const loadMasterProductConfigs = useCallback(async (includeHidden: boolean = false): Promise<MasterProductConfig[]> => {
     try {
       if (!db.isOpen()) await db.open(); // Ensure DB is open
       const allConfigs = await db.productRules.toArray();
-      const filteredConfigs = allConfigs.filter(config => !config.isHidden);
+      const filteredConfigs = includeHidden ? allConfigs : allConfigs.filter(config => !config.isHidden);
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: filteredConfigs });
       return filteredConfigs;
     } catch (e) {
@@ -419,7 +419,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await db.productRules.update(numericProductId, { isHidden: true, sync_pending: true });
       
       if (supabase && state.isOnline) {
-        // Al eliminar (soft-delete), solo enviamos los campos relevantes a Supabase
+        // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
         const { error } = await supabase
           .from('product_rules')
           .update({ isHidden: true }) // No enviamos sync_pending a Supabase
@@ -427,7 +427,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         if (error) {
           console.error("Error soft-deleting master product config from Supabase:", error);
-          showError('Error al sincronizar eliminación de producto con la nube. Se reintentará.');
+          showError('Error al sincronizar ocultamiento de producto con la nube. Se reintentará.');
           // Keep sync_pending: true in Dexie
         } else {
           await db.productRules.update(numericProductId, { sync_pending: false }); // Marcar como sincronizado en Dexie
@@ -436,12 +436,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       } else {
         console.log("Supabase client not available or offline, skipping soft-delete to Supabase. Marked as sync_pending.");
       }
-      showSuccess(`Configuración de producto eliminada (ocultada).`);
+      showSuccess(`Configuración de producto ocultada.`);
 
       // Refrescar configs sin ocultos
       const updatedConfigs = (await db.productRules.toArray()).filter(c => !c.isHidden);
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: updatedConfigs });
 
+      // Si el producto oculto estaba en el inventario actual, actualizarlo para que no aparezca
       if (state.inventoryData.some(item => item.productId === numericProductId)) {
         const updatedInventory = state.inventoryData.filter(item => item.productId !== numericProductId);
         dispatch({ type: 'SET_INVENTORY_DATA', payload: updatedInventory });
@@ -452,7 +453,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       updateSyncStatus();
     } catch (e) {
       console.error("Error soft-deleting master product config:", e);
-      showError('Error al eliminar la configuración de producto.');
+      showError('Error al ocultar la configuración de producto.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -596,18 +597,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           }
           const currentProductId = Number(dbItem.ProductId);
 
-          let supplierName = dbItem.SupplierName;
-          const lowerCaseSupplierName = supplierName.toLowerCase();
+          let supplierNameFromDb = dbItem.SupplierName;
+          const lowerCaseSupplierName = supplierNameFromDb.toLowerCase();
 
           if (lowerCaseSupplierName.includes("finca yaruqui") || lowerCaseSupplierName.includes("elbe")) {
-            supplierName = "ELBE S.A.";
+            supplierNameFromDb = "ELBE S.A.";
           } else if (lowerCaseSupplierName.includes("ac bebidas")) {
-            supplierName = "AC Bebidas (Coca Cola)";
+            supplierNameFromDb = "AC Bebidas (Coca Cola)";
           }
 
           const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
           if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
-            supplierName = "AC Bebidas (Coca Cola)";
+            supplierNameFromDb = "AC Bebidas (Coca Cola)";
           }
 
           const matchedProductData = productData.find(
@@ -617,29 +618,34 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           let masterConfig = masterProductConfigsMap.get(currentProductId);
 
           if (!masterConfig) {
+            // Nuevo producto: usar datos del DB y marcar como pendiente
             masterConfig = {
               productId: currentProductId,
               productName: dbItem.Producto,
-              rules: [],
-              supplier: supplierName,
+              rules: [], // Reglas vacías por defecto
+              supplier: supplierNameFromDb, // Usar proveedor detectado
               isHidden: false,
-              sync_pending: true, // Nuevo producto, se intentará sincronizar inmediatamente
+              sync_pending: true,
             };
             newOrUpdatedMasterConfigs.push(masterConfig);
             masterProductConfigsMap.set(currentProductId, masterConfig);
           } else {
-            const updatedConfig = {
-              ...masterConfig,
-              productName: dbItem.Producto,
-              supplier: supplierName,
-              // isHidden se mantiene
-              // Asegurarse de que sync_pending sea siempre un booleano
-              sync_pending: Boolean(masterConfig.sync_pending || (masterConfig.productName !== dbItem.Producto || masterConfig.supplier !== supplierName)),
-            };
-            if (updatedConfig.sync_pending) { // Solo añadir si hay cambios o ya estaba pendiente
+            // Producto existente: preservar reglas, proveedor y estado oculto. Solo actualizar nombre si cambió.
+            const updatedConfig = { ...masterConfig };
+            let changed = false;
+
+            if (updatedConfig.productName !== dbItem.Producto) {
+              updatedConfig.productName = dbItem.Producto;
+              changed = true;
+            }
+            // No actualizar supplier, rules, isHidden desde DB si ya existen en masterConfig
+            // Estos campos son configurables por el usuario y deben persistir.
+
+            if (changed || masterConfig.sync_pending) {
+              updatedConfig.sync_pending = true;
               newOrUpdatedMasterConfigs.push(updatedConfig);
             }
-            masterConfig = updatedConfig; // Usar la versión actualizada para el inventario
+            masterConfig = updatedConfig; // Usar la versión (potencialmente) actualizada para el inventario
           }
 
           if (!masterConfig.isHidden) {
@@ -650,9 +656,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               systemQuantity: dbItem.Stock_Actual,
               physicalQuantity: dbItem.Stock_Actual,
               averageSales: matchedProductData?.averageSales || 0,
-              supplier: masterConfig.supplier,
+              supplier: masterConfig.supplier, // Usar el proveedor de la configuración maestra
               hasBeenEdited: false,
-              rules: masterConfig.rules,
+              rules: masterConfig.rules, // Usar las reglas de la configuración maestra
             });
           }
         });
@@ -755,43 +761,48 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
         const currentProductId = Number(dbItem.ProductId);
 
-        let supplierName = dbItem.SupplierName;
-        const lowerCaseSupplierName = supplierName.toLowerCase();
+        let supplierNameFromDb = dbItem.SupplierName;
+        const lowerCaseSupplierName = supplierNameFromDb.toLowerCase();
 
         if (lowerCaseSupplierName.includes("finca yaruqui") || lowerCaseSupplierName.includes("elbe")) {
-          supplierName = "ELBE S.A.";
+          supplierNameFromDb = "ELBE S.A.";
         } else if (lowerCaseSupplierName.includes("ac bebidas")) {
-          supplierName = "AC Bebidas (Coca Cola)";
+          supplierNameFromDb = "AC Bebidas (Coca Cola)";
         }
 
         const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
         if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
-          supplierName = "AC Bebidas (Coca Cola)";
+          supplierNameFromDb = "AC Bebidas (Coca Cola)";
         }
 
         let masterConfig = masterProductConfigsMap.get(currentProductId);
 
         if (!masterConfig) {
+          // Nuevo producto: usar datos del DB y marcar como pendiente
           masterConfig = {
             productId: currentProductId,
             productName: dbItem.Producto,
-            rules: [],
-            supplier: supplierName,
+            rules: [], // Reglas vacías por defecto
+            supplier: supplierNameFromDb, // Usar proveedor detectado
             isHidden: false,
-            sync_pending: true, // Nuevo producto, marcar como pendiente
+            sync_pending: true,
           };
           newProductsCount++;
           configsToUpdateOrAdd.push(masterConfig);
         } else {
-          const updatedConfig = {
-            ...masterConfig,
-            productName: dbItem.Producto,
-            supplier: supplierName,
-            // isHidden se mantiene
-            // Asegurarse de que sync_pending sea siempre un booleano
-            sync_pending: Boolean(masterConfig.sync_pending || (masterConfig.productName !== dbItem.Producto || masterConfig.supplier !== supplierName)),
-          };
-          if (updatedConfig.sync_pending) { // Solo añadir si hay cambios o ya estaba pendiente
+          // Producto existente: preservar reglas, proveedor y estado oculto. Solo actualizar nombre si cambió.
+          const updatedConfig = { ...masterConfig };
+          let changed = false;
+
+          if (updatedConfig.productName !== dbItem.Producto) {
+            updatedConfig.productName = dbItem.Producto;
+            changed = true;
+          }
+          // No actualizar supplier, rules, isHidden desde DB si ya existen en masterConfig
+          // Estos campos son configurables por el usuario y deben persistir.
+
+          if (changed || masterConfig.sync_pending) {
+            updatedConfig.sync_pending = true;
             configsToUpdateOrAdd.push(updatedConfig);
           }
         }

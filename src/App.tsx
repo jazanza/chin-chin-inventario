@@ -13,26 +13,20 @@ import { useEffect } from "react";
 
 // Componente para manejar la sincronización inicial
 const AppInitializer = () => {
-  const { syncFromSupabase, getSessionHistory, loadMasterProductConfigs } = useInventoryContext();
+  const { syncFromSupabase } = useInventoryContext();
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Verificar si hay sesiones locales o configuraciones maestras
-        const localSessions = await getSessionHistory();
-        const localMasterConfigs = await loadMasterProductConfigs(); // Cargar configs para verificar si hay algo local
-        
-        // Si no hay sesiones locales NI configuraciones maestras locales, intentar sincronizar desde Supabase
-        if (localSessions.length === 0 && localMasterConfigs.length === 0) {
-          await syncFromSupabase();
-        }
+        // Siempre intentar sincronizar desde Supabase al inicio
+        await syncFromSupabase();
       } catch (error) {
         console.error("Error during app initialization:", error);
       }
     };
 
     initializeApp();
-  }, [syncFromSupabase, getSessionHistory, loadMasterProductConfigs]);
+  }, [syncFromSupabase]); // Dependencia de syncFromSupabase para asegurar que se ejecute una vez
 
   return null;
 };
