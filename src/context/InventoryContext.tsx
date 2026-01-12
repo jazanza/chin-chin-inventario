@@ -593,7 +593,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               rules: [],
               supplier: supplierName,
               isHidden: false,
-              sync_pending: false, // Nuevo producto, se intentará sincronizar inmediatamente
+              sync_pending: true, // Nuevo producto, se intentará sincronizar inmediatamente
             };
             newOrUpdatedMasterConfigs.push(masterConfig);
             masterProductConfigsMap.set(currentProductId, masterConfig);
@@ -603,8 +603,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               productName: dbItem.Producto,
               supplier: supplierName,
               // isHidden se mantiene
-              // sync_pending se mantiene si ya estaba pendiente, o se establece a false si no hay cambios
-              sync_pending: masterConfig.sync_pending || (masterConfig.productName !== dbItem.Producto || masterConfig.supplier !== supplierName),
+              // Asegurarse de que sync_pending sea siempre un booleano
+              sync_pending: Boolean(masterConfig.sync_pending || (masterConfig.productName !== dbItem.Producto || masterConfig.supplier !== supplierName)),
             };
             if (updatedConfig.sync_pending) { // Solo añadir si hay cambios o ya estaba pendiente
               newOrUpdatedMasterConfigs.push(updatedConfig);
@@ -749,7 +749,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             productName: dbItem.Producto,
             supplier: supplierName,
             // isHidden se mantiene
-            sync_pending: masterConfig.sync_pending || (masterConfig.productName !== dbItem.Producto || masterConfig.supplier !== supplierName),
+            // Asegurarse de que sync_pending sea siempre un booleano
+            sync_pending: Boolean(masterConfig.sync_pending || (masterConfig.productName !== dbItem.Producto || masterConfig.supplier !== supplierName)),
           };
           if (updatedConfig.sync_pending) { // Solo añadir si hay cambios o ya estaba pendiente
             configsToUpdateOrAdd.push(updatedConfig);
@@ -794,7 +795,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await loadMasterProductConfigs(); // Recargar para actualizar el estado global
       updateSyncStatus();
     } catch (e: any) {
-      console.error("Error processing database for master configs:", e);
+      console.error("Error during processing database for master configs:", e);
       showError(`Error al procesar el archivo DB para configuraciones: ${e.message}`);
       dispatch({ type: 'SET_ERROR', payload: e.message });
     } finally {

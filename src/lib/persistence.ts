@@ -75,6 +75,27 @@ export class SessionDatabase extends Dexie {
         }
       });
     });
+    // Versión 12: Forzar una nueva migración para asegurar la consistencia de los índices
+    this.version(12).stores({
+      sessions: 'dateKey, timestamp, sync_pending',
+      productRules: 'productId, sync_pending',
+      supplierConfigs: 'supplierName',
+    }).upgrade(async (tx) => {
+      await tx.table('sessions').toCollection().modify((session) => {
+        if (session.sync_pending === undefined || session.sync_pending === null) {
+          session.sync_pending = false;
+        }
+      });
+      await tx.table('productRules').toCollection().modify((config) => {
+        if (config.sync_pending === undefined || config.sync_pending === null) {
+          config.sync_pending = false;
+        }
+        if (config.isHidden === undefined || config.isHidden === null) {
+          config.isHidden = false;
+        }
+      });
+    });
+
 
     // Manejar el evento de cambio de versión para forzar el cierre de conexiones antiguas
     this.on('versionchange', (event) => {
