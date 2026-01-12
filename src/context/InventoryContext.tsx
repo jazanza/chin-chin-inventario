@@ -588,7 +588,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
 
         let processedInventory: InventoryItem[] = [];
-        const newOrUpdatedMasterConfigs: MasterProductConfig[] = [];
+        const configsToUpsertToSupabase: MasterProductConfig[] = []; // Para los que se modificaron o son nuevos
 
         rawInventoryItems.forEach((dbItem) => {
           if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -616,36 +616,34 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           );
 
           let masterConfig = masterProductConfigsMap.get(currentProductId);
+          let configChanged = false;
 
           if (!masterConfig) {
-            // Nuevo producto: usar datos del DB y marcar como pendiente
+            // Nuevo producto: usar datos del DB
             masterConfig = {
               productId: currentProductId,
               productName: dbItem.Producto,
               rules: [], // Reglas vacías por defecto
               supplier: supplierNameFromDb, // Usar proveedor detectado
               isHidden: false,
-              sync_pending: true,
+              sync_pending: true, // Marcar como pendiente para Supabase
             };
-            newOrUpdatedMasterConfigs.push(masterConfig);
-            masterProductConfigsMap.set(currentProductId, masterConfig);
+            configChanged = true;
           } else {
             // Producto existente: preservar reglas, proveedor y estado oculto. Solo actualizar nombre si cambió.
             const updatedConfig = { ...masterConfig };
-            let changed = false;
-
             if (updatedConfig.productName !== dbItem.Producto) {
               updatedConfig.productName = dbItem.Producto;
-              changed = true;
+              configChanged = true;
             }
             // No actualizar supplier, rules, isHidden desde DB si ya existen en masterConfig
             // Estos campos son configurables por el usuario y deben persistir.
-
-            if (changed || masterConfig.sync_pending) {
-              updatedConfig.sync_pending = true;
-              newOrUpdatedMasterConfigs.push(updatedConfig);
-            }
             masterConfig = updatedConfig; // Usar la versión (potencialmente) actualizada para el inventario
+          }
+
+          if (configChanged) {
+            masterConfig.sync_pending = true; // Marcar para sincronizar si hubo cambios o es nuevo
+            configsToUpsertToSupabase.push(masterConfig);
           }
 
           if (!masterConfig.isHidden) {
@@ -663,11 +661,40 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           }
         });
 
-        if (newOrUpdatedMasterConfigs.length > 0) {
-          await db.productRules.bulkPut(newOrUpdatedMasterConfigs);
-          dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: (await db.productRules.toArray()).filter(c => !c.isHidden) });
-          console.log(`Saved ${newOrUpdatedMasterConfigs.length} new or updated master product configs.`);
+        // Actualizar Dexie con todas las configuraciones (nuevas y existentes con posibles cambios de nombre)
+        if (configsToUpsertToSupabase.length > 0) {
+          await db.productRules.bulkPut(configsToUpsertToSupabase);
+          console.log(`Updated/Added ${configsToUpsertToSupabase.length} master product configs in Dexie.`);
         }
+        
+        // Sincronizar con Supabase solo los que tienen sync_pending: true
+        if (supabase && state.isOnline && configsToUpsertToSupabase.length > 0) {
+          const supabaseConfigs = configsToUpsertToSupabase.map(c => ({
+            productId: c.productId,
+            productName: c.productName,
+            rules: c.rules,
+            supplier: c.supplier,
+            isHidden: c.isHidden || false,
+          }));
+          const { error: supabaseUpsertError } = await supabase
+            .from('product_rules')
+            .upsert(supabaseConfigs, { onConflict: 'productId' });
+
+          if (supabaseUpsertError) {
+            console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
+            showError('Error al sincronizar configuraciones de producto con la nube. Se reintentará.');
+          } else {
+            // Marcar como sincronizado en Dexie para los que se subieron con éxito
+            for (const config of configsToUpsertToSupabase) {
+              await db.productRules.update(config.productId, { sync_pending: false });
+            }
+            showSuccess('Configuraciones de productos actualizadas y sincronizadas.');
+          }
+        } else if (configsToUpsertToSupabase.length > 0) {
+          console.log("Supabase client not available or offline, skipping bulk upsert to Supabase. Marked as sync_pending.");
+          showSuccess('Configuraciones de productos actualizadas localmente (pendientes de sincronizar).');
+        }
+
 
         processedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
 
@@ -751,7 +778,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const existingMasterProductConfigs = await db.productRules.toArray();
       const masterProductConfigsMap = new Map(existingMasterProductConfigs.map(config => [config.productId, config]));
 
-      const configsToUpdateOrAdd: MasterProductConfig[] = [];
+      const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
+      const configsToUpsertToSupabase: MasterProductConfig[] = [];
       let newProductsCount = 0;
 
       for (const dbItem of rawInventoryItems) {
@@ -776,76 +804,77 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
 
         let masterConfig = masterProductConfigsMap.get(currentProductId);
+        let configChanged = false;
 
         if (!masterConfig) {
-          // Nuevo producto: usar datos del DB y marcar como pendiente
+          // Nuevo producto: usar datos del DB
           masterConfig = {
             productId: currentProductId,
             productName: dbItem.Producto,
             rules: [], // Reglas vacías por defecto
             supplier: supplierNameFromDb, // Usar proveedor detectado
             isHidden: false,
-            sync_pending: true,
+            sync_pending: true, // Marcar como pendiente para Supabase
           };
           newProductsCount++;
-          configsToUpdateOrAdd.push(masterConfig);
+          configChanged = true;
         } else {
           // Producto existente: preservar reglas, proveedor y estado oculto. Solo actualizar nombre si cambió.
           const updatedConfig = { ...masterConfig };
-          let changed = false;
-
           if (updatedConfig.productName !== dbItem.Producto) {
             updatedConfig.productName = dbItem.Producto;
-            changed = true;
+            configChanged = true;
           }
-          // No actualizar supplier, rules, isHidden desde DB si ya existen en masterConfig
-          // Estos campos son configurables por el usuario y deben persistir.
-
-          if (changed || masterConfig.sync_pending) {
-            updatedConfig.sync_pending = true;
-            configsToUpdateOrAdd.push(updatedConfig);
-          }
+          // supplier, rules, isHidden se mantienen de la configuración existente
+          masterConfig = updatedConfig;
         }
+
+        if (configChanged || masterConfig.sync_pending) {
+          masterConfig.sync_pending = true; // Asegurar que esté marcado si hubo cambios o ya estaba pendiente
+          configsToUpsertToSupabase.push(masterConfig);
+        }
+        configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
       }
 
-      if (configsToUpdateOrAdd.length > 0) {
-        await db.productRules.bulkPut(configsToUpdateOrAdd);
-        // Intentar sincronizar inmediatamente los nuevos/actualizados
-        if (supabase && state.isOnline) {
-          // Mapear explícitamente los campos para Supabase
-          const supabaseConfigs = configsToUpdateOrAdd.map(c => ({
-            productId: c.productId,
-            productName: c.productName,
-            rules: c.rules,
-            supplier: c.supplier,
-            isHidden: c.isHidden || false,
-          }));
-          const { error } = await supabase
-            .from('product_rules')
-            .upsert(supabaseConfigs, { onConflict: 'productId' });
+      if (configsToUpdateOrAddInDexie.length > 0) {
+        await db.productRules.bulkPut(configsToUpdateOrAddInDexie);
+        console.log(`Updated/Added ${configsToUpdateOrAddInDexie.length} master product configs in Dexie.`);
+      }
+      
+      // Sincronizar con Supabase solo los que tienen sync_pending: true
+      const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
+      if (supabase && state.isOnline && pendingForSupabase.length > 0) {
+        const supabaseConfigs = pendingForSupabase.map(c => ({
+          productId: c.productId,
+          productName: c.productName,
+          rules: c.rules,
+          supplier: c.supplier,
+          isHidden: c.isHidden || false,
+        }));
+        const { error: supabaseUpsertError } = await supabase
+          .from('product_rules')
+          .upsert(supabaseConfigs, { onConflict: 'productId' });
 
-          if (error) {
-            console.error("Error bulk upserting master product configs to Supabase:", error);
-            showError('Error al sincronizar configuraciones de producto con la nube. Se reintentará.');
-            // Keep sync_pending: true for failed ones (already set)
-          } else {
-            // Mark as not pending in Dexie for all successfully synced
-            for (const config of configsToUpdateOrAdd) {
-              await db.productRules.update(config.productId, { sync_pending: false });
-            }
-            if (newProductsCount > 0) {
-              showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra.`);
-            } else {
-              showSuccess('Configuraciones de productos actualizadas.');
-            }
-          }
+        if (supabaseUpsertError) {
+          console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
+          showError('Error al sincronizar configuraciones de producto con la nube. Se reintentará.');
         } else {
-          console.log("Supabase client not available or offline, skipping bulk upsert to Supabase. Marked as sync_pending.");
-          if (newProductsCount > 0) {
-            showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra (pendientes de sincronizar).`);
-          } else {
-            showSuccess('Configuraciones de productos actualizadas localmente (pendientes de sincronizar).');
+          // Marcar como sincronizado en Dexie para los que se subieron con éxito
+          for (const config of pendingForSupabase) {
+            await db.productRules.update(config.productId, { sync_pending: false });
           }
+          if (newProductsCount > 0) {
+            showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra y se sincronizaron.`);
+          } else {
+            showSuccess('Configuraciones de productos actualizadas y sincronizadas.');
+          }
+        }
+      } else if (pendingForSupabase.length > 0) {
+        console.log("Supabase client not available or offline, skipping bulk upsert to Supabase. Marked as sync_pending.");
+        if (newProductsCount > 0) {
+          showSuccess(`Se agregaron ${newProductsCount} nuevos productos a la configuración maestra (pendientes de sincronizar).`);
+        } else {
+          showSuccess('Configuraciones de productos actualizadas localmente (pendientes de sincronizar).');
         }
       } else {
         showSuccess('No se encontraron nuevos productos para agregar o actualizar en la configuración maestra.');
