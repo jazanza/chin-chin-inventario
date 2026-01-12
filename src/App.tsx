@@ -11,9 +11,9 @@ import { Layout } from "./components/Layout";
 import { InventoryProvider, useInventoryContext } from "./context/InventoryContext";
 import { useEffect } from "react";
 
-// Componente para manejar la sincronización inicial
+// Componente para manejar la sincronización inicial y de visibilidad
 const AppInitializer = () => {
-  const { syncFromSupabase } = useInventoryContext();
+  const { syncFromSupabase, handleVisibilityChangeSync } = useInventoryContext();
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -26,7 +26,14 @@ const AppInitializer = () => {
     };
 
     initializeApp();
-  }, [syncFromSupabase]); // Dependencia de syncFromSupabase para asegurar que se ejecute una vez
+
+    // Añadir listener para el cambio de visibilidad de la pestaña
+    document.addEventListener('visibilitychange', handleVisibilityChangeSync);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChangeSync);
+    };
+  }, [syncFromSupabase, handleVisibilityChangeSync]); // Dependencias para asegurar que se ejecute una vez y se limpie
 
   return null;
 };

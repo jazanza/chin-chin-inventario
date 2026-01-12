@@ -129,12 +129,11 @@ interface InventoryContextType extends InventoryState {
   deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
-  syncFromSupabase: () => Promise<void>;
+  syncFromSupabase: () => Promise<void>; // Ahora realiza una sincronización total
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
   deleteMasterProductConfig: (productId: number) => Promise<void>; // Cambiado a productId
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>; // Añadido includeHidden
-  performTotalSync: () => Promise<void>; // Nueva función para sincronización total
-  forceSyncFromCloud: () => Promise<void>; // Nueva función para sincronización bidireccional
+  handleVisibilityChangeSync: () => Promise<void>; // Nueva función para sincronización al cambiar de pestaña
   resetAllProductConfigs: (buffer: Uint8Array) => Promise<void>; // Nueva función para reiniciar configs
   clearLocalDatabase: () => Promise<void>; // Nueva función para limpiar DB local
 }
@@ -257,7 +256,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp, // Revertido a Date
+          timestamp: sessionToSave.timestamp,
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
           // sync_pending no se envía a Supabase
@@ -432,7 +431,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
         const { error } = await (supabase
           .from('product_rules') as any) // Castear a any
-          .update({ isHidden: true }) // Eliminado 'as any' del objeto
+          .update({ isHidden: true })
           .eq('productId', numericProductId);
 
         if (error) {
@@ -716,7 +715,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
-            timestamp: newSession.timestamp, // Revertido a Date
+            timestamp: newSession.timestamp,
             effectiveness: newSession.effectiveness,
             ordersBySupplier: newSession.ordersBySupplier,
           };
@@ -860,11 +859,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           // Marcar como sincronizado en Dexie para los que se subieron con éxito
           for (const config of pendingForSupabase) {
             await db.productRules.update(config.productId, { sync_pending: false });
-            // Actualizar el estado local de masterProductConfigs si es necesario
-            const currentMasterConfigs = state.masterProductConfigs.map(mc => 
-              mc.productId === config.productId ? { ...mc, sync_pending: false } : mc
-            );
-            dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: currentMasterConfigs });
           }
           let successMessage = '';
           if (newProductsCount > 0) {
@@ -927,7 +921,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp, // Revertido a Date
+          timestamp: session.timestamp,
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
@@ -986,17 +980,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
 
   // --- NEW: Perform Total Sync (Upload local, then Download cloud) ---
-  const performTotalSync = useCallback(async () => {
+  // Esta función ahora se usará para la sincronización inicial y al cambiar de pestaña
+  const syncFromSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline || state.loading) {
-      showError('No se puede realizar la sincronización total: sin conexión o ya procesando.');
+      console.log('No se puede realizar la sincronización: sin conexión o ya procesando.');
+      // No mostrar error toast aquí para evitar spam al inicio/cambio de pestaña
       return;
     }
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
     dispatch({ type: 'SET_ERROR', payload: null });
-    showSuccess('Iniciando sincronización total (subiendo cambios y descargando actualizaciones)...');
-    console.log("Starting total sync...");
+    console.log("Iniciando sincronización bidireccional (subiendo cambios y descargando actualizaciones)...");
 
     try {
       if (!db.isOpen()) await db.open();
@@ -1009,16 +1004,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp, // Revertido a Date
+          timestamp: session.timestamp,
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
         const { error } = await (supabase
-          .from('inventory_sessions') as any) // Castear a any
+          .from('inventory_sessions') as any)
           .upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) {
           console.error(`Error uploading pending session ${session.dateKey} to Supabase:`, error);
-          // Keep sync_pending: true in Dexie if upload fails
         } else {
           await db.sessions.update(session.dateKey, { sync_pending: false });
         }
@@ -1034,16 +1028,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: config.isHidden || false,
         };
         const { error } = await (supabase
-          .from('product_rules') as any) // Castear a any
+          .from('product_rules') as any)
           .upsert(supabaseConfig, { onConflict: 'productId' });
         if (error) {
           console.error(`Error uploading pending product config ${config.productId} to Supabase:`, error);
-          // Keep sync_pending: true in Dexie if upload fails
         } else {
           await db.productRules.update(config.productId, { sync_pending: false });
         }
       }
-      showSuccess('Cambios locales subidos a la nube.');
+      console.log('Cambios locales subidos a la nube.');
 
       // 2. Download all Supabase data to local Dexie (overwriting local versions)
       console.log("Downloading all sessions from Supabase...");
@@ -1052,19 +1045,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .select('*');
       if (sessionsError) throw sessionsError;
       if (supabaseSessions && supabaseSessions.length > 0) {
-        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
         const typedSessions: InventorySession[] = supabaseSessions.map((s: Database['public']['Tables']['inventory_sessions']['Row']) => ({
           dateKey: s.dateKey,
           inventoryType: s.inventoryType,
           inventoryData: s.inventoryData,
-          timestamp: new Date(s.timestamp), // Convertir string a Date
+          timestamp: new Date(s.timestamp),
           effectiveness: s.effectiveness,
           ordersBySupplier: s.ordersBySupplier,
           sync_pending: false
         }));
         await db.sessions.bulkPut(typedSessions);
       } else {
-        await db.sessions.clear(); // Clear local if no sessions in cloud
+        await db.sessions.clear();
       }
 
       console.log("Downloading all product configs from Supabase...");
@@ -1073,7 +1065,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .select('*');
       if (productRulesError) throw productRulesError;
       if (supabaseProductRules && supabaseProductRules.length > 0) {
-        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
         const typedConfigs: MasterProductConfig[] = supabaseProductRules.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
           productId: c.productId,
           productName: c.productName,
@@ -1084,160 +1075,31 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }));
         await db.productRules.bulkPut(typedConfigs);
       } else {
-        await db.productRules.clear(); // Clear local if no configs in cloud
+        await db.productRules.clear();
       }
-      showSuccess('Configuraciones y sesiones descargadas de la nube.');
+      console.log('Configuraciones y sesiones descargadas de la nube.');
 
-      showSuccess('Sincronización total finalizada con éxito.');
-      console.log("Total sync completed successfully.");
+      console.log("Sincronización bidireccional finalizada con éxito.");
       await loadMasterProductConfigs(); // Recargar configs para reflejar cualquier cambio
     } catch (e: any) {
-      console.error("Error during performTotalSync:", e);
+      console.error("Error during syncFromSupabase (total sync):", e);
       dispatch({ type: 'SET_ERROR', payload: e.message });
-      showError(`Error en la sincronización total: ${e.message}`);
-      dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-      updateSyncStatus(); // Final update based on current state
-    }
-  }, [state.isOnline, state.loading, loadMasterProductConfigs, updateSyncStatus]);
-
-
-  // Nueva función para sincronizar desde Supabase (usada en AppInitializer)
-  const syncFromSupabase = useCallback(async () => {
-    if (!supabase) {
-      console.log("Supabase not available, skipping initial sync.");
-      return;
-    }
-
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-    dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
-    console.log("Performing initial sync from Supabase...");
-
-    try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
-
-      // Sincronizar sesiones
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from('inventory_sessions')
-        .select('*')
-        .order('timestamp', { ascending: false });
-
-      if (sessionsError) {
-        console.error("Error fetching sessions from Supabase during initial sync:", sessionsError);
-      } else if (sessionsData && sessionsData.length > 0) {
-        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedSessions: InventorySession[] = sessionsData.map((s: Database['public']['Tables']['inventory_sessions']['Row']) => ({
-          dateKey: s.dateKey,
-          inventoryType: s.inventoryType,
-          inventoryData: s.inventoryData,
-          timestamp: new Date(s.timestamp), // Convertir string a Date
-          effectiveness: s.effectiveness,
-          ordersBySupplier: s.ordersBySupplier,
-          sync_pending: false // Downloaded, so not pending
-        }));
-        for (const session of typedSessions) {
-          await db.sessions.put(session);
-        }
-        console.log(`Synced ${sessionsData.length} sessions from Supabase to local storage.`);
-      } else {
-        console.log("No sessions found in Supabase to sync.");
-      }
-
-      // Sincronizar reglas de producto
-      const { data: configsData, error: configsError } = await supabase
-        .from('product_rules')
-        .select('*');
-
-      if (configsError) {
-        console.error("Error fetching product rules from Supabase during initial sync:", configsError);
-      } else if (configsData && configsData.length > 0) {
-        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedConfigs: MasterProductConfig[] = configsData.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
-          productId: c.productId,
-          productName: c.productName,
-          rules: c.rules,
-          supplier: c.supplier,
-          isHidden: c.isHidden || false,
-          sync_pending: false // Downloaded, so not pending
-        }));
-        for (const config of typedConfigs) {
-          await db.productRules.put(config);
-        }
-        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: typedConfigs.filter(c => !c.isHidden) });
-        console.log(`Synced ${configsData.length} product rules from Supabase to local storage.`);
-      } else {
-        console.log("No product rules found in Supabase to sync.");
-      }
-      showSuccess('Sincronización inicial con la nube completada.');
-    } catch (e) {
-      console.error("Error during initial Supabase sync:", e);
-      showError('Error en la sincronización inicial con la nube.');
-      dispatch({ type: 'SET_ERROR', payload: (e as Error).message });
-      dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-      updateSyncStatus();
-    }
-  }, [updateSyncStatus]);
-
-  // --- NEW: Force Sync from Cloud (Product Rules) ---
-  // This function is now deprecated by performTotalSync, but kept for reference if needed.
-  const forceSyncFromCloud = useCallback(async () => {
-    if (!supabase || !state.isOnline || state.loading) {
-      showError('No se puede sincronizar: sin conexión o ya procesando.');
-      return;
-    }
-
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
-    dispatch({ type: 'SET_ERROR', payload: null });
-    showSuccess('Sincronizando configuraciones de productos desde la nube...');
-    console.log("Starting force sync from cloud for product rules...");
-
-    try {
-      if (!db.isOpen()) await db.open();
-
-      // 1. Descargar todas las product_rules de Supabase
-      const { data: supabaseProductRules, error: productRulesError } = await supabase
-        .from('product_rules')
-        .select('*');
-
-      if (productRulesError) throw productRulesError;
-
-      // 2. Limpiar la tabla local de productRules
-      await db.productRules.clear();
-
-      // 3. Guardar las reglas descargadas en Dexie, marcadas como no pendientes
-      if (supabaseProductRules && supabaseProductRules.length > 0) {
-        // Asegurarse de que los datos de Supabase sean del tipo correcto antes de usar spread
-        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
-          productId: c.productId,
-          productName: c.productName,
-          rules: c.rules,
-          supplier: c.supplier,
-          isHidden: c.isHidden || false,
-          sync_pending: false
-        }));
-        await db.productRules.bulkPut(typedConfigs);
-        showSuccess(`Se sincronizaron ${typedConfigs.length} configuraciones de productos desde la nube.`);
-      } else {
-        showSuccess('No se encontraron configuraciones de productos en la nube para sincronizar.');
-      }
-
-      await loadMasterProductConfigs(); // Recargar para actualizar el estado global
-      console.log("Force sync from cloud for product rules completed successfully.");
-    } catch (e: any) {
-      console.error("Error during forceSyncFromCloud:", e);
-      dispatch({ type: 'SET_ERROR', payload: e.message });
-      showError(`Error al sincronizar desde la nube: ${e.message}`);
+      showError(`Error en la sincronización: ${e.message}`);
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
       updateSyncStatus();
     }
   }, [state.isOnline, state.loading, loadMasterProductConfigs, updateSyncStatus]);
+
+  // Nueva función para sincronización al cambiar de pestaña
+  const handleVisibilityChangeSync = useCallback(async () => {
+    if (document.visibilityState === 'visible') {
+      console.log("Tab became visible, performing quick sync...");
+      await syncFromSupabase(); // Reutilizar la función de sincronización total
+    }
+  }, [syncFromSupabase]);
+
 
   // --- NEW: Reset All Product Configurations ---
   const resetAllProductConfigs = useCallback(async (buffer: Uint8Array) => {
@@ -1344,8 +1206,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
-    performTotalSync, // Añadido
-    forceSyncFromCloud, // Mantenido por ahora, pero no usado en UI
+    handleVisibilityChangeSync, // Añadido
     resetAllProductConfigs,
     clearLocalDatabase,
   }), [
@@ -1365,8 +1226,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
-    performTotalSync,
-    forceSyncFromCloud,
+    handleVisibilityChangeSync,
     resetAllProductConfigs,
     clearLocalDatabase,
   ]);

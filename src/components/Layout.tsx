@@ -8,7 +8,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils"; // Importar cn
 
 export const Layout = () => {
-  const { performTotalSync, loading, isOnline, syncStatus } = useInventoryContext();
+  // Eliminado performTotalSync ya que la sincronización es automática
+  // const { performTotalSync, loading, isOnline, syncStatus } = useInventoryContext(); 
+  const { loading, isOnline, syncStatus } = useInventoryContext(); // Solo necesitamos estos para el indicador
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -47,7 +49,8 @@ export const Layout = () => {
             Configuración
           </NavLink>
         </nav>
-        <TooltipProvider>
+        {/* Eliminado el botón de Sincronización Total */}
+        {/* <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -65,7 +68,7 @@ export const Layout = () => {
               <p>Sincroniza todos los cambios locales con la nube y descarga las últimas configuraciones.</p>
             </TooltipContent>
           </Tooltip>
-        </TooltipProvider>
+        </TooltipProvider> */}
         <SyncStatusIndicator />
       </header>
       <main className="flex-1 flex flex-col p-4 sm:px-6 sm:py-0">
