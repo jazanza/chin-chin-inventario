@@ -126,6 +126,9 @@ interface InventoryContextType extends InventoryState {
   deleteMasterProductConfig: (productId: number) => Promise<void>; // Cambiado a productId
   loadMasterProductConfigs: () => Promise<MasterProductConfig[]>;
   forceFullSync: () => Promise<void>; // Nueva función para forzar la sincronización
+  forceSyncFromCloud: () => Promise<void>; // Nueva función para sincronización bidireccional
+  resetAllProductConfigs: (buffer: Uint8Array) => Promise<void>; // Nueva función para reiniciar configs
+  clearLocalDatabase: () => Promise<void>; // Nueva función para limpiar DB local
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(
@@ -1082,6 +1085,127 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [updateSyncStatus]);
 
+  // --- NEW: Force Sync from Cloud (Product Rules) ---
+  const forceSyncFromCloud = useCallback(async () => {
+    if (!supabase || !state.isOnline || state.loading) {
+      showError('No se puede sincronizar: sin conexión o ya procesando.');
+      return;
+    }
+
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    showSuccess('Sincronizando configuraciones de productos desde la nube...');
+    console.log("Starting force sync from cloud for product rules...");
+
+    try {
+      if (!db.isOpen()) await db.open();
+
+      // 1. Descargar todas las product_rules de Supabase
+      const { data: supabaseProductRules, error: productRulesError } = await supabase
+        .from('product_rules')
+        .select('*');
+
+      if (productRulesError) throw productRulesError;
+
+      // 2. Limpiar la tabla local de productRules
+      await db.productRules.clear();
+
+      // 3. Guardar las reglas descargadas en Dexie, marcadas como no pendientes
+      if (supabaseProductRules && supabaseProductRules.length > 0) {
+        const configsToPut = supabaseProductRules.map(config => ({ ...config, sync_pending: false }));
+        await db.productRules.bulkPut(configsToPut);
+        showSuccess(`Se sincronizaron ${configsToPut.length} configuraciones de productos desde la nube.`);
+      } else {
+        showSuccess('No se encontraron configuraciones de productos en la nube para sincronizar.');
+      }
+
+      await loadMasterProductConfigs(); // Recargar para actualizar el estado global
+      console.log("Force sync from cloud for product rules completed successfully.");
+    } catch (e: any) {
+      console.error("Error during forceSyncFromCloud:", e);
+      dispatch({ type: 'SET_ERROR', payload: e.message });
+      showError(`Error al sincronizar desde la nube: ${e.message}`);
+      dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+      updateSyncStatus();
+    }
+  }, [state.isOnline, state.loading, loadMasterProductConfigs, updateSyncStatus]);
+
+  // --- NEW: Reset All Product Configurations ---
+  const resetAllProductConfigs = useCallback(async (buffer: Uint8Array) => {
+    if (!supabase || !state.isOnline || state.loading) {
+      showError('No se puede reiniciar la configuración: sin conexión o ya procesando.');
+      return;
+    }
+
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    showSuccess('Reiniciando todas las configuraciones de productos...');
+    console.log("Starting reset all product configurations...");
+
+    try {
+      if (!db.isOpen()) await db.open();
+
+      // 1. Limpiar la tabla local de productRules
+      await db.productRules.clear();
+
+      // 2. Eliminar todas las product_rules de Supabase
+      const { error: deleteError } = await supabase
+        .from('product_rules')
+        .delete()
+        .neq('productId', 0); // Eliminar todos los registros (productId > 0)
+
+      if (deleteError) throw deleteError;
+      console.log("All product rules deleted from Supabase.");
+
+      // 3. Recargar los productos del .db como si fuera la primera vez
+      await processDbForMasterConfigs(buffer);
+      showSuccess('Configuración de productos reiniciada y cargada desde el archivo DB.');
+
+    } catch (e: any) {
+      console.error("Error during resetAllProductConfigs:", e);
+      dispatch({ type: 'SET_ERROR', payload: e.message });
+      showError(`Error al reiniciar la configuración: ${e.message}`);
+      dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+      updateSyncStatus();
+    }
+  }, [state.isOnline, state.loading, processDbForMasterConfigs, updateSyncStatus]);
+
+  // --- NEW: Clear Local Database ---
+  const clearLocalDatabase = useCallback(async () => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    showSuccess('Limpiando base de datos local...');
+    console.log("Starting clear local database...");
+
+    try {
+      if (db.isOpen()) {
+        await db.close(); // Cerrar la conexión antes de eliminar
+      }
+      await db.delete(); // Eliminar toda la base de datos IndexedDB
+      await db.open(); // Volver a abrir la conexión para futuras operaciones
+
+      // Resetear el estado de la aplicación
+      dispatch({ type: 'RESET_STATE' });
+      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: [] }); // Asegurarse de que las configs maestras también se reseteen
+      showSuccess('Base de datos local limpiada con éxito.');
+      console.log("Local database cleared successfully.");
+    } catch (e: any) {
+      console.error("Error during clearLocalDatabase:", e);
+      dispatch({ type: 'SET_ERROR', payload: e.message });
+      showError(`Error al limpiar la base de datos local: ${e.message}`);
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+      updateSyncStatus(); // Actualizar el estado de sincronización
+    }
+  }, [updateSyncStatus]);
+
+
   useEffect(() => {
     if (state.dbBuffer && state.inventoryType && !state.sessionId) {
       processInventoryData(state.dbBuffer, state.inventoryType);
@@ -1115,6 +1239,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     deleteMasterProductConfig,
     loadMasterProductConfigs,
     forceFullSync,
+    forceSyncFromCloud, // Añadido
+    resetAllProductConfigs, // Añadido
+    clearLocalDatabase, // Añadido
   }), [
     state,
     setDbBuffer,
@@ -1133,6 +1260,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     deleteMasterProductConfig,
     loadMasterProductConfigs,
     forceFullSync,
+    forceSyncFromCloud,
+    resetAllProductConfigs,
+    clearLocalDatabase,
   ]);
 
   return (

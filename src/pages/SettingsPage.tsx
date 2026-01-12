@@ -16,6 +16,8 @@ import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
 import { FileUploader } from "@/components/FileUploader";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+
 
 const SettingsPage = () => {
   const {
@@ -30,6 +32,7 @@ const SettingsPage = () => {
     loading,
     processDbForMasterConfigs,
     loadMasterProductConfigs, // Para recargar después de un soft delete
+    clearLocalDatabase, // Nueva función para limpiar la DB local
   } = useInventoryContext();
 
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
@@ -319,6 +322,10 @@ const SettingsPage = () => {
     }
   };
 
+  const handleClearLocalDatabase = async () => {
+    await clearLocalDatabase();
+  };
+
   if (loading || isUploadingConfig) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
@@ -472,6 +479,37 @@ const SettingsPage = () => {
               </AccordionItem>
             ))}
           </Accordion>
+        </CardContent>
+      </Card>
+
+      {/* Sección de Herramientas de Base de Datos */}
+      <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Herramientas de Base de Datos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={loading}>
+                Limpiar Base de Datos Local
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acción eliminará *toda* la información guardada localmente en tu navegador (sesiones de inventario, configuraciones de productos).
+                  Si tienes sincronización con la nube, los datos se volverán a descargar. Si no, se perderán permanentemente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearLocalDatabase} className="bg-red-600 hover:bg-red-700">
+                  Sí, limpiar base de datos
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>
