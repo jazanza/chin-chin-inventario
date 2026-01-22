@@ -99,7 +99,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, syncStatus: action.payload };
     case 'SET_IS_ONLINE':
       return { ...state, isOnline: action.payload };
-    case 'SET_SUPABASE_SYNC_IN_PROGRES': // Nuevo caso
+    case 'SET_SUPABASE_SYNC_IN_PROGRESS': // Corregido el typo
       return { ...state, isSupabaseSyncInProgress: action.payload };
     case 'RESET_STATE':
       return {
@@ -466,45 +466,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
 
-  const deleteSession = useCallback(async (dateKey: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-
-    try {
-      if (!db.isOpen()) await db.open(); // Emergency validation
-      await db.sessions.delete(dateKey); // Eliminar de Dexie
-
-      if (supabase && state.isOnline) {
-        const { error } = await supabase
-          .from('inventory_sessions')
-          .delete()
-          .eq('dateKey', dateKey);
-
-        if (error) {
-          console.error("Error deleting session from Supabase:", error);
-          showError('Error al eliminar sesión de la nube. Puede que reaparezca en una sincronización forzada.');
-        } else {
-          console.log("Session deleted from Supabase successfully.");
-        }
-      } else {
-        console.log("Supabase client not available or offline, skipping delete from Supabase.");
-      }
-
-      showSuccess(`Sesión del ${dateKey} eliminada.`);
-
-      if (state.sessionId === dateKey) {
-        dispatch({ type: 'RESET_STATE' });
-        dispatch({ type: 'SET_SESSION_ID', payload: null });
-      }
-      updateSyncStatus();
-    } catch (e) {
-      console.error("Error deleting session:", e);
-      showError('Error al eliminar la sesión.');
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, [state.sessionId, state.isOnline, updateSyncStatus]);
-
   const deleteMasterProductConfig = useCallback(async (productId: number) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -545,7 +506,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showSuccess(`Configuración de producto ${newIsHidden ? 'ocultada' : 'restaurada'}.`);
 
       // Refrescar configs (esto disparará la re-evaluación de filteredInventoryData)
-      await loadMasterProductConfigs(showHiddenProducts); // Usar el estado actual del toggle
+      await loadMasterProductConfigs(); // Corregido: no pasar showHiddenProducts aquí
       // No es necesario pasar showHiddenProducts aquí, loadMasterProductConfigs ya lo maneja
 
       // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
@@ -1162,7 +1123,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       if (supabaseSessions && supabaseSessions.length > 0) {
         for (const s of supabaseSessions) {
-          const typedSession: InventorySession = {
+          const typedSession: InventorySession = { // Cast to correct type
             dateKey: s.dateKey,
             inventoryType: s.inventoryType,
             inventoryData: s.inventoryData,
@@ -1211,7 +1172,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       if (supabaseProductRules && supabaseProductRules.length > 0) {
         for (const c of supabaseProductRules) {
-          const typedConfig: MasterProductConfig = {
+          const typedConfig: MasterProductConfig = { // Cast to correct type
             productId: c.productId,
             productName: c.productName,
             rules: c.rules,
