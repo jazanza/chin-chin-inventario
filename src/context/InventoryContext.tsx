@@ -7,6 +7,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase'; // Importar tipos de base de datos
+import { RealtimeChannel } from '@supabase/supabase-js'; // Importar RealtimeChannel
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -704,7 +705,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const allMasterProductConfigs = await db.productRules.toArray();
         const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
 
-        let processedInventory: InventoryItem[] = [];
         const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
         const configsToUpsertToSupabase: MasterProductConfig[] = [];
         const nowIso = new Date().toISOString(); // Timestamp de actualización
@@ -802,7 +802,29 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }
 
         // Filtrar productos "KYR S.A.S" y "Desconocido" después de procesar
-        const finalProcessedInventory = processedInventory.filter(item => item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
+        const finalProcessedInventory = rawInventoryItems.map(dbItem => {
+          const currentProductId = Number(dbItem.ProductId);
+          const masterConfig = masterProductConfigsMap.get(currentProductId);
+          
+          // Usar la configuración maestra para reglas y proveedor
+          const rules = masterConfig?.rules || [];
+          const supplier = masterConfig?.supplier || dbItem.SupplierName; // Fallback a DB si no hay config maestra
+          const isHidden = masterConfig?.isHidden || false;
+
+          return {
+            productId: currentProductId,
+            productName: dbItem.Producto,
+            category: dbItem.Categoria,
+            systemQuantity: dbItem.Stock_Actual,
+            physicalQuantity: dbItem.Stock_Actual, // Inicializar con la cantidad del sistema
+            averageSales: 0, // No disponible en esta consulta, mantener 0
+            supplier: supplier,
+            hasBeenEdited: false,
+            rules: rules,
+            isHidden: isHidden, // Incluir isHidden para el filtrado posterior
+          };
+        }).filter(item => !item.isHidden && item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
+
 
         dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: finalProcessedInventory }); // Actualizar el nuevo estado
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
@@ -1204,8 +1226,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .select('*');
       if (sessionsError) throw sessionsError;
 
-      const localSessionsMap = new Map((await db.sessions.toArray()).map(s => [s.dateKey, s]));
+      const localSessions = await db.sessions.toArray();
+      const localSessionsMap = new Map(localSessions.map(s => [s.dateKey, s]));
+      const supabaseSessionDateKeys = new Set(supabaseSessions.map(s => s.dateKey));
       const sessionsToPutLocally: InventorySession[] = [];
+      const sessionsToDeleteLocally: string[] = [];
 
       if (supabaseSessions && supabaseSessions.length > 0) {
         for (const s of supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]) { // Explicitly cast 's'
@@ -1233,17 +1258,28 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             // Si la versión local es más antigua o igual y NO está pendiente,
             // significa que la remota es la fuente de verdad o son iguales.
             // En este caso, si no se añadió antes, se añade ahora.
-            // Esto cubre el caso de que localSession.updated_at === typedSession.updated_at
-            // y localSession.sync_pending === false.
             sessionsToPutLocally.push(typedSession);
           }
         }
         await db.sessions.bulkPut(sessionsToPutLocally);
+
+        // Identificar sesiones locales que no están en Supabase y no están pendientes de sincronizar
+        const localSessionsAfterPut = await db.sessions.toArray(); // Obtener el estado actual de Dexie
+        localSessionsAfterPut.forEach(localSession => {
+          if (!supabaseSessionDateKeys.has(localSession.dateKey) && localSession.sync_pending === false) {
+            sessionsToDeleteLocally.push(localSession.dateKey);
+          }
+        });
+        if (sessionsToDeleteLocally.length > 0) {
+          await db.sessions.bulkDelete(sessionsToDeleteLocally);
+          console.log(`[Sync] Limpieza local: Eliminando sesiones que ya no existen en la nube: [${sessionsToDeleteLocally.join(', ')}]`);
+        }
       } else {
-        // Si no hay sesiones en Supabase, limpiar solo las que no están pendientes localmente
-        const localNonPendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === false).toArray();
+        // Si no hay sesiones en Supabase, limpiar todas las que no están pendientes localmente
+        const localNonPendingSessions = localSessions.filter(s => s.sync_pending === false);
         if (localNonPendingSessions.length > 0) {
           await db.sessions.bulkDelete(localNonPendingSessions.map(s => s.dateKey));
+          console.log(`[Sync] Limpieza local: Eliminando todas las sesiones no pendientes ya que Supabase está vacío: [${localNonPendingSessions.map(s => s.dateKey).join(', ')}]`);
         }
       }
 
@@ -1253,8 +1289,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .select('*');
       if (productRulesError) throw productRulesError;
 
-      const localProductRulesMap = new Map((await db.productRules.toArray()).map(c => [c.productId, c]));
+      const localProductRules = await db.productRules.toArray();
+      const localProductRulesMap = new Map(localProductRules.map(c => [c.productId, c]));
+      const supabaseProductRuleIds = new Set(supabaseProductRules.map(c => c.productId));
       const productRulesToPutLocally: MasterProductConfig[] = [];
+      const productRulesToDeleteLocally: number[] = [];
 
       if (supabaseProductRules && supabaseProductRules.length > 0) {
         for (const c of supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]) { // Explicitly cast 'c'
@@ -1278,11 +1317,24 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           }
         }
         await db.productRules.bulkPut(productRulesToPutLocally);
+
+        // Identificar configuraciones de producto locales que no están en Supabase y no están pendientes de sincronizar
+        const localProductRulesAfterPut = await db.productRules.toArray(); // Obtener el estado actual de Dexie
+        localProductRulesAfterPut.forEach(localConfig => {
+          if (!supabaseProductRuleIds.has(localConfig.productId) && localConfig.sync_pending === false) {
+            productRulesToDeleteLocally.push(localConfig.productId);
+          }
+        });
+        if (productRulesToDeleteLocally.length > 0) {
+          await db.productRules.bulkDelete(productRulesToDeleteLocally);
+          console.log(`[Sync] Limpieza local: Eliminando configuraciones de producto que ya no existen en la nube: [${productRulesToDeleteLocally.join(', ')}]`);
+        }
       } else {
-        // Si no hay reglas en Supabase, limpiar solo las que no están pendientes localmente
-        const localNonPendingProductRules = await db.productRules.toCollection().filter(c => c.sync_pending === false).toArray();
+        // Si no hay reglas en Supabase, limpiar todas las que no están pendientes localmente
+        const localNonPendingProductRules = localProductRules.filter(c => c.sync_pending === false);
         if (localNonPendingProductRules.length > 0) {
           await db.productRules.bulkDelete(localNonPendingProductRules.map(c => c.productId));
+          console.log(`[Sync] Limpieza local: Eliminando todas las configuraciones de producto no pendientes ya que Supabase está vacío: [${localNonPendingProductRules.map(c => c.productId).join(', ')}]`);
         }
       }
       console.log('Configuraciones y sesiones descargadas de la nube.');
@@ -1290,6 +1342,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log("Sincronización bidireccional finalizada con éxito.");
       lastSyncTimestampRef.current = Date.now(); // Actualizar el timestamp de la última sincronización exitosa
       await loadMasterProductConfigs(); // Recargar configs para reflejar cualquier cambio
+      await getSessionHistory(); // Recargar historial de sesiones
     } catch (e: any) {
       console.error(`Error during syncFromSupabase (total sync) from origin ${origin}:`, e);
       dispatch({ type: 'SET_ERROR', payload: e.message });
@@ -1300,7 +1353,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
       updateSyncStatus();
     }
-  }, [state.isOnline, state.isSupabaseSyncInProgress, loadMasterProductConfigs, updateSyncStatus, state.isSyncBlockedWarningActive]);
+  }, [state.isOnline, state.isSupabaseSyncInProgress, loadMasterProductConfigs, updateSyncStatus, state.isSyncBlockedWarningActive, getSessionHistory]);
 
   // Nueva función para sincronización al cambiar de pestaña
   const handleVisibilityChangeSync = useCallback(async () => {
@@ -1448,6 +1501,119 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     };
   }, [state.isOnline, state.isSupabaseSyncInProgress]);
 
+  // --- Supabase Realtime Subscriptions ---
+  useEffect(() => {
+    if (!supabase) {
+      console.warn("Supabase client not initialized, Realtime subscriptions skipped.");
+      return;
+    }
+
+    let sessionsChannel: RealtimeChannel | null = null;
+    let productRulesChannel: RealtimeChannel | null = null;
+
+    const setupRealtime = async () => {
+      if (!db.isOpen()) await db.open(); // Ensure Dexie DB is open for Realtime handlers
+
+      // Sessions Realtime Channel
+      sessionsChannel = supabase
+        .channel('inventory_sessions_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_sessions' }, async (payload) => {
+          console.log('[Realtime] Session change received:', payload);
+          if (state.isSupabaseSyncInProgress) {
+            console.log('[Realtime] Sync in progress, deferring session update.');
+            return; // Defer if a full sync is already running
+          }
+
+          try {
+            if (payload.eventType === 'DELETE') {
+              const dateKey = (payload.old as { dateKey: string }).dateKey;
+              await db.sessions.delete(dateKey);
+              showSuccess(`Sesión del ${dateKey} eliminada remotamente.`);
+              await getSessionHistory(); // Re-fetch sessions to update UI
+            } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const newRecord = payload.new as Database['public']['Tables']['inventory_sessions']['Row'];
+              const typedSession: InventorySession = {
+                dateKey: newRecord.dateKey,
+                inventoryType: newRecord.inventoryType,
+                inventoryData: newRecord.inventoryData,
+                timestamp: new Date(newRecord.timestamp),
+                effectiveness: newRecord.effectiveness,
+                ordersBySupplier: newRecord.ordersBySupplier,
+                sync_pending: false, // Data from Supabase is synced
+                updated_at: newRecord.updated_at,
+              };
+
+              const localSession = await db.sessions.get(typedSession.dateKey);
+              if (!localSession || new Date(typedSession.updated_at) > new Date(localSession.updated_at)) {
+                await db.sessions.put(typedSession);
+                showSuccess(`Sesión del ${typedSession.dateKey} actualizada remotamente.`);
+                await getSessionHistory(); // Re-fetch sessions to update UI
+              } else {
+                console.log(`[Realtime] Keeping local session ${typedSession.dateKey} as it's newer or same.`);
+              }
+            }
+            updateSyncStatus();
+          } catch (e) {
+            console.error('[Realtime] Error processing session change:', e);
+            showError('Error al procesar actualización de sesión remota.');
+          }
+        })
+        .subscribe();
+
+      // Product Rules Realtime Channel
+      productRulesChannel = supabase
+        .channel('product_rules_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'product_rules' }, async (payload) => {
+          console.log('[Realtime] Product rule change received:', payload);
+          if (state.isSupabaseSyncInProgress) {
+            console.log('[Realtime] Sync in progress, deferring product rule update.');
+            return; // Defer if a full sync is already running
+          }
+
+          try {
+            if (payload.eventType === 'DELETE') {
+              const productId = (payload.old as { productId: number }).productId;
+              await db.productRules.delete(productId);
+              showSuccess(`Configuración de producto ${productId} eliminada remotamente.`);
+              await loadMasterProductConfigs(true); // Re-fetch all configs (including hidden) to update UI
+            } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const newRecord = payload.new as Database['public']['Tables']['product_rules']['Row'];
+              const typedConfig: MasterProductConfig = {
+                productId: newRecord.productId,
+                productName: newRecord.productName,
+                rules: newRecord.rules,
+                supplier: newRecord.supplier,
+                isHidden: newRecord.isHidden || false,
+                sync_pending: false, // Data from Supabase is synced
+                updated_at: newRecord.updated_at,
+              };
+
+              const localConfig = await db.productRules.get(typedConfig.productId);
+              if (!localConfig || new Date(typedConfig.updated_at) > new Date(localConfig.updated_at)) {
+                await db.productRules.put(typedConfig);
+                showSuccess(`Configuración de producto ${typedConfig.productName} actualizada remotamente.`);
+                await loadMasterProductConfigs(true); // Re-fetch all configs (including hidden) to update UI
+              } else {
+                console.log(`[Realtime] Keeping local product config ${typedConfig.productId} as it's newer or same.`);
+              }
+            }
+            updateSyncStatus();
+          } catch (e) {
+            console.error('[Realtime] Error processing product rule change:', e);
+            showError('Error al procesar actualización de configuración de producto remota.');
+          }
+        })
+        .subscribe();
+    };
+
+    setupRealtime();
+
+    return () => {
+      console.log('[Realtime] Unsubscribing from channels.');
+      sessionsChannel?.unsubscribe();
+      productRulesChannel?.unsubscribe();
+    };
+  }, [state.isSupabaseSyncInProgress, getSessionHistory, loadMasterProductConfigs, updateSyncStatus]); // Dependencias para asegurar que se re-suscriba si cambia el estado de sync in progress
 
   useEffect(() => {
     if (state.dbBuffer && state.inventoryType && !state.sessionId) {
