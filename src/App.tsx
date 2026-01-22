@@ -9,19 +9,23 @@ import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 import { Layout } from "./components/Layout";
 import { InventoryProvider, useInventoryContext } from "./context/InventoryContext";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react"; // Importar useRef
 
 // Componente para manejar la sincronización inicial y de visibilidad
 const AppInitializer = () => {
   const { syncFromSupabase, handleVisibilityChangeSync } = useInventoryContext();
+  const initialSyncDoneRef = useRef(false); // Cambiado a useRef
 
   useEffect(() => {
     const initializeApp = async () => {
-      try {
-        // Siempre intentar sincronizar desde Supabase al inicio
-        await syncFromSupabase();
-      } catch (error) {
-        console.error("Error during app initialization:", error);
+      if (!initialSyncDoneRef.current) { // Usar la referencia
+        try {
+          // Siempre intentar sincronizar desde Supabase al inicio
+          await syncFromSupabase("AppInitializer"); // Pasar el origen
+          initialSyncDoneRef.current = true; // Marcar como hecho en la referencia
+        } catch (error) {
+          console.error("Error during app initialization:", error);
+        }
       }
     };
 

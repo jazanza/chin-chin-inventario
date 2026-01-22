@@ -143,7 +143,7 @@ interface InventoryContextType extends InventoryState {
   deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
-  syncFromSupabase: () => Promise<void>; // Ahora realiza una sincronización total
+  syncFromSupabase: (origin: string, isUserAction?: boolean) => Promise<void>; // Ahora acepta origen y si es acción de usuario
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
   deleteMasterProductConfig: (productId: number) => Promise<void>; // Cambiado a productId
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>; // Añadido includeHidden
@@ -168,6 +168,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const previousFilteredInventoryDataRef = useRef<InventoryItem[]>([]); // Ref para la lista filtrada anterior
   const warnedItems = useRef(new Set<string>()); // Para evitar advertencias repetidas
   const syncBlockedWarningTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref para el timeout de la advertencia de bloqueo
+  const lastSyncTimestampRef = useRef(0); // Nuevo: Referencia para el último timestamp de sincronización exitosa
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -435,7 +436,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (!db.isOpen()) await db.open(); // Ensure DB is open
       const allConfigs = await db.productRules.toArray();
       const filteredConfigs = includeHidden ? allConfigs : allConfigs.filter(config => !config.isHidden);
-      dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: filteredConfigs });
+      
+      // Optimización: Solo disparar dispatch si los datos realmente han cambiado
+      const currentConfigs = state.masterProductConfigs;
+      const hasChanged = filteredConfigs.length !== currentConfigs.length ||
+                         filteredConfigs.some((newConfig, index) => 
+                           newConfig.productId !== currentConfigs[index]?.productId ||
+                           newConfig.productName !== currentConfigs[index]?.productName ||
+                           newConfig.supplier !== currentConfigs[index]?.supplier ||
+                           newConfig.isHidden !== currentConfigs[index]?.isHidden ||
+                           JSON.stringify(newConfig.rules) !== JSON.stringify(currentConfigs[index]?.rules)
+                         );
+
+      if (hasChanged) {
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: filteredConfigs });
+      }
       return filteredConfigs;
     } catch (e) {
       console.error("Error fetching master product configs from Dexie:", e);
@@ -445,7 +460,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     } finally {
       updateSyncStatus();
     }
-  }, [updateSyncStatus]);
+  }, [updateSyncStatus, state.masterProductConfigs]); // Añadir state.masterProductConfigs como dependencia para la comparación
 
   const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
@@ -1089,13 +1104,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- NEW: Perform Total Sync (Upload local, then Download cloud) ---
   // Esta función ahora se usará para la sincronización inicial y al cambiar de pestaña
-  const syncFromSupabase = useCallback(async () => {
+  const syncFromSupabase = useCallback(async (origin: string, isUserAction: boolean = false) => {
     if (!supabase || !state.isOnline) {
       showError('No se puede sincronizar: sin conexión a internet o Supabase no disponible.');
       return;
     }
+
+    const now = Date.now();
+    const THIRTY_SECONDS = 30 * 1000;
+
+    // Bloqueo de seguridad: No permitir sincronizaciones muy seguidas a menos que sea una acción de usuario explícita
+    if (!isUserAction && (now - lastSyncTimestampRef.current < THIRTY_SECONDS)) {
+      console.log(`🔄 Sincronización bloqueada por debounce de 30s. Origen: ${origin}`);
+      return;
+    }
+
     if (state.isSupabaseSyncInProgress) {
-      console.log('Sincronización ya en curso, ignorando solicitud.');
+      console.log(`🔄 Sincronización ya en curso, ignorando solicitud. Origen: ${origin}`);
       // Iniciar un timeout para mostrar la advertencia si el bloqueo persiste
       if (!state.isSyncBlockedWarningActive && !syncBlockedWarningTimeoutRef.current) {
         syncBlockedWarningTimeoutRef.current = setTimeout(() => {
@@ -1119,7 +1144,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
     dispatch({ type: 'SET_ERROR', payload: null });
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
-    console.log("Iniciando sincronización bidireccional (subiendo cambios y descargando actualizaciones)...");
+    console.log(`🔄 Iniciando sincronización bidireccional. Origen: ${origin}`);
 
     try {
       if (!db.isOpen()) await db.open();
@@ -1263,9 +1288,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log('Configuraciones y sesiones descargadas de la nube.');
 
       console.log("Sincronización bidireccional finalizada con éxito.");
+      lastSyncTimestampRef.current = Date.now(); // Actualizar el timestamp de la última sincronización exitosa
       await loadMasterProductConfigs(); // Recargar configs para reflejar cualquier cambio
     } catch (e: any) {
-      console.error("Error during syncFromSupabase (total sync):", e);
+      console.error(`Error during syncFromSupabase (total sync) from origin ${origin}:`, e);
       dispatch({ type: 'SET_ERROR', payload: e.message });
       showError(`Error en la sincronización: ${e.message}`);
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
@@ -1280,7 +1306,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const handleVisibilityChangeSync = useCallback(async () => {
     if (document.visibilityState === 'visible' && !state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
       console.log("Tab became visible, performing quick sync...");
-      await syncFromSupabase(); // Reutilizar la función de sincronización total
+      await syncFromSupabase("VisibilityChange"); // Reutilizar la función de sincronización total, pasar origen
     }
   }, [syncFromSupabase, state.isSupabaseSyncInProgress]);
 
