@@ -2,16 +2,16 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
 import {
   Accordion,
-  AccordionContent,
   AccordionItem,
   AccordionTrigger,
+  AccordionContent,
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Upload } from "lucide-react"; // Importar Eye, EyeOff y Upload
+import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw } from "lucide-react"; // Importar RefreshCcw
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
@@ -26,7 +26,6 @@ const SettingsPage = () => {
     masterProductConfigs, // Ahora solo contiene productos no ocultos por defecto
     saveMasterProductConfig,
     deleteMasterProductConfig, // Ahora realiza un soft delete (ocultar)
-    // Eliminado setInventoryData
     saveCurrentSession,
     sessionId,
     inventoryType,
@@ -34,6 +33,9 @@ const SettingsPage = () => {
     processDbForMasterConfigs,
     loadMasterProductConfigs, // Para recargar después de un soft delete
     clearLocalDatabase, // Nueva función para limpiar la DB local
+    syncFromSupabase, // Importar syncFromSupabase
+    isOnline, // Para deshabilitar el botón si no hay conexión
+    isSupabaseSyncInProgress, // Para deshabilitar el botón si ya está en curso
   } = useInventoryContext();
 
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
@@ -304,6 +306,10 @@ const SettingsPage = () => {
     await clearLocalDatabase();
   };
 
+  const handleForceTotalSync = async () => {
+    await syncFromSupabase();
+  };
+
   if (loading || isUploadingConfig) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
@@ -497,7 +503,35 @@ const SettingsPage = () => {
         <CardHeader>
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Herramientas de Base de Datos</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                disabled={loading || !isOnline || isSupabaseSyncInProgress} // Deshabilitar si offline o ya sincronizando
+                className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white"
+              >
+                <RefreshCcw className={cn("h-4 w-4 mr-2", isSupabaseSyncInProgress && "animate-spin")} />
+                Forzar Sincronización Total
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Estás seguro de forzar la sincronización?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acción intentará subir todos tus cambios locales pendientes a la nube y luego descargará las últimas configuraciones y sesiones de la nube, resolviendo conflictos.
+                  Esto puede tardar unos segundos. Asegúrate de tener una conexión a internet estable.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleForceTotalSync} disabled={!isOnline || isSupabaseSyncInProgress}>
+                  Sí, Forzar Sincronización
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" disabled={loading}>

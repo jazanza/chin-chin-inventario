@@ -14,7 +14,7 @@ interface InventoryTableProps {
 }
 
 export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, rawInventoryItemsFromDb } = useInventoryContext(); // Obtener del contexto
+  const { saveCurrentSession, inventoryType, sessionId, rawInventoryItemsFromDb, setSyncStatus } = useInventoryContext(); // Obtener del contexto
   const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
 
   useEffect(() => {
@@ -34,6 +34,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
   );
 
   const updateInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
+    setSyncStatus('pending'); // Establecer estado de sincronización a 'pending' inmediatamente
     setEditableInventory(prevData => {
       const updatedData = [...prevData];
       if (key === "physicalQuantity") {
@@ -44,11 +45,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
       } else if (key === "hasBeenEdited") {
         updatedData[index][key] = value as boolean;
       }
-      // onInventoryChange(updatedData); // Ya no es necesario notificar al padre de esta manera
       debouncedSave(updatedData); // Llamar al guardado debounced con la lista actualizada
       return updatedData;
     });
-  }, [debouncedSave]);
+  }, [debouncedSave, setSyncStatus]);
 
   const handlePhysicalQuantityChange = useCallback((index: number, value: string) => {
     const newQuantity = parseInt(value, 10);

@@ -121,6 +121,7 @@ interface InventoryContextType extends InventoryState {
   setInventoryType: (type: "weekly" | "monthly" | null) => void;
   setRawInventoryItemsFromDb: (data: InventoryItem[]) => void; // Nuevo setter
   setMasterProductConfigs: (configs: MasterProductConfig[]) => void;
+  setSyncStatus: (status: SyncStatus) => void; // Nuevo setter para el estado de sincronización
   processInventoryData: (
     buffer: Uint8Array,
     type: "weekly" | "monthly"
@@ -159,6 +160,7 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
   const previousFilteredInventoryDataRef = useRef<InventoryItem[]>([]); // Ref para la lista filtrada anterior
+  const warnedItems = useRef(new Set<string>()); // Para evitar advertencias repetidas
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -175,6 +177,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const setMasterProductConfigs = useCallback((configs: MasterProductConfig[]) => {
     dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: configs });
+  }, []);
+
+  const setSyncStatus = useCallback((status: SyncStatus) => {
+    dispatch({ type: 'SET_SYNC_STATUS', payload: status });
   }, []);
 
   const resetInventoryState = useCallback(() => {
@@ -298,36 +304,41 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       }
 
-      if (supabase && state.isOnline) {
-        // Mapear explícitamente los campos para Supabase usando tipos correctos
-        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
-          dateKey: sessionToSave.dateKey,
-          inventoryType: sessionToSave.inventoryType,
-          inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp.toISOString(), // Convertir a ISO string para Supabase
-          effectiveness: sessionToSave.effectiveness,
-          ordersBySupplier: sessionToSave.ordersBySupplier,
-          updated_at: sessionToSave.updated_at, // Incluir updated_at
-        };
-        const { error } = await (supabase
-          .from('inventory_sessions') as any) // Castear a any
-          .upsert(supabaseSession, { onConflict: 'dateKey' });
+      // Alerta de persistencia: Si no hay Supabase o no hay conexión, advertir inmediatamente
+      if (!supabase || !state.isOnline) {
+        showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+        updateSyncStatus(); // Actualizar estado de sincronización a 'pending'
+        return; // Salir, ya que no se puede sincronizar con Supabase
+      }
 
-        if (error) {
-          console.error("Error saving session to Supabase:", error);
-          // Keep sync_pending: true in Dexie
-          showError('Error al sincronizar sesión con la nube. Se reintentará.');
-        } else {
-          await db.sessions.update(dateKey, { sync_pending: false }); // Marcar como sincronizado en Dexie
-          console.log("Session saved to Supabase successfully.");
-        }
+      // Intentar sincronizar con Supabase
+      const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+        dateKey: sessionToSave.dateKey,
+        inventoryType: sessionToSave.inventoryType,
+        inventoryData: sessionToSave.inventoryData,
+        timestamp: sessionToSave.timestamp.toISOString(), // Convertir a ISO string para Supabase
+        effectiveness: sessionToSave.effectiveness,
+        ordersBySupplier: sessionToSave.ordersBySupplier,
+        updated_at: sessionToSave.updated_at, // Incluir updated_at
+      };
+      const { error } = await (supabase
+        .from('inventory_sessions') as any) // Castear a any
+        .upsert(supabaseSession, { onConflict: 'dateKey' });
+
+      if (error) {
+        console.error("Error saving session to Supabase:", error);
+        showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+        // Keep sync_pending: true in Dexie
       } else {
-        console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
+        await db.sessions.update(dateKey, { sync_pending: false }); // Marcar como sincronizado en Dexie
+        console.log("Session saved to Supabase successfully.");
+        warnedItems.current.delete(`session-${dateKey}`); // Limpiar advertencia si se sincronizó
       }
       updateSyncStatus();
     } catch (e) {
       console.error("Error saving session:", e);
       showError('Error al guardar la sesión localmente.');
+      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice a 'error'
       throw e;
     }
   }, [state.sessionId, state.isOnline, updateSyncStatus]);
@@ -375,6 +386,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           showError('Error al eliminar sesión de la nube. Puede que reaparezca en una sincronización forzada.');
         } else {
           console.log("Session deleted from Supabase successfully.");
+          warnedItems.current.delete(`session-${dateKey}`); // Limpiar advertencia si se eliminó
         }
       } else {
         console.log("Supabase client not available or offline, skipping delete from Supabase.");
@@ -431,37 +443,41 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const configToSave = { ...config, productId: Number(config.productId), sync_pending: true, updated_at: nowIso }; // Marcar como pendiente y establecer updated_at
       await db.productRules.put(configToSave);
       
-      if (supabase && state.isOnline) {
-        // Mapear explícitamente los campos para Supabase usando tipos correctos
-        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
-          productId: configToSave.productId,
-          productName: configToSave.productName,
-          rules: configToSave.rules,
-          supplier: configToSave.supplier,
-          isHidden: configToSave.isHidden || false, // Asegurar que isHidden siempre sea booleano
-          updated_at: configToSave.updated_at, // Incluir updated_at
-        };
-        const { error } = await (supabase
-          .from('product_rules') as any) // Castear a any
-          .upsert(supabaseConfig, { onConflict: 'productId' });
-
-        if (error) {
-          console.error("Error saving master product config to Supabase:", error);
-          showError('Error al sincronizar configuración de producto con la nube. Se reintentará.');
-        } else {
-          await db.productRules.update(configToSave.productId, { sync_pending: false });
-          console.log("Master product config saved to Supabase successfully.");
-        }
-      } else {
-        console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
+      // Alerta de persistencia: Si no hay Supabase o no hay conexión, advertir inmediatamente
+      if (!supabase || !state.isOnline) {
+        showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+        updateSyncStatus(); // Actualizar estado de sincronización a 'pending'
+        await loadMasterProductConfigs(); // Recargar para reflejar cambios locales
+        return; // Salir, ya que no se puede sincronizar con Supabase
       }
-      // Refrescar configs sin ocultos después de guardar
-      // No es necesario filtrar aquí, loadMasterProductConfigs ya lo hace
+
+      // Intentar sincronizar con Supabase
+      const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
+        productId: configToSave.productId,
+        productName: configToSave.productName,
+        rules: configToSave.rules,
+        supplier: configToSave.supplier,
+        isHidden: configToSave.isHidden || false, // Asegurar que isHidden siempre sea booleano
+        updated_at: configToSave.updated_at, // Incluir updated_at
+      };
+      const { error } = await (supabase
+        .from('product_rules') as any) // Castear a any
+        .upsert(supabaseConfig, { onConflict: 'productId' });
+
+      if (error) {
+        console.error("Error saving master product config to Supabase:", error);
+        showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+      } else {
+        await db.productRules.update(configToSave.productId, { sync_pending: false });
+        console.log("Master product config saved to Supabase successfully.");
+        warnedItems.current.delete(`product-${configToSave.productId}`); // Limpiar advertencia si se sincronizó
+      }
       await loadMasterProductConfigs(); 
       updateSyncStatus();
     } catch (e) {
       console.error("Error saving master product config:", e);
       showError('Error al guardar la configuración del producto localmente.');
+      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice a 'error'
       throw e;
     }
   }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
@@ -485,29 +501,35 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       // Realizar soft delete localmente y marcar como pendiente
       await db.productRules.update(numericProductId, { isHidden: newIsHidden, sync_pending: true, updated_at: nowIso });
       
-      if (supabase && state.isOnline) {
-        // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
-        const { error } = await (supabase
-          .from('product_rules') as any) // Castear a any
-          .update({ isHidden: newIsHidden, updated_at: nowIso })
-          .eq('productId', numericProductId);
-
-        if (error) {
-          console.error("Error toggling master product config from Supabase:", error);
-          showError('Error al sincronizar el estado de visibilidad del producto con la nube. Se reintentará.');
-          // Keep sync_pending: true in Dexie
-        } else {
-          await db.productRules.update(numericProductId, { sync_pending: false }); // Marcar como sincronizado en Dexie
-          console.log("Master product config visibility toggled in Supabase successfully.");
+      // Alerta de persistencia: Si no hay Supabase o no hay conexión, advertir inmediatamente
+      if (!supabase || !state.isOnline) {
+        showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+        updateSyncStatus(); // Actualizar estado de sincronización a 'pending'
+        await loadMasterProductConfigs(); // Recargar para reflejar cambios locales
+        // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
+        if (state.sessionId && state.inventoryType && filteredInventoryData.length > 0) {
+          await saveCurrentSession(filteredInventoryData, state.inventoryType, new Date());
         }
+        return; // Salir
+      }
+
+      // Intentar sincronizar con Supabase
+      const { error } = await (supabase
+        .from('product_rules') as any) // Castear a any
+        .update({ isHidden: newIsHidden, updated_at: nowIso })
+        .eq('productId', numericProductId);
+
+      if (error) {
+        console.error("Error toggling master product config from Supabase:", error);
+        showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
       } else {
-        console.log("Supabase client not available or offline, skipping visibility toggle to Supabase. Marked as sync_pending.");
+        await db.productRules.update(numericProductId, { sync_pending: false }); // Marcar como sincronizado en Dexie
+        console.log("Master product config visibility toggled in Supabase successfully.");
+        warnedItems.current.delete(`product-${numericProductId}`); // Limpiar advertencia si se sincronizó
       }
       showSuccess(`Configuración de producto ${newIsHidden ? 'ocultada' : 'restaurada'}.`);
 
-      // Refrescar configs (esto disparará la re-evaluación de filteredInventoryData)
       await loadMasterProductConfigs(); 
-      // No es necesario pasar showHiddenProducts aquí, loadMasterProductConfigs ya lo maneja
 
       // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
       if (state.sessionId && state.inventoryType && filteredInventoryData.length > 0) {
@@ -516,6 +538,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     } catch (e) {
       console.error("Error toggling master product config:", e);
       showError('Error al cambiar la visibilidad de la configuración de producto.');
+      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice a 'error'
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -745,17 +768,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
           if (supabaseUpsertError) {
             console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
-            showError('Error al sincronizar configuraciones de producto con la nube. Se reintentará.');
+            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
           } else {
             // Marcar como sincronizado en Dexie para los que se subieron con éxito
             for (const config of configsToUpsertToSupabase) {
               await db.productRules.update(config.productId, { sync_pending: false });
+              warnedItems.current.delete(`product-${config.productId}`); // Limpiar advertencia
             }
             showSuccess('Configuraciones de productos actualizadas y sincronizadas.');
           }
         } else if (configsToUpsertToSupabase.length > 0) {
           console.log("Supabase client not available or offline, skipping bulk upsert to Supabase. Marked as sync_pending.");
-          showSuccess('Configuraciones de productos actualizadas localmente (pendientes de sincronizar).');
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         }
 
         // Filtrar productos "KYR S.A.S" y "Desconocido" después de procesar
@@ -797,14 +821,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
           if (error) {
             console.error("Error saving new session to Supabase:", error);
-            showError('Error al sincronizar nueva sesión con la nube. Se reintentará.');
+            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
           } else {
             await db.sessions.update(dateKey, { sync_pending: false });
             showSuccess('Nueva sesión de inventario iniciada y guardada.');
+            warnedItems.current.delete(`session-${dateKey}`); // Limpiar advertencia
           }
         } else {
           console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
-          showSuccess('Nueva sesión de inventario iniciada y guardada localmente (pendiente de sincronizar).');
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         }
         updateSyncStatus();
       } catch (e: any) {
@@ -930,11 +955,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         if (supabaseUpsertError) {
           console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
-          showError('Error al sincronizar configuraciones de producto con la nube. Se reintentará.');
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           // Marcar como sincronizado en Dexie para los que se subieron con éxito
           for (const config of pendingForSupabase) {
             await db.productRules.update(config.productId, { sync_pending: false });
+            warnedItems.current.delete(`product-${config.productId}`); // Limpiar advertencia
           }
           let successMessage = '';
           if (newProductsCount > 0) {
@@ -959,7 +985,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         if (localMessage === '') {
           localMessage = 'Configuraciones de productos actualizadas localmente.';
         }
-        showSuccess(`${localMessage.trim()} (pendientes de sincronizar).`);
+        showError(`${localMessage.trim()} (Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total).`);
       } else {
         showSuccess('No se encontraron nuevos productos o cambios de nombre para agregar/actualizar.');
       }
@@ -1008,9 +1034,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         if (error) {
           console.error(`Failed to retry session ${session.dateKey}:`, error);
           dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.sessions.update(session.dateKey, { sync_pending: false });
           console.log(`Session ${session.dateKey} synced successfully.`);
+          warnedItems.current.delete(`session-${session.dateKey}`); // Limpiar advertencia
         }
       }
 
@@ -1033,9 +1061,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         if (error) {
           console.error(`Failed to retry product config ${config.productId}:`, error);
           dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.productRules.update(config.productId, { sync_pending: false });
           console.log(`Product config ${config.productId} synced successfully.`);
+          warnedItems.current.delete(`product-${config.productId}`); // Limpiar advertencia
         }
       }
       showSuccess('Sincronización automática completada.');
@@ -1055,6 +1085,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const syncFromSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline || state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
       console.log('No se puede realizar la sincronización: sin conexión, ya procesando o Supabase no disponible.');
+      showError('No se puede sincronizar: sin conexión a internet o la sincronización ya está en curso.');
       return;
     }
 
@@ -1085,8 +1116,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) {
           console.error(`Error uploading pending session ${session.dateKey} to Supabase:`, error);
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.sessions.update(session.dateKey, { sync_pending: false });
+          warnedItems.current.delete(`session-${session.dateKey}`); // Limpiar advertencia
         }
       }
       console.log("Uploading local pending product configs...");
@@ -1105,8 +1138,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .upsert(supabaseConfig, { onConflict: 'productId' });
         if (error) {
           console.error(`Error uploading pending product config ${config.productId} to Supabase:`, error);
+          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.productRules.update(config.productId, { sync_pending: false });
+          warnedItems.current.delete(`product-${config.productId}`); // Limpiar advertencia
         }
       }
       console.log('Cambios locales subidos a la nube.');
@@ -1298,6 +1333,47 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [updateSyncStatus]);
 
+  // --- Persistence Alert: Check for long-pending syncs ---
+  useEffect(() => {
+    const checkLongPendingSyncs = async () => {
+      if (!state.isOnline || !supabase || state.isSupabaseSyncInProgress) {
+        return;
+      }
+
+      try {
+        if (!db.isOpen()) await db.open();
+        const now = Date.now();
+        const THIRTY_SECONDS = 30 * 1000;
+
+        // Check sessions
+        const pendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === true).toArray();
+        for (const session of pendingSessions) {
+          const itemId = `session-${session.dateKey}`;
+          if (!warnedItems.current.has(itemId) && (now - new Date(session.updated_at).getTime()) > THIRTY_SECONDS) {
+            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+            warnedItems.current.add(itemId);
+          }
+        }
+
+        // Check product configs
+        const pendingProductRules = await db.productRules.toCollection().filter(c => c.sync_pending === true).toArray();
+        for (const config of pendingProductRules) {
+          const itemId = `product-${config.productId}`;
+          if (!warnedItems.current.has(itemId) && (now - new Date(config.updated_at).getTime()) > THIRTY_SECONDS) {
+            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+            warnedItems.current.add(itemId);
+          }
+        }
+      } catch (e) {
+        console.error("Error checking long pending syncs:", e);
+      }
+    };
+
+    const intervalId = setInterval(checkLongPendingSyncs, 15000); // Check every 15 seconds
+
+    return () => clearInterval(intervalId); // Cleanup on unmount
+  }, [state.isOnline, state.isSupabaseSyncInProgress]);
+
 
   useEffect(() => {
     if (state.dbBuffer && state.inventoryType && !state.sessionId) {
@@ -1321,6 +1397,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setInventoryType,
     setRawInventoryItemsFromDb, // Nuevo setter
     setMasterProductConfigs,
+    setSyncStatus, // Exponer el nuevo setter
     processInventoryData,
     processDbForMasterConfigs,
     saveCurrentSession,
@@ -1342,6 +1419,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setInventoryType,
     setRawInventoryItemsFromDb,
     setMasterProductConfigs,
+    setSyncStatus, // Añadir como dependencia
     processInventoryData,
     processDbForMasterConfigs,
     saveCurrentSession,
