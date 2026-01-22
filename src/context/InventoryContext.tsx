@@ -1122,7 +1122,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const sessionsToPutLocally: InventorySession[] = [];
 
       if (supabaseSessions && supabaseSessions.length > 0) {
-        for (const s of supabaseSessions) {
+        for (const s of supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]) { // Explicitly cast 's'
           const typedSession: InventorySession = { // Cast to correct type
             dateKey: s.dateKey,
             inventoryType: s.inventoryType,
@@ -1171,7 +1171,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const productRulesToPutLocally: MasterProductConfig[] = [];
 
       if (supabaseProductRules && supabaseProductRules.length > 0) {
-        for (const c of supabaseProductRules) {
+        for (const c of supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]) { // Explicitly cast 'c'
           const typedConfig: MasterProductConfig = { // Cast to correct type
             productId: c.productId,
             productName: c.productName,
