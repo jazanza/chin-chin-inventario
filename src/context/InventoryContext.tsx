@@ -51,6 +51,7 @@ interface InventoryState {
   syncStatus: SyncStatus; // Nuevo estado para el indicador de sincronización
   isOnline: boolean; // Nuevo estado para la conectividad
   isSupabaseSyncInProgress: boolean; // Nuevo estado para evitar race conditions en Supabase
+  isSyncBlockedWarningActive: boolean; // Nuevo estado para controlar la advertencia de bloqueo
 }
 
 const initialState: InventoryState = {
@@ -64,6 +65,7 @@ const initialState: InventoryState = {
   syncStatus: 'idle',
   isOnline: navigator.onLine, // Inicializar con el estado actual de la conexión
   isSupabaseSyncInProgress: false, // Inicializar en false
+  isSyncBlockedWarningActive: false, // Inicializar en false
 };
 
 type InventoryAction =
@@ -77,6 +79,7 @@ type InventoryAction =
   | { type: 'SET_SYNC_STATUS'; payload: SyncStatus }
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean } // Nueva acción
+  | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean } // Nueva acción
   | { type: 'RESET_STATE' };
 
 const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
@@ -99,8 +102,10 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, syncStatus: action.payload };
     case 'SET_IS_ONLINE':
       return { ...state, isOnline: action.payload };
-    case 'SET_SUPABASE_SYNC_IN_PROGRESS': // Corregido el typo
+    case 'SET_SUPABASE_SYNC_IN_PROGRESS':
       return { ...state, isSupabaseSyncInProgress: action.payload };
+    case 'SET_SYNC_BLOCKED_WARNING_ACTIVE':
+      return { ...state, isSyncBlockedWarningActive: action.payload };
     case 'RESET_STATE':
       return {
         ...initialState,
@@ -108,6 +113,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
         masterProductConfigs: state.masterProductConfigs,
         isOnline: state.isOnline,
         isSupabaseSyncInProgress: false, // Resetear también este estado
+        isSyncBlockedWarningActive: false, // Resetear también este estado
       };
     default:
       return state;
@@ -161,6 +167,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
   const previousFilteredInventoryDataRef = useRef<InventoryItem[]>([]); // Ref para la lista filtrada anterior
   const warnedItems = useRef(new Set<string>()); // Para evitar advertencias repetidas
+  const syncBlockedWarningTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref para el timeout de la advertencia de bloqueo
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -278,6 +285,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   ) => {
     if (!data || data.length === 0) return;
 
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     const dateKey = format(timestamp, 'yyyy-MM-dd');
     const effectiveness = calculateEffectiveness(data);
     const nowIso = new Date().toISOString(); // Timestamp de actualización
@@ -334,12 +342,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Session saved to Supabase successfully.");
         warnedItems.current.delete(`session-${dateKey}`); // Limpiar advertencia si se sincronizó
       }
-      updateSyncStatus();
     } catch (e) {
       console.error("Error saving session:", e);
       showError('Error al guardar la sesión localmente.');
-      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice a 'error'
       throw e;
+    } finally {
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
+      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
     }
   }, [state.sessionId, state.isOnline, updateSyncStatus]);
 
@@ -370,6 +379,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const deleteSession = useCallback(async (dateKey: string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
 
     try {
       if (!db.isOpen()) await db.open(); // Emergency validation
@@ -398,12 +408,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'RESET_STATE' });
         dispatch({ type: 'SET_SESSION_ID', payload: null });
       }
-      updateSyncStatus();
     } catch (e) {
       console.error("Error deleting session:", e);
       showError('Error al eliminar la sesión.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
+      updateSyncStatus();
     }
   }, [state.sessionId, state.isOnline, updateSyncStatus]);
 
@@ -437,6 +448,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   }, [updateSyncStatus]);
 
   const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     try {
       if (!db.isOpen()) await db.open(); // Emergency validation
       const nowIso = new Date().toISOString(); // Timestamp de actualización
@@ -473,18 +485,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         warnedItems.current.delete(`product-${configToSave.productId}`); // Limpiar advertencia si se sincronizó
       }
       await loadMasterProductConfigs(); 
-      updateSyncStatus();
     } catch (e) {
       console.error("Error saving master product config:", e);
       showError('Error al guardar la configuración del producto localmente.');
-      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice a 'error'
       throw e;
+    } finally {
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
+      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
     }
   }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
 
   const deleteMasterProductConfig = useCallback(async (productId: number) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
 
     try {
       if (!db.isOpen()) await db.open(); // Emergency validation
@@ -538,9 +552,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     } catch (e) {
       console.error("Error toggling master product config:", e);
       showError('Error al cambiar la visibilidad de la configuración de producto.');
-      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice a 'error'
+      throw e;
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
+      updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
     }
   }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs, state.sessionId, state.inventoryType, filteredInventoryData, saveCurrentSession]);
 
@@ -640,6 +656,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
       console.log(`Starting database processing for ${type} inventory.`);
 
       try {
@@ -731,19 +748,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             configsToUpsertToSupabase.push(masterConfig);
           }
           configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
-
-          // Añadir el item al inventario procesado (sin filtrar por isHidden aquí)
-          processedInventory.push({
-            productId: currentProductId,
-            productName: dbItem.Producto,
-            category: dbItem.Categoria,
-            systemQuantity: dbItem.Stock_Actual,
-            physicalQuantity: dbItem.Stock_Actual, // Default
-            averageSales: 0, // No disponible en esta consulta
-            supplier: masterConfig.supplier, // Usar el proveedor de la config maestra
-            hasBeenEdited: false, // Default
-            rules: masterConfig.rules, // Usar las reglas de la config maestra
-          });
         });
 
         // Actualizar Dexie con todas las configuraciones (nuevas y existentes con posibles cambios de nombre)
@@ -831,13 +835,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         }
-        updateSyncStatus();
       } catch (e: any) {
         console.error("Error processing database for inventory:", e);
         dispatch({ type: 'SET_ERROR', payload: e.message });
         showError(`Error al procesar el inventario: ${e.message}`);
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
+        dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
+        updateSyncStatus();
         console.log("Database inventory processing finished.");
       }
     },
@@ -847,6 +852,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const processDbForMasterConfigs = useCallback(async (buffer: Uint8Array) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     console.log(`Starting database processing for master configs.`);
 
     try {
@@ -990,13 +996,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         showSuccess('No se encontraron nuevos productos o cambios de nombre para agregar/actualizar.');
       }
       await loadMasterProductConfigs(); // Recargar para actualizar el estado global
-      updateSyncStatus();
     } catch (e: any) {
       console.error("Error during processing database for master configs:", e);
       showError(`Error al procesar el archivo DB para configuraciones: ${e.message}`);
       dispatch({ type: 'SET_ERROR', payload: e.message });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
+      updateSyncStatus();
       console.log("Database master config processing finished.");
     }
   }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus, state.masterProductConfigs]);
@@ -1074,7 +1081,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
       showError('Error en la sincronización automática.');
     } finally {
-      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Finalizar
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
       updateSyncStatus(); // Update status based on remaining pending items
     }
   }, [state.isOnline, state.isSupabaseSyncInProgress, updateSyncStatus]);
@@ -1083,10 +1090,29 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- NEW: Perform Total Sync (Upload local, then Download cloud) ---
   // Esta función ahora se usará para la sincronización inicial y al cambiar de pestaña
   const syncFromSupabase = useCallback(async () => {
-    if (!supabase || !state.isOnline || state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
-      console.log('No se puede realizar la sincronización: sin conexión, ya procesando o Supabase no disponible.');
-      showError('No se puede sincronizar: sin conexión a internet o la sincronización ya está en curso.');
+    if (!supabase || !state.isOnline) {
+      showError('No se puede sincronizar: sin conexión a internet o Supabase no disponible.');
       return;
+    }
+    if (state.isSupabaseSyncInProgress) {
+      console.log('Sincronización ya en curso, ignorando solicitud.');
+      // Iniciar un timeout para mostrar la advertencia si el bloqueo persiste
+      if (!state.isSyncBlockedWarningActive && !syncBlockedWarningTimeoutRef.current) {
+        syncBlockedWarningTimeoutRef.current = setTimeout(() => {
+          dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: true });
+          showError('Sincronización ya en curso. Por favor, espera a que termine el proceso actual.');
+        }, 10000); // 10 segundos
+      }
+      return;
+    }
+
+    // Limpiar cualquier timeout de advertencia de bloqueo si la sincronización comienza
+    if (syncBlockedWarningTimeoutRef.current) {
+      clearTimeout(syncBlockedWarningTimeoutRef.current);
+      syncBlockedWarningTimeoutRef.current = null;
+    }
+    if (state.isSyncBlockedWarningActive) {
+      dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: false });
     }
 
     dispatch({ type: 'SET_LOADING', payload: true });
@@ -1245,10 +1271,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
-      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Finalizar
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
       updateSyncStatus();
     }
-  }, [state.isOnline, state.isSupabaseSyncInProgress, loadMasterProductConfigs, updateSyncStatus]);
+  }, [state.isOnline, state.isSupabaseSyncInProgress, loadMasterProductConfigs, updateSyncStatus, state.isSyncBlockedWarningActive]);
 
   // Nueva función para sincronización al cambiar de pestaña
   const handleVisibilityChangeSync = useCallback(async () => {
@@ -1261,8 +1287,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- NEW: Reset All Product Configurations ---
   const resetAllProductConfigs = useCallback(async (buffer: Uint8Array) => {
-    if (!supabase || !state.isOnline || state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
-      showError('No se puede reiniciar la configuración: sin conexión, ya procesando o Supabase no disponible.');
+    if (!supabase || !state.isOnline) {
+      showError('No se puede reiniciar la configuración: sin conexión a internet o Supabase no disponible.');
+      return;
+    }
+    if (state.isSupabaseSyncInProgress) {
+      console.log('Sincronización ya en curso, ignorando solicitud de reinicio de configuración.');
+      showError('Sincronización ya en curso. Por favor, espera a que termine el proceso actual.');
       return;
     }
 
@@ -1299,15 +1330,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
-      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Finalizar
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
       updateSyncStatus();
     }
   }, [state.isOnline, state.isSupabaseSyncInProgress, processDbForMasterConfigs, updateSyncStatus]);
 
   // --- NEW: Clear Local Database ---
   const clearLocalDatabase = useCallback(async () => {
+    if (state.isSupabaseSyncInProgress) {
+      showError('Sincronización ya en curso. Por favor, espera a que termine el proceso actual antes de limpiar la base de datos.');
+      return;
+    }
+
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     showSuccess('Limpiando base de datos local...');
     console.log("Starting clear local database...");
 
@@ -1329,15 +1366,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError(`Error al limpiar la base de datos local: ${e.message}`);
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Liberar el bloqueo
       updateSyncStatus(); // Actualizar el estado de sincronización
     }
-  }, [updateSyncStatus]);
+  }, [state.isSupabaseSyncInProgress, updateSyncStatus]);
 
   // --- Persistence Alert: Check for long-pending syncs ---
   useEffect(() => {
     const checkLongPendingSyncs = async () => {
-      if (!state.isOnline || !supabase || state.isSupabaseSyncInProgress) {
-        return;
+      if (!state.isOnline || !supabase) {
+        return; // No hay conexión o Supabase no está disponible, no se puede sincronizar
+      }
+      if (state.isSupabaseSyncInProgress) {
+        return; // Una sincronización ya está en curso, no mostrar advertencias redundantes
       }
 
       try {
@@ -1371,7 +1412,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     const intervalId = setInterval(checkLongPendingSyncs, 15000); // Check every 15 seconds
 
-    return () => clearInterval(intervalId); // Cleanup on unmount
+    return () => {
+      clearInterval(intervalId); // Cleanup on unmount
+      // Limpiar el timeout de advertencia de bloqueo si existe
+      if (syncBlockedWarningTimeoutRef.current) {
+        clearTimeout(syncBlockedWarningTimeoutRef.current);
+        syncBlockedWarningTimeoutRef.current = null;
+      }
+    };
   }, [state.isOnline, state.isSupabaseSyncInProgress]);
 
 
