@@ -506,7 +506,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showSuccess(`Configuración de producto ${newIsHidden ? 'ocultada' : 'restaurada'}.`);
 
       // Refrescar configs (esto disparará la re-evaluación de filteredInventoryData)
-      await loadMasterProductConfigs(); // Corregido: no pasar showHiddenProducts aquí
+      await loadMasterProductConfigs(); 
       // No es necesario pasar showHiddenProducts aquí, loadMasterProductConfigs ya lo maneja
 
       // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
