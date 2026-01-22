@@ -50,6 +50,7 @@ interface InventoryState {
   sessionId: string | null;
   syncStatus: SyncStatus; // Nuevo estado para el indicador de sincronización
   isOnline: boolean; // Nuevo estado para la conectividad
+  isSupabaseSyncInProgress: boolean; // Nuevo estado para evitar race conditions en Supabase
 }
 
 const initialState: InventoryState = {
@@ -62,6 +63,7 @@ const initialState: InventoryState = {
   sessionId: null,
   syncStatus: 'idle',
   isOnline: navigator.onLine, // Inicializar con el estado actual de la conexión
+  isSupabaseSyncInProgress: false, // Inicializar en false
 };
 
 type InventoryAction =
@@ -74,6 +76,7 @@ type InventoryAction =
   | { type: 'SET_SESSION_ID'; payload: string | null }
   | { type: 'SET_SYNC_STATUS'; payload: SyncStatus }
   | { type: 'SET_IS_ONLINE'; payload: boolean }
+  | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean } // Nueva acción
   | { type: 'RESET_STATE' };
 
 const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
@@ -96,12 +99,15 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, syncStatus: action.payload };
     case 'SET_IS_ONLINE':
       return { ...state, isOnline: action.payload };
+    case 'SET_SUPABASE_SYNC_IN_PROGRES': // Nuevo caso
+      return { ...state, isSupabaseSyncInProgress: action.payload };
     case 'RESET_STATE':
       return {
         ...initialState,
         dbBuffer: state.dbBuffer,
         masterProductConfigs: state.masterProductConfigs,
         isOnline: state.isOnline,
+        isSupabaseSyncInProgress: false, // Resetear también este estado
       };
     default:
       return state;
@@ -268,6 +274,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     const dateKey = format(timestamp, 'yyyy-MM-dd');
     const effectiveness = calculateEffectiveness(data);
+    const nowIso = new Date().toISOString(); // Timestamp de actualización
 
     try {
       if (!db.isOpen()) await db.open(); // Emergency validation
@@ -282,6 +289,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         effectiveness,
         ordersBySupplier: ordersToSave,
         sync_pending: true, // Marcar como pendiente inicialmente
+        updated_at: nowIso, // Establecer updated_at
       };
 
       await db.sessions.put(sessionToSave); // Guardar en Dexie
@@ -296,10 +304,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp,
+          timestamp: sessionToSave.timestamp.toISOString(), // Convertir a ISO string para Supabase
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
-          // sync_pending no se envía a Supabase
+          updated_at: sessionToSave.updated_at, // Incluir updated_at
         };
         const { error } = await (supabase
           .from('inventory_sessions') as any) // Castear a any
@@ -419,7 +427,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const saveMasterProductConfig = useCallback(async (config: MasterProductConfig) => {
     try {
       if (!db.isOpen()) await db.open(); // Emergency validation
-      const configToSave = { ...config, productId: Number(config.productId), sync_pending: true }; // Marcar como pendiente
+      const nowIso = new Date().toISOString(); // Timestamp de actualización
+      const configToSave = { ...config, productId: Number(config.productId), sync_pending: true, updated_at: nowIso }; // Marcar como pendiente y establecer updated_at
       await db.productRules.put(configToSave);
       
       if (supabase && state.isOnline) {
@@ -430,7 +439,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: configToSave.rules,
           supplier: configToSave.supplier,
           isHidden: configToSave.isHidden || false, // Asegurar que isHidden siempre sea booleano
-          // sync_pending no se envía a Supabase
+          updated_at: configToSave.updated_at, // Incluir updated_at
         };
         const { error } = await (supabase
           .from('product_rules') as any) // Castear a any
@@ -457,6 +466,45 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
 
+  const deleteSession = useCallback(async (dateKey: string) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      if (!db.isOpen()) await db.open(); // Emergency validation
+      await db.sessions.delete(dateKey); // Eliminar de Dexie
+
+      if (supabase && state.isOnline) {
+        const { error } = await supabase
+          .from('inventory_sessions')
+          .delete()
+          .eq('dateKey', dateKey);
+
+        if (error) {
+          console.error("Error deleting session from Supabase:", error);
+          showError('Error al eliminar sesión de la nube. Puede que reaparezca en una sincronización forzada.');
+        } else {
+          console.log("Session deleted from Supabase successfully.");
+        }
+      } else {
+        console.log("Supabase client not available or offline, skipping delete from Supabase.");
+      }
+
+      showSuccess(`Sesión del ${dateKey} eliminada.`);
+
+      if (state.sessionId === dateKey) {
+        dispatch({ type: 'RESET_STATE' });
+        dispatch({ type: 'SET_SESSION_ID', payload: null });
+      }
+      updateSyncStatus();
+    } catch (e) {
+      console.error("Error deleting session:", e);
+      showError('Error al eliminar la sesión.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [state.sessionId, state.isOnline, updateSyncStatus]);
+
   const deleteMasterProductConfig = useCallback(async (productId: number) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -471,15 +519,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       const newIsHidden = !currentConfig.isHidden; // Toggle the isHidden status
+      const nowIso = new Date().toISOString(); // Timestamp de actualización
 
       // Realizar soft delete localmente y marcar como pendiente
-      await db.productRules.update(numericProductId, { isHidden: newIsHidden, sync_pending: true });
+      await db.productRules.update(numericProductId, { isHidden: newIsHidden, sync_pending: true, updated_at: nowIso });
       
       if (supabase && state.isOnline) {
         // Al ocultar (soft-delete), solo enviamos los campos relevantes a Supabase
         const { error } = await (supabase
           .from('product_rules') as any) // Castear a any
-          .update({ isHidden: newIsHidden })
+          .update({ isHidden: newIsHidden, updated_at: nowIso })
           .eq('productId', numericProductId);
 
         if (error) {
@@ -496,15 +545,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showSuccess(`Configuración de producto ${newIsHidden ? 'ocultada' : 'restaurada'}.`);
 
       // Refrescar configs (esto disparará la re-evaluación de filteredInventoryData)
-      await loadMasterProductConfigs(); 
-      updateSyncStatus();
+      await loadMasterProductConfigs(showHiddenProducts); // Usar el estado actual del toggle
+      // No es necesario pasar showHiddenProducts aquí, loadMasterProductConfigs ya lo maneja
+
+      // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
+      if (state.sessionId && state.inventoryType && filteredInventoryData.length > 0) {
+        await saveCurrentSession(filteredInventoryData, state.inventoryType, new Date());
+      }
     } catch (e) {
       console.error("Error toggling master product config:", e);
       showError('Error al cambiar la visibilidad de la configuración de producto.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs]);
+  }, [state.isOnline, updateSyncStatus, loadMasterProductConfigs, state.sessionId, state.inventoryType, filteredInventoryData, saveCurrentSession]);
 
   // Consultas SQL específicas para inventario semanal y mensual
   const WEEKLY_INVENTORY_QUERY = `
@@ -637,6 +691,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         let processedInventory: InventoryItem[] = [];
         const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
         const configsToUpsertToSupabase: MasterProductConfig[] = [];
+        const nowIso = new Date().toISOString(); // Timestamp de actualización
 
         rawInventoryItems.forEach((dbItem) => {
           if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -671,6 +726,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               supplier: supplierNameFromDb, // Usar proveedor detectado
               isHidden: false,
               sync_pending: true, // Marcar como pendiente para Supabase
+              updated_at: nowIso, // Establecer updated_at
             };
             configChanged = true;
           } else {
@@ -687,6 +743,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
           if (configChanged) {
             masterConfig.sync_pending = true; // Marcar para sincronizar si hubo cambios o es nuevo
+            masterConfig.updated_at = nowIso; // Actualizar timestamp
             configsToUpsertToSupabase.push(masterConfig);
           }
           configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
@@ -719,6 +776,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             rules: c.rules,
             supplier: c.supplier,
             isHidden: c.isHidden || false,
+            updated_at: c.updated_at, // Incluir updated_at
           }));
           const { error: supabaseUpsertError } = await (supabase
             .from('product_rules') as any) // Castear a any
@@ -756,6 +814,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           timestamp: new Date(),
           effectiveness,
           sync_pending: true, // Marcar como pendiente
+          updated_at: nowIso, // Establecer updated_at
         };
         await db.sessions.put(newSession);
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
@@ -766,9 +825,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
-            timestamp: newSession.timestamp,
+            timestamp: newSession.timestamp.toISOString(), // Convertir a ISO string para Supabase
             effectiveness: newSession.effectiveness,
             ordersBySupplier: newSession.ordersBySupplier,
+            updated_at: newSession.updated_at, // Incluir updated_at
           };
           const { error } = await (supabase
             .from('inventory_sessions') as any) // Castear a any
@@ -826,6 +886,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const configsToUpsertToSupabase: MasterProductConfig[] = [];
       let newProductsCount = 0;
       let updatedProductNamesCount = 0;
+      const nowIso = new Date().toISOString(); // Timestamp de actualización
 
       for (const dbItem of rawInventoryItems) {
         if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -860,6 +921,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplier: supplierNameFromDb, // Usar proveedor detectado
             isHidden: false,
             sync_pending: true, // Marcar como pendiente para Supabase
+            updated_at: nowIso, // Establecer updated_at
           };
           newProductsCount++;
           configChangedForSync = true;
@@ -879,6 +941,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         // Si hubo un cambio (nuevo producto o nombre actualizado) o ya estaba pendiente, marcar para Supabase
         if (configChangedForSync || masterConfig.sync_pending) {
           masterConfig.sync_pending = true;
+          masterConfig.updated_at = nowIso; // Actualizar timestamp
           configsToUpsertToSupabase.push(masterConfig);
         }
         configsToUpdateOrAddInDexie.push(masterConfig); // Siempre añadir a Dexie para asegurar que esté actualizado localmente
@@ -898,6 +961,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: c.rules,
           supplier: c.supplier,
           isHidden: c.isHidden || false,
+          updated_at: c.updated_at, // Incluir updated_at
         }));
         const { error: supabaseUpsertError } = await (supabase
           .from('product_rules') as any) // Castear a any
@@ -953,11 +1017,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- Auto-Retry Mechanism ---
   const retryPendingSyncs = useCallback(async () => {
-    if (!supabase || !state.isOnline || state.syncStatus === 'syncing') {
+    if (!supabase || !state.isOnline || state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
       return;
     }
 
-    dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     console.log("Attempting to retry pending syncs...");
 
     try {
@@ -972,9 +1036,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp,
+          timestamp: session.timestamp.toISOString(),
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
+          updated_at: session.updated_at, // Incluir updated_at
         };
         const { error } = await (supabase
           .from('inventory_sessions') as any) // Castear a any
@@ -999,6 +1064,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
+          updated_at: config.updated_at, // Incluir updated_at
         };
         const { error } = await (supabase
           .from('product_rules') as any) // Castear a any
@@ -1017,31 +1083,24 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
       showError('Error en la sincronización automática.');
     } finally {
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Finalizar
       updateSyncStatus(); // Update status based on remaining pending items
     }
-  }, [state.isOnline, state.syncStatus, updateSyncStatus]);
-
-  useEffect(() => {
-    let retryInterval: NodeJS.Timeout;
-    if (state.isOnline && supabase) {
-      retryInterval = setInterval(retryPendingSyncs, 30000); // Retry every 30 seconds
-    }
-    return () => clearInterval(retryInterval);
-  }, [state.isOnline, retryPendingSyncs]);
+  }, [state.isOnline, state.isSupabaseSyncInProgress, updateSyncStatus]);
 
 
   // --- NEW: Perform Total Sync (Upload local, then Download cloud) ---
   // Esta función ahora se usará para la sincronización inicial y al cambiar de pestaña
   const syncFromSupabase = useCallback(async () => {
-    if (!supabase || !state.isOnline || state.loading) {
-      console.log('No se puede realizar la sincronización: sin conexión o ya procesando.');
-      // No mostrar error toast aquí para evitar spam al inicio/cambio de pestaña
+    if (!supabase || !state.isOnline || state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
+      console.log('No se puede realizar la sincronización: sin conexión, ya procesando o Supabase no disponible.');
       return;
     }
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     console.log("Iniciando sincronización bidireccional (subiendo cambios y descargando actualizaciones)...");
 
     try {
@@ -1055,9 +1114,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp,
+          timestamp: session.timestamp.toISOString(),
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
+          updated_at: session.updated_at,
         };
         const { error } = await (supabase
           .from('inventory_sessions') as any)
@@ -1077,6 +1137,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
+          updated_at: config.updated_at,
         };
         const { error } = await (supabase
           .from('product_rules') as any)
@@ -1089,25 +1150,54 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
       console.log('Cambios locales subidos a la nube.');
 
-      // 2. Download all Supabase data to local Dexie (overwriting local versions)
+      // 2. Download all Supabase data to local Dexie (with merge logic)
       console.log("Downloading all sessions from Supabase...");
       const { data: supabaseSessions, error: sessionsError } = await supabase
         .from('inventory_sessions')
         .select('*');
       if (sessionsError) throw sessionsError;
+
+      const localSessionsMap = new Map((await db.sessions.toArray()).map(s => [s.dateKey, s]));
+      const sessionsToPutLocally: InventorySession[] = [];
+
       if (supabaseSessions && supabaseSessions.length > 0) {
-        const typedSessions: InventorySession[] = supabaseSessions.map((s: Database['public']['Tables']['inventory_sessions']['Row']) => ({
-          dateKey: s.dateKey,
-          inventoryType: s.inventoryType,
-          inventoryData: s.inventoryData,
-          timestamp: new Date(s.timestamp),
-          effectiveness: s.effectiveness,
-          ordersBySupplier: s.ordersBySupplier,
-          sync_pending: false
-        }));
-        await db.sessions.bulkPut(typedSessions);
+        for (const s of supabaseSessions) {
+          const typedSession: InventorySession = {
+            dateKey: s.dateKey,
+            inventoryType: s.inventoryType,
+            inventoryData: s.inventoryData,
+            timestamp: new Date(s.timestamp), // Convertir de string a Date
+            effectiveness: s.effectiveness,
+            ordersBySupplier: s.ordersBySupplier,
+            sync_pending: false, // Asumir que lo que viene de Supabase ya está sincronizado
+            updated_at: s.updated_at,
+          };
+          const localSession = localSessionsMap.get(typedSession.dateKey);
+
+          if (!localSession || new Date(typedSession.updated_at) > new Date(localSession.updated_at)) {
+            // Si no existe localmente o la versión remota es más nueva, usar la remota
+            sessionsToPutLocally.push(typedSession);
+          } else if (new Date(localSession.updated_at) >= new Date(typedSession.updated_at) && localSession.sync_pending === true) {
+            // Si la versión local es más nueva o igual Y está pendiente de sincronizar,
+            // NO sobrescribir con la versión remota (ya que la local es la fuente de verdad más reciente)
+            // La versión local ya se intentó subir en el paso 1.
+            console.log(`Keeping local pending session ${localSession.dateKey} as it's newer or same and pending.`);
+          } else {
+            // Si la versión local es más antigua o igual y NO está pendiente,
+            // significa que la remota es la fuente de verdad o son iguales.
+            // En este caso, si no se añadió antes, se añade ahora.
+            // Esto cubre el caso de que localSession.updated_at === typedSession.updated_at
+            // y localSession.sync_pending === false.
+            sessionsToPutLocally.push(typedSession);
+          }
+        }
+        await db.sessions.bulkPut(sessionsToPutLocally);
       } else {
-        await db.sessions.clear();
+        // Si no hay sesiones en Supabase, limpiar solo las que no están pendientes localmente
+        const localNonPendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === false).toArray();
+        if (localNonPendingSessions.length > 0) {
+          await db.sessions.bulkDelete(localNonPendingSessions.map(s => s.dateKey));
+        }
       }
 
       console.log("Downloading all product configs from Supabase...");
@@ -1115,18 +1205,38 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .from('product_rules')
         .select('*');
       if (productRulesError) throw productRulesError;
+
+      const localProductRulesMap = new Map((await db.productRules.toArray()).map(c => [c.productId, c]));
+      const productRulesToPutLocally: MasterProductConfig[] = [];
+
       if (supabaseProductRules && supabaseProductRules.length > 0) {
-        const typedConfigs: MasterProductConfig[] = supabaseProductRules.map((c: Database['public']['Tables']['product_rules']['Row']) => ({
-          productId: c.productId,
-          productName: c.productName,
-          rules: c.rules,
-          supplier: c.supplier,
-          isHidden: c.isHidden || false,
-          sync_pending: false
-        }));
-        await db.productRules.bulkPut(typedConfigs);
+        for (const c of supabaseProductRules) {
+          const typedConfig: MasterProductConfig = {
+            productId: c.productId,
+            productName: c.productName,
+            rules: c.rules,
+            supplier: c.supplier,
+            isHidden: c.isHidden || false,
+            sync_pending: false,
+            updated_at: c.updated_at,
+          };
+          const localConfig = localProductRulesMap.get(typedConfig.productId);
+
+          if (!localConfig || new Date(typedConfig.updated_at) > new Date(localConfig.updated_at)) {
+            productRulesToPutLocally.push(typedConfig);
+          } else if (new Date(localConfig.updated_at) >= new Date(typedConfig.updated_at) && localConfig.sync_pending === true) {
+            console.log(`Keeping local pending product config ${localConfig.productId} as it's newer or same and pending.`);
+          } else {
+            productRulesToPutLocally.push(typedConfig);
+          }
+        }
+        await db.productRules.bulkPut(productRulesToPutLocally);
       } else {
-        await db.productRules.clear();
+        // Si no hay reglas en Supabase, limpiar solo las que no están pendientes localmente
+        const localNonPendingProductRules = await db.productRules.toCollection().filter(c => c.sync_pending === false).toArray();
+        if (localNonPendingProductRules.length > 0) {
+          await db.productRules.bulkDelete(localNonPendingProductRules.map(c => c.productId));
+        }
       }
       console.log('Configuraciones y sesiones descargadas de la nube.');
 
@@ -1139,29 +1249,31 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Finalizar
       updateSyncStatus();
     }
-  }, [state.isOnline, state.loading, loadMasterProductConfigs, updateSyncStatus]);
+  }, [state.isOnline, state.isSupabaseSyncInProgress, loadMasterProductConfigs, updateSyncStatus]);
 
   // Nueva función para sincronización al cambiar de pestaña
   const handleVisibilityChangeSync = useCallback(async () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'visible' && !state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
       console.log("Tab became visible, performing quick sync...");
       await syncFromSupabase(); // Reutilizar la función de sincronización total
     }
-  }, [syncFromSupabase]);
+  }, [syncFromSupabase, state.isSupabaseSyncInProgress]);
 
 
   // --- NEW: Reset All Product Configurations ---
   const resetAllProductConfigs = useCallback(async (buffer: Uint8Array) => {
-    if (!supabase || !state.isOnline || state.loading) {
-      showError('No se puede reiniciar la configuración: sin conexión o ya procesando.');
+    if (!supabase || !state.isOnline || state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
+      showError('No se puede reiniciar la configuración: sin conexión, ya procesando o Supabase no disponible.');
       return;
     }
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); // Marcar como en progreso
     showSuccess('Reiniciando todas las configuraciones de productos...');
     console.log("Starting reset all product configurations...");
 
@@ -1191,9 +1303,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Finalizar
       updateSyncStatus();
     }
-  }, [state.isOnline, state.loading, processDbForMasterConfigs, updateSyncStatus]);
+  }, [state.isOnline, state.isSupabaseSyncInProgress, processDbForMasterConfigs, updateSyncStatus]);
 
   // --- NEW: Clear Local Database ---
   const clearLocalDatabase = useCallback(async () => {

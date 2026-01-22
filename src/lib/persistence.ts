@@ -12,6 +12,7 @@ export interface InventorySession {
   effectiveness: number; // Porcentaje de efectividad del inventario
   ordersBySupplier?: { [supplier: string]: OrderItem[] }; // Historial de pedidos
   sync_pending?: boolean; // Nuevo campo para indicar si la sesión está pendiente de sincronizar con Supabase
+  updated_at: string; // Nuevo campo para timestamp de última actualización
 }
 
 // Define la estructura de una Regla de Pedido individual
@@ -28,6 +29,7 @@ export interface MasterProductConfig {
   supplier: string; // Proveedor asociado
   isHidden?: boolean; // Nuevo campo para el borrado suave
   sync_pending?: boolean; // Nuevo campo para indicar si la configuración está pendiente de sincronizar con Supabase
+  updated_at: string; // Nuevo campo para timestamp de última actualización
 }
 
 // Define la estructura de la configuración por proveedor (sin cambios por ahora)
@@ -92,6 +94,25 @@ export class SessionDatabase extends Dexie {
         }
         if (config.isHidden === undefined || config.isHidden === null) {
           config.isHidden = false;
+        }
+      });
+    });
+    // Versión 13: Añade updated_at a sessions y productRules
+    this.version(13).stores({
+      sessions: 'dateKey, timestamp, sync_pending, updated_at', // Añadir updated_at al índice
+      productRules: 'productId, sync_pending, updated_at', // Añadir updated_at al índice
+      supplierConfigs: 'supplierName',
+    }).upgrade(async (tx) => {
+      // Migrar sesiones existentes para añadir updated_at
+      await tx.table('sessions').toCollection().modify((session) => {
+        if (!session.updated_at) {
+          session.updated_at = new Date().toISOString(); // Usar timestamp de creación si no existe
+        }
+      });
+      // Migrar configuraciones de producto existentes para añadir updated_at
+      await tx.table('productRules').toCollection().modify((config) => {
+        if (!config.updated_at) {
+          config.updated_at = new Date().toISOString(); // Usar timestamp de creación si no existe
         }
       });
     });

@@ -17,11 +17,11 @@ export interface Database {
     Tables: {
       inventory_sessions: {
         Row: InventorySession;
-        Insert: InventorySession;
-        Update: Partial<InventorySession>;
+        Insert: Omit<InventorySession, 'timestamp'> & { timestamp: string }; // Supabase espera string para timestamp
+        Update: Partial<Omit<InventorySession, 'timestamp'>> & { timestamp?: string };
       };
       product_rules: { // Nueva tabla para reglas de producto
-        Row: MasterProductConfig; // Usar MasterProductConfig
+        Row: MasterProductConfig;
         Insert: MasterProductConfig;
         Update: Partial<MasterProductConfig>;
       };
