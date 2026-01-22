@@ -53,7 +53,7 @@ const InventoryDashboard = () => {
         
         // Si no hay sesiones locales, intentar sincronizar desde Supabase
         if (localSessions.length === 0) {
-          await syncFromSupabase();
+          await syncFromSupabase("InventoryDashboard_InitialSync"); // <-- FIX: Añadir origen
           
           // Volver a verificar el historial después de la sincronización
           const updatedHistory = await getSessionHistory();
@@ -83,9 +83,6 @@ const InventoryDashboard = () => {
     // Cuando la tabla edita, actualiza la lista filtrada, que luego se guarda en la sesión
     // No necesitamos un setter para rawInventoryItemsFromDb aquí, ya que la tabla edita la lista filtrada
     // y saveCurrentSession tomará la lista filtrada directamente.
-    // Sin embargo, para que el useMemo de filteredInventoryData pueda preservar los cambios,
-    // necesitamos que el estado 'rawInventoryItemsFromDb' no se modifique directamente por la tabla.
-    // La tabla debe llamar a saveCurrentSession directamente con los datos actualizados.
     // La lógica de saveCurrentSession ya está ajustada para recibir la lista filtrada.
   };
 

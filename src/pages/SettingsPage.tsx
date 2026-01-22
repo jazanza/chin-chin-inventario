@@ -307,7 +307,7 @@ const SettingsPage = () => {
   };
 
   const handleForceTotalSync = async () => {
-    await syncFromSupabase();
+    await syncFromSupabase("SettingsPage_UserAction", true); // <-- FIX: Añadir origen y marcar como acción de usuario
   };
 
   if (loading || isUploadingConfig) {
