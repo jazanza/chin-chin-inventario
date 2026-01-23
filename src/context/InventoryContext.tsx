@@ -7,7 +7,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase'; // Importar tipos de base de datos
-import { RealtimeChannel } from '@supabase/supabase-js'; // Importar RealtimeChannel
+import { RealtimeChannel, RealtimeChannelStatus } from '@supabase/supabase-js'; // Importar RealtimeChannel y RealtimeChannelStatus
 
 // Interfaz para los datos de inventario tal como vienen de la DB
 export interface InventoryItemFromDB {
@@ -53,6 +53,7 @@ interface InventoryState {
   isOnline: boolean; // Nuevo estado para la conectividad
   isSupabaseSyncInProgress: boolean; // Nuevo estado para evitar race conditions en Supabase
   isSyncBlockedWarningActive: boolean; // Nuevo estado para controlar la advertencia de bloqueo
+  realtimeStatus: RealtimeChannelStatus; // Nuevo estado para el estado del canal de Realtime
 }
 
 const initialState: InventoryState = {
@@ -67,6 +68,7 @@ const initialState: InventoryState = {
   isOnline: navigator.onLine, // Inicializar con el estado actual de la conexión
   isSupabaseSyncInProgress: false, // Inicializar en false
   isSyncBlockedWarningActive: false, // Inicializar en false
+  realtimeStatus: 'disconnected', // Inicializar en desconectado
 };
 
 type InventoryAction =
@@ -81,6 +83,7 @@ type InventoryAction =
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean } // Nueva acción
   | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean } // Nueva acción
+  | { type: 'SET_REALTIME_STATUS'; payload: RealtimeChannelStatus } // Nueva acción
   | { type: 'UPDATE_SINGLE_PRODUCT_RULE'; payload: MasterProductConfig } // Nueva acción
   | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } } // Nueva acción para current session
   | { type: 'DELETE_SESSION'; payload: string } // Nueva acción para eliminar sesión de la lista
@@ -111,6 +114,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, isSupabaseSyncInProgress: action.payload };
     case 'SET_SYNC_BLOCKED_WARNING_ACTIVE':
       return { ...state, isSyncBlockedWarningActive: action.payload };
+    case 'SET_REALTIME_STATUS':
+      return { ...state, realtimeStatus: action.payload };
     case 'UPDATE_SINGLE_PRODUCT_RULE': {
       const updatedConfig = action.payload;
       
@@ -174,6 +179,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
         isOnline: state.isOnline,
         isSupabaseSyncInProgress: false, // Resetear también este estado
         isSyncBlockedWarningActive: false, // Resetear también este estado
+        realtimeStatus: 'disconnected', // Resetear también este estado
       };
     default:
       return state;
@@ -1417,11 +1423,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Nueva función para sincronización al cambiar de pestaña
   const handleVisibilityChangeSync = useCallback(async () => {
-    if (document.visibilityState === 'visible' && !state.isSupabaseSyncInProgress) { // Usar isSupabaseSyncInProgress
-      console.log("Tab became visible, performing quick sync...");
-      await syncFromSupabase("VisibilityChange"); // Reutilizar la función de sincronización total, pasar origen
+    // Si el canal de Realtime está conectado, no hacemos nada (el canal ya está escuchando)
+    if (state.realtimeStatus === 'connected') {
+      console.log("Realtime channel is already connected, skipping full sync.");
+      return;
     }
-  }, [syncFromSupabase, state.isSupabaseSyncInProgress]);
+    // Si el canal no está conectado, intentamos reconectarlo
+    if (state.realtimeStatus !== 'connected' && !state.isSupabaseSyncInProgress) {
+      console.log("Realtime channel is not connected, attempting to reconnect...");
+      // Forzar una reconexión del canal de Realtime
+      // Esto se logra cambiando las dependencias del useEffect que crea los canales
+      // Para forzarlo, podemos cambiar un estado que no afecte la lógica, pero es más limpio
+      // simplemente ejecutar una sincronización completa si el canal no está conectado.
+      // Sin embargo, la mejor práctica es reconectar el canal.
+      // Como no tenemos un método directo de reconexión, usaremos syncFromSupabase como fallback.
+      await syncFromSupabase("VisibilityChange_ChannelDisconnected");
+    }
+  }, [state.realtimeStatus, state.isSupabaseSyncInProgress, syncFromSupabase]);
 
 
   // --- NEW: Reset All Product Configurations ---
@@ -1634,6 +1652,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         })
         .subscribe((status) => {
           console.log(`[Realtime] Sessions channel status: ${status}`);
+          dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
         });
 
       // Product Rules Realtime Channel
@@ -1690,6 +1709,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         })
         .subscribe((status) => {
           console.log(`[Realtime] Product rules channel status: ${status}`);
+          dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
         });
 
       // Store channels in ref for cleanup
