@@ -1,11 +1,9 @@
 /**
- * PROPOSITO: InventoryContext v1.4.6 - Implementación de Sincronización Realtime Robusta
+ * PROPOSITO: InventoryContext v1.4.6 - Fix de errores de compilación TypeScript
  * FECHA: 2024-05-23
  * CAMBIOS:
- * - Estandarización de dateKey a formato ISO 8601 (yyyy-MM-dd)
- * - Implementación de syncLockRef para control de concurrencia
- * - Listener de Realtime robusto con validaciones y reintentos automáticos
- * - Configuración de REPLICA IDENTITY FULL para Supabase
+ * - Corregir importación de RealtimeChannelStatus
+ * - Añadir tipado explícito para supabaseSessions y supabaseProductRules
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -17,7 +15,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase';
-import { RealtimeChannel, RealtimeChannelStatus } from '@supabase/supabase-js';
+import { RealtimeChannel, REALTIME_CHANNEL_STATES } from '@supabase/supabase-js';
 
 // Interfaces
 export interface InventoryItemFromDB {
@@ -61,7 +59,7 @@ interface InventoryState {
   isOnline: boolean;
   isSupabaseSyncInProgress: boolean;
   isSyncBlockedWarningActive: boolean;
-  realtimeStatus: RealtimeChannelStatus;
+  realtimeStatus: REALTIME_CHANNEL_STATES;
 }
 
 const initialState: InventoryState = {
@@ -91,7 +89,7 @@ type InventoryAction =
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean }
   | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean }
-  | { type: 'SET_REALTIME_STATUS'; payload: RealtimeChannelStatus }
+  | { type: 'SET_REALTIME_STATUS'; payload: REALTIME_CHANNEL_STATES }
   | { type: 'UPDATE_SINGLE_PRODUCT_RULE'; payload: MasterProductConfig }
   | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } }
   | { type: 'DELETE_SESSION'; payload: string }
@@ -1240,7 +1238,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const localSessions = await db.sessions.toArray();
       const localSessionsMap = new Map(localSessions.map(s => [s.dateKey, s]));
-      const supabaseSessionDateKeys = new Set(supabaseSessions.map(s => s.dateKey));
+      const supabaseSessionDateKeys = new Set((supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]).map(s => s.dateKey));
       const sessionsToPutLocally: InventorySession[] = [];
       const sessionsToDeleteLocally: string[] = [];
 
@@ -1294,7 +1292,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const localProductRules = await db.productRules.toArray();
       const localProductRulesMap = new Map(localProductRules.map(c => [c.productId, c]));
-      const supabaseProductRuleIds = new Set(supabaseProductRules.map(c => c.productId));
+      const supabaseProductRuleIds = new Set((supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]).map(c => c.productId));
       const productRulesToPutLocally: MasterProductConfig[] = [];
       const productRulesToDeleteLocally: number[] = [];
 
