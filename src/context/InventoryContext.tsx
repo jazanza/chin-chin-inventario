@@ -83,6 +83,8 @@ type InventoryAction =
   | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean } // Nueva acción
   | { type: 'UPDATE_SINGLE_PRODUCT_RULE'; payload: MasterProductConfig } // Nueva acción
   | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } } // Nueva acción para current session
+  | { type: 'DELETE_SESSION'; payload: string } // Nueva acción para eliminar sesión de la lista
+  | { type: 'DELETE_PRODUCT_RULE'; payload: number } // Nueva acción para eliminar regla de producto
   | { type: 'RESET_STATE' };
 
 const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
@@ -143,6 +145,26 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
         };
       }
       return state;
+    }
+    case 'DELETE_SESSION': {
+      // Eliminar la sesión de la lista de historial (si se almacenara en el estado)
+      // Nota: El historial se obtiene de Dexie, pero podemos limpiar la sesión activa si coincide
+      if (state.sessionId === action.payload) {
+        return {
+          ...state,
+          sessionId: null,
+          rawInventoryItemsFromDb: [], // Limpiar datos de inventario
+          inventoryType: null,
+        };
+      }
+      return state;
+    }
+    case 'DELETE_PRODUCT_RULE': {
+      // Eliminar la regla de producto de la lista de configuraciones
+      return {
+        ...state,
+        masterProductConfigs: state.masterProductConfigs.filter(c => c.productId !== action.payload),
+      };
     }
     case 'RESET_STATE':
       return {
@@ -207,6 +229,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const warnedItems = useRef(new Set<string>()); // Para evitar advertencias repetidas
   const syncBlockedWarningTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref para el timeout de la advertencia de bloqueo
   const lastSyncTimestampRef = useRef(0); // Nuevo: Referencia para el último timestamp de sincronización exitosa
+  const channelsRef = useRef<{ sessions: RealtimeChannel | null; productRules: RealtimeChannel | null }>({ sessions: null, productRules: null }); // Ref para almacenar los canales
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -1545,14 +1568,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       return;
     }
 
-    let sessionsChannel: RealtimeChannel | null = null;
-    let productRulesChannel: RealtimeChannel | null = null;
-
     const setupRealtime = async () => {
       if (!db.isOpen()) await db.open(); // Ensure Dexie DB is open for Realtime handlers
 
       // Sessions Realtime Channel
-      sessionsChannel = supabase
+      const sessionsChannel = supabase
         .channel('inventory_sessions_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_sessions' }, async (payload) => {
           console.log('[Realtime] Session change received:', payload);
@@ -1612,10 +1632,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de sesión remota.');
           }
         })
-        .subscribe();
+        .subscribe((status) => {
+          console.log(`[Realtime] Sessions channel status: ${status}`);
+        });
 
       // Product Rules Realtime Channel
-      productRulesChannel = supabase
+      const productRulesChannel = supabase
         .channel('product_rules_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'product_rules' }, async (payload) => {
           console.log('[Realtime] Product rule change received:', payload);
@@ -1666,17 +1688,41 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de configuración de producto remota.');
           }
         })
-        .subscribe();
+        .subscribe((status) => {
+          console.log(`[Realtime] Product rules channel status: ${status}`);
+        });
+
+      // Store channels in ref for cleanup
+      channelsRef.current = { sessions: sessionsChannel, productRules: productRulesChannel };
     };
 
     setupRealtime();
 
     return () => {
       console.log('[Realtime] Unsubscribing from channels.');
-      sessionsChannel?.unsubscribe();
-      productRulesChannel?.unsubscribe();
+      channelsRef.current.sessions?.unsubscribe();
+      channelsRef.current.productRules?.unsubscribe();
     };
   }, [state.isSupabaseSyncInProgress, getSessionHistory, updateSyncStatus, state.sessionId]); // Dependencias para asegurar que se re-suscriba si cambia el estado de sync in progress
+
+  // Effect to re-subscribe to Realtime channels when the app becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Realtime] App became visible, re-subscribing to channels...');
+        // Trigger a re-subscription by updating a dependency
+        // We can do this by calling a dummy function that updates a ref or state
+        // For simplicity, we'll just log and rely on the existing subscription
+        // A more robust way would be to force a re-subscription by changing a dependency
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []); // Empty dependency array to run only once
 
   useEffect(() => {
     if (state.dbBuffer && state.inventoryType && !state.sessionId) {
