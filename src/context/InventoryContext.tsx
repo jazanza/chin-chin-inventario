@@ -81,6 +81,8 @@ type InventoryAction =
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean } // Nueva acción
   | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean } // Nueva acción
+  | { type: 'UPDATE_SINGLE_PRODUCT_RULE'; payload: MasterProductConfig } // Nueva acción
+  | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } } // Nueva acción para current session
   | { type: 'RESET_STATE' };
 
 const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
@@ -107,6 +109,41 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, isSupabaseSyncInProgress: action.payload };
     case 'SET_SYNC_BLOCKED_WARNING_ACTIVE':
       return { ...state, isSyncBlockedWarningActive: action.payload };
+    case 'UPDATE_SINGLE_PRODUCT_RULE': {
+      const updatedConfig = action.payload;
+      
+      // Si el producto está oculto, removerlo de la lista visible
+      if (updatedConfig.isHidden) {
+        return { 
+          ...state, 
+          masterProductConfigs: state.masterProductConfigs.filter(c => c.productId !== updatedConfig.productId)
+        };
+      }
+
+      const existingIndex = state.masterProductConfigs.findIndex(c => c.productId === updatedConfig.productId);
+      
+      let newConfigs;
+      if (existingIndex !== -1) {
+        newConfigs = [...state.masterProductConfigs];
+        newConfigs[existingIndex] = updatedConfig;
+      } else {
+        // Si es una nueva configuración y no está oculta, añadirla
+        newConfigs = [...state.masterProductConfigs, updatedConfig];
+      }
+      
+      return { ...state, masterProductConfigs: newConfigs };
+    }
+    case 'UPDATE_CURRENT_SESSION_DATA': {
+      if (state.sessionId === action.payload.dateKey) {
+        // Solo actualizar si esta es la sesión activa
+        return { 
+          ...state, 
+          rawInventoryItemsFromDb: action.payload.inventoryData,
+          // No es necesario actualizar la efectividad aquí, ya que filteredInventoryData la recalculará
+        };
+      }
+      return state;
+    }
     case 'RESET_STATE':
       return {
         ...initialState,
@@ -1519,17 +1556,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .channel('inventory_sessions_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_sessions' }, async (payload) => {
           console.log('[Realtime] Session change received:', payload);
-          if (state.isSupabaseSyncInProgress) {
-            console.log('[Realtime] Sync in progress, deferring session update.');
-            return; // Defer if a full sync is already running
-          }
+          // REMOVED: if (state.isSupabaseSyncInProgress) return; 
 
           try {
             if (payload.eventType === 'DELETE') {
               const dateKey = (payload.old as { dateKey: string }).dateKey;
-              await db.sessions.delete(dateKey);
+              // 1. Write to Dexie (non-blocking)
+              db.sessions.delete(dateKey).catch(e => console.error("Dexie delete error:", e)); 
+              
               showSuccess(`Sesión del ${dateKey} eliminada remotamente.`);
-              await getSessionHistory(); // Re-fetch sessions to update UI
+              await getSessionHistory(); // Must await to update SessionManager UI
+              if (state.sessionId === dateKey) {
+                dispatch({ type: 'RESET_STATE' });
+                dispatch({ type: 'SET_SESSION_ID', payload: null });
+              }
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRecord = payload.new as Database['public']['Tables']['inventory_sessions']['Row'];
               const typedSession: InventorySession = {
@@ -1545,9 +1585,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
               const localSession = await db.sessions.get(typedSession.dateKey);
               if (!localSession || new Date(typedSession.updated_at) > new Date(localSession.updated_at)) {
-                await db.sessions.put(typedSession);
+                // 1. Update UI immediately if it's the active session
+                if (state.sessionId === typedSession.dateKey) {
+                  dispatch({ 
+                    type: 'UPDATE_CURRENT_SESSION_DATA', 
+                    payload: { 
+                      dateKey: typedSession.dateKey, 
+                      inventoryData: typedSession.inventoryData, 
+                      effectiveness: typedSession.effectiveness 
+                    } 
+                  });
+                }
+                
+                // 2. Write to Dexie (non-blocking)
+                db.sessions.put(typedSession).catch(e => console.error("Dexie put error:", e));
+                
                 showSuccess(`Sesión del ${typedSession.dateKey} actualizada remotamente.`);
-                await getSessionHistory(); // Re-fetch sessions to update UI
+                await getSessionHistory(); // Must await to update SessionManager UI
               } else {
                 console.log(`[Realtime] Keeping local session ${typedSession.dateKey} as it's newer or same.`);
               }
@@ -1565,17 +1619,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .channel('product_rules_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'product_rules' }, async (payload) => {
           console.log('[Realtime] Product rule change received:', payload);
-          if (state.isSupabaseSyncInProgress) {
-            console.log('[Realtime] Sync in progress, deferring product rule update.');
-            return; // Defer if a full sync is already running
-          }
+          // REMOVED: if (state.isSupabaseSyncInProgress) return; 
 
           try {
             if (payload.eventType === 'DELETE') {
               const productId = (payload.old as { productId: number }).productId;
-              await db.productRules.delete(productId);
+              // 1. Write to Dexie (non-blocking)
+              db.productRules.delete(productId).catch(e => console.error("Dexie delete error:", e)); 
+              
               showSuccess(`Configuración de producto ${productId} eliminada remotamente.`);
-              await loadMasterProductConfigs(true); // Re-fetch all configs (including hidden) to update UI
+              
+              // 2. Update UI immediately by simulating removal (isHidden: true)
+              dispatch({ 
+                type: 'UPDATE_SINGLE_PRODUCT_RULE', 
+                payload: { productId: productId, isHidden: true } as MasterProductConfig 
+              });
+              
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRecord = payload.new as Database['public']['Tables']['product_rules']['Row'];
               const typedConfig: MasterProductConfig = {
@@ -1590,9 +1649,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
               const localConfig = await db.productRules.get(typedConfig.productId);
               if (!localConfig || new Date(typedConfig.updated_at) > new Date(localConfig.updated_at)) {
-                await db.productRules.put(typedConfig);
+                // 1. Update UI immediately
+                dispatch({ type: 'UPDATE_SINGLE_PRODUCT_RULE', payload: typedConfig });
+                
+                // 2. Write to Dexie (non-blocking)
+                db.productRules.put(typedConfig).catch(e => console.error("Dexie put error:", e));
+                
                 showSuccess(`Configuración de producto ${typedConfig.productName} actualizada remotamente.`);
-                await loadMasterProductConfigs(true); // Re-fetch all configs (including hidden) to update UI
               } else {
                 console.log(`[Realtime] Keeping local product config ${typedConfig.productId} as it's newer or same.`);
               }
@@ -1613,7 +1676,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       sessionsChannel?.unsubscribe();
       productRulesChannel?.unsubscribe();
     };
-  }, [state.isSupabaseSyncInProgress, getSessionHistory, loadMasterProductConfigs, updateSyncStatus]); // Dependencias para asegurar que se re-suscriba si cambia el estado de sync in progress
+  }, [state.isSupabaseSyncInProgress, getSessionHistory, updateSyncStatus, state.sessionId]); // Dependencias para asegurar que se re-suscriba si cambia el estado de sync in progress
 
   useEffect(() => {
     if (state.dbBuffer && state.inventoryType && !state.sessionId) {
