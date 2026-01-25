@@ -4,23 +4,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
+import { InventoryItem, useInventoryContext } from "@/context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // Eliminado import debounce from "lodash.debounce";
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
-  onInventoryChange: (updatedData: InventoryItem[]) => void; // Mantener para compatibilidad, pero la lógica de guardado se mueve
+  onInventoryChange: (updatedData: InventoryItem[]) => void;
 }
 
 export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
   const { 
-    saveCurrentSession, 
-    inventoryType, 
-    sessionId, 
-    rawInventoryItemsFromDb, 
-    setSyncStatus,
-    updateAndDebounceSaveInventoryItem // Usar la nueva función del contexto
+    updateAndDebounceSaveInventoryItem 
   } = useInventoryContext(); 
   const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
 
@@ -29,10 +24,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
-  // Eliminado debouncedSave ya que ahora se gestiona en el contexto
-
   const updateInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
-    // Llamar a la función del contexto para actualizar el estado y disparar el guardado debounced
     updateAndDebounceSaveInventoryItem(index, key, value);
   }, [updateAndDebounceSaveInventoryItem]);
 
@@ -41,15 +33,15 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     updateInventoryItem(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
   }, [updateInventoryItem]);
 
-  const handleIncrementPhysicalQuantity = useCallback((index: number) => {
-    const currentQuantity = editableInventory[index].physicalQuantity;
+  // MODIFICADO: Se pasa currentQuantity directamente para evitar stale closures
+  const handleIncrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
     updateInventoryItem(index, "physicalQuantity", currentQuantity + 1);
-  }, [editableInventory, updateInventoryItem]);
+  }, [updateInventoryItem]);
 
-  const handleDecrementPhysicalQuantity = useCallback((index: number) => {
-    const currentQuantity = editableInventory[index].physicalQuantity;
+  // MODIFICADO: Se pasa currentQuantity directamente para evitar stale closures
+  const handleDecrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
     updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
-  }, [editableInventory, updateInventoryItem]);
+  }, [updateInventoryItem]);
 
   const formatProductName = (productName: string) => {
     return productName;
@@ -57,8 +49,8 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
 
   const summary = useMemo(() => {
     let matches = 0;
-    let positiveDiscrepancies = 0; // physicalQuantity > systemQuantity
-    let negativeDiscrepancies = 0; // physicalQuantity < systemQuantity
+    let positiveDiscrepancies = 0;
+    let negativeDiscrepancies = 0;
     const totalItems = editableInventory.length;
 
     editableInventory.forEach(item => {
@@ -111,7 +103,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleDecrementPhysicalQuantity(index)}
+                        onClick={() => handleDecrementPhysicalQuantity(index, item.physicalQuantity)} // Pasa la cantidad actual
                         disabled={item.physicalQuantity <= 0}
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
@@ -130,7 +122,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleIncrementPhysicalQuantity(index)}
+                        onClick={() => handleIncrementPhysicalQuantity(index, item.physicalQuantity)} // Pasa la cantidad actual
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
                         <Plus className="h-3 w-3" />
