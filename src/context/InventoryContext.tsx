@@ -351,23 +351,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       // Si hay conexión, intentar sincronizar inmediatamente (pero no bloquear)
       if (supabase && state.isOnline) {
-        // Omit updated_at from Supabase payload to let the server manage it
-        const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
+        // Use the Database['public']['Tables']['inventory_sessions']['Insert'] type directly
+        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
           timestamp: sessionToSave.timestamp.toISOString(),
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
-          // updated_at is omitted here
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' })
-          .select('updated_at')
+          .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
-        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
+        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'dateKey' | 'updated_at'> | null;
 
         if (error) {
           console.error("Error saving session to Supabase:", error);
@@ -514,22 +513,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      // Omit updated_at from Supabase payload to let the server manage it
-      const supabaseConfig: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'> = {
+      // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
+      const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
         productId: configToSave.productId,
         productName: configToSave.productName,
         rules: configToSave.rules,
         supplier: configToSave.supplier,
         isHidden: configToSave.isHidden || false,
-        // updated_at is omitted here
       };
       const { data, error } = await supabase
         .from('product_rules')
         .upsert(supabaseConfig, { onConflict: 'productId' })
-        .select('updated_at')
+        .select('productId, updated_at') // Select productId for consistency
         .single();
 
-      const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
+      const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
 
       if (error) {
         console.error("Error saving master product config to Supabase:", error);
@@ -582,15 +580,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      // Omit updated_at from Supabase payload to let the server manage it
+      // Explicitly cast the update payload
       const { data, error } = await supabase
         .from('product_rules')
-        .update({ isHidden: newIsHidden /* updated_at is omitted here */ })
+        .update({ isHidden: newIsHidden } as Database['public']['Tables']['product_rules']['Update'])
         .eq('productId', numericProductId)
-        .select('updated_at')
+        .select('productId, updated_at') // Select productId for consistency
         .single();
 
-      const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
+      const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
 
       if (error) {
         console.error("Error toggling master product config from Supabase:", error);
@@ -816,26 +814,26 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
         if (supabase && state.isOnline && pendingForSupabase.length > 0) {
-          // Omit updated_at from Supabase payload to let the server manage it
-          const supabaseConfigs: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'>[] = pendingForSupabase.map(c => ({
+          // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
+          const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = pendingForSupabase.map(c => ({
             productId: c.productId,
             productName: c.productName,
             rules: c.rules,
             supplier: c.supplier,
             isHidden: c.isHidden || false,
-            // updated_at is omitted here
           }));
-          const { data, error: supabaseUpsertError } = await supabase
+          const { data: fetchedData, error: supabaseUpsertError } = await supabase
             .from('product_rules')
             .upsert(supabaseConfigs, { onConflict: 'productId' })
-            .select('updated_at');
+            .select('productId, updated_at'); // Select productId for finding
 
           if (supabaseUpsertError) {
             console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
             showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-          } else if (data && data.length > 0) {
+          } else if (fetchedData && fetchedData.length > 0) {
+            const fetchedConfigsMap = new Map(fetchedData.map(item => [item.productId, item])); // Use a map for efficient lookup
             for (const config of pendingForSupabase) {
-              const fetchedConfig = data.find(item => item.productId === config.productId);
+              const fetchedConfig = fetchedConfigsMap.get(config.productId); // Use map for lookup
               if (fetchedConfig) {
                 await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
               } else {
@@ -855,7 +853,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             }
             showSuccess(successMessage.trim());
           } else {
-            // Fallback if data is null or empty but no error
+            // Fallback if fetchedData is null or empty but no error
             for (const config of pendingForSupabase) {
               await db.productRules.update(config.productId, { sync_pending: false });
             }
@@ -908,6 +906,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           inventoryData: finalProcessedInventory,
           timestamp: new Date(),
           effectiveness,
+          ordersBySupplier: undefined, // Initialize as undefined
           sync_pending: true,
           updated_at: nowIso, // Use local timestamp for Dexie
         };
@@ -915,23 +914,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
 
         if (supabase && state.isOnline) {
-          // Omit updated_at from Supabase payload to let the server manage it
-          const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
+          // Use the Database['public']['Tables']['inventory_sessions']['Insert'] type directly
+          const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
             timestamp: newSession.timestamp.toISOString(),
             effectiveness: newSession.effectiveness,
             ordersBySupplier: newSession.ordersBySupplier,
-            // updated_at is omitted here
           };
           const { data, error } = await supabase
             .from('inventory_sessions')
             .upsert(supabaseSession, { onConflict: 'dateKey' })
-            .select('updated_at')
+            .select('dateKey, updated_at') // Select dateKey for consistency
             .single();
 
-          const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
+          const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'dateKey' | 'updated_at'> | null;
 
           if (error) {
             console.error("Error saving new session to Supabase:", error);
@@ -1054,26 +1052,26 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
       if (supabase && state.isOnline && pendingForSupabase.length > 0) {
-        // Omit updated_at from Supabase payload to let the server manage it
-        const supabaseConfigs: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'>[] = pendingForSupabase.map(c => ({
+        // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
+        const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = pendingForSupabase.map(c => ({
           productId: c.productId,
           productName: c.productName,
           rules: c.rules,
           supplier: c.supplier,
           isHidden: c.isHidden || false,
-          // updated_at is omitted here
         }));
-        const { data, error: supabaseUpsertError } = await supabase
+        const { data: fetchedData, error: supabaseUpsertError } = await supabase
           .from('product_rules')
           .upsert(supabaseConfigs, { onConflict: 'productId' })
-          .select('updated_at');
+          .select('productId, updated_at'); // Select productId for finding
 
         if (supabaseUpsertError) {
           console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-        } else if (data && data.length > 0) {
+        } else if (fetchedData && fetchedData.length > 0) {
+          const fetchedConfigsMap = new Map(fetchedData.map(item => [item.productId, item])); // Use a map for efficient lookup
           for (const config of pendingForSupabase) {
-            const fetchedConfig = data.find(item => item.productId === config.productId);
+            const fetchedConfig = fetchedConfigsMap.get(config.productId); // Use map for lookup
             if (fetchedConfig) {
               await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
             } else {
@@ -1093,7 +1091,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           }
           showSuccess(successMessage.trim());
         } else {
-          // Fallback if data is null or empty but no error
+          // Fallback if fetchedData is null or empty but no error
           for (const config of pendingForSupabase) {
             await db.productRules.update(config.productId, { sync_pending: false });
           }
@@ -1141,23 +1139,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingSessions) {
         console.log(`Retrying session: ${session.dateKey}`); // Diagnóstico: Reintentando sesión específica
-        // Omit updated_at from Supabase payload to let the server manage it
-        const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
+        // Use the Database['public']['Tables']['inventory_sessions']['Insert'] type directly
+        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
           timestamp: session.timestamp.toISOString(),
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
-          // updated_at is omitted here
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' })
-          .select('updated_at')
+          .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
-        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
+        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'dateKey' | 'updated_at'> | null;
 
         if (error) {
           console.error(`Failed to retry session ${session.dateKey}:`, error);
@@ -1176,22 +1173,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingProductRules) {
         console.log(`Retrying product config: ${config.productName} (${config.productId})`); // Diagnóstico: Reintentando configuración de producto
-        // Omit updated_at from Supabase payload to let the server manage it
-        const supabaseConfig: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'> = {
+        // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
+        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
           productId: config.productId,
           productName: config.productName,
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
-          // updated_at is omitted here
         };
         const { data, error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('updated_at')
+          .select('productId, updated_at') // Select productId for consistency
           .single();
 
-        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
+        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
 
         if (error) {
           console.error(`Failed to retry product config ${config.productId}:`, error);
@@ -1236,23 +1232,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log("[Sync] Uploading local pending sessions..."); // Diagnóstico: Subiendo sesiones pendientes
       const pendingLocalSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingLocalSessions) {
-        // Omit updated_at from Supabase payload to let the server manage it
-        const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
+        // Use the Database['public']['Tables']['inventory_sessions']['Insert'] type directly
+        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
           timestamp: session.timestamp.toISOString(),
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
-          // updated_at is omitted here
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' })
-          .select('updated_at')
+          .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
-        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
+        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'dateKey' | 'updated_at'> | null;
 
         if (error) {
           console.error(`[Sync] Error uploading pending session ${session.dateKey} to Supabase:`, error);
@@ -1268,22 +1263,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log("[Sync] Uploading local pending product configs..."); // Diagnóstico: Subiendo configuraciones de producto pendientes
       const pendingLocalProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingLocalProductRules) {
-        // Omit updated_at from Supabase payload to let the server manage it
-        const supabaseConfig: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'> = {
+        // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
+        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
           productId: config.productId,
           productName: config.productName,
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
-          // updated_at is omitted here
         };
         const { data, error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('updated_at')
+          .select('productId, updated_at') // Select productId for consistency
           .single();
 
-        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
+        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
 
         if (error) {
           console.error(`[Sync] Error uploading pending product config ${config.productId} to Supabase:`, error);

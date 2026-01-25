@@ -67,11 +67,11 @@ const SettingsPage = () => {
   // Agrupar productos por proveedor (usando el proveedor de la configuración maestra)
   const productsGroupedBySupplier = useMemo(() => {
     const grouped: { [supplier: string]: MasterProductConfig[] } = {};
-    Object.values(editableProductConfigs).forEach((config) => {
+    Object.values(editableProductConfigs).forEach((config: MasterProductConfig) => { // Explicitly type config
       if (!grouped[config.supplier]) {
         grouped[config.supplier] = [];
       }
-      grouped[config.supplier].push(config); // Corregido: usar config.supplier
+      grouped[config.supplier].push(config);
     });
     // Ordenar productos alfabéticamente dentro de cada grupo
     for (const supplier in grouped) {
