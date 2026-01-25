@@ -26,6 +26,7 @@ const InventoryDashboard = () => {
     isSupabaseSyncInProgress,
     flushPendingSessionSave,
     updateSyncStatus,
+    processInventoryData,
   } = useInventoryContext();
   
   const [showFileUploader, setShowFileUploader] = useState(false);
@@ -52,6 +53,21 @@ const InventoryDashboard = () => {
     };
     checkHistory();
   }, [getSessionHistory, dbBuffer, sessionId, loading]); // Dependencia 'loading' para reaccionar a la sincronización inicial
+
+  // 2. Disparar processInventoryData cuando dbBuffer e inventoryType están presentes
+  useEffect(() => {
+    const processData = async () => {
+      if (dbBuffer && inventoryType && !sessionId) {
+        console.log("InventoryDashboard useEffect: processData triggered with type:", inventoryType);
+        try {
+          await processInventoryData(dbBuffer, inventoryType);
+        } catch (e) {
+          console.error("Error processing inventory data:", e);
+        }
+      }
+    };
+    processData();
+  }, [dbBuffer, inventoryType, sessionId, processInventoryData]);
 
   const handleFileLoaded = (buffer: Uint8Array) => {
     console.log("InventoryDashboard: handleFileLoaded called.");
