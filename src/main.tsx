@@ -1,1 +1,5 @@
-import { InventoryProvider } from "./context/InventoryContext";
+import { createRoot } from "react-dom/client";
+import App from "./App.tsx";
+import "./globals.css";
+
+createRoot(document.getElementById("root")!).render(<App />);
