@@ -6,7 +6,7 @@ import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InventoryItem, useInventoryContext } from "@/context/InventoryContext"; // Importar useInventoryContext
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import debounce from "lodash.debounce"; // Importar debounce
+// Eliminado import debounce from "lodash.debounce";
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
@@ -14,7 +14,14 @@ interface InventoryTableProps {
 }
 
 export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, rawInventoryItemsFromDb, setSyncStatus } = useInventoryContext(); // Obtener del contexto
+  const { 
+    saveCurrentSession, 
+    inventoryType, 
+    sessionId, 
+    rawInventoryItemsFromDb, 
+    setSyncStatus,
+    updateAndDebounceSaveInventoryItem // Usar la nueva función del contexto
+  } = useInventoryContext(); 
   const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
 
   useEffect(() => {
@@ -22,33 +29,12 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
-  // Debounce para guardar la sesión automáticamente
-  const debouncedSave = useMemo(
-    () =>
-      debounce((data: InventoryItem[]) => {
-        if (inventoryType && sessionId) { // Solo guardar si hay un tipo de inventario y una sesión activa
-          saveCurrentSession(data, inventoryType, new Date());
-        }
-      }, 1000), // Guardar 1 segundo después de la última edición
-    [saveCurrentSession, inventoryType, sessionId]
-  );
+  // Eliminado debouncedSave ya que ahora se gestiona en el contexto
 
   const updateInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
-    setSyncStatus('pending'); // Establecer estado de sincronización a 'pending' inmediatamente
-    setEditableInventory(prevData => {
-      const updatedData = [...prevData];
-      if (key === "physicalQuantity") {
-        updatedData[index][key] = Math.max(0, value as number);
-        updatedData[index].hasBeenEdited = true;
-      } else if (key === "averageSales") {
-        updatedData[index][key] = value as number;
-      } else if (key === "hasBeenEdited") {
-        updatedData[index][key] = value as boolean;
-      }
-      debouncedSave(updatedData); // Llamar al guardado debounced con la lista actualizada
-      return updatedData;
-    });
-  }, [debouncedSave, setSyncStatus]);
+    // Llamar a la función del contexto para actualizar el estado y disparar el guardado debounced
+    updateAndDebounceSaveInventoryItem(index, key, value);
+  }, [updateAndDebounceSaveInventoryItem]);
 
   const handlePhysicalQuantityChange = useCallback((index: number, value: string) => {
     const newQuantity = parseInt(value, 10);

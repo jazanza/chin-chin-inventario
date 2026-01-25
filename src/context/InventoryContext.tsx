@@ -1,29 +1,27 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global para la gestión de inventarios, sesiones y sincronización con Supabase.
- * @version v1.4.7
- * @date 2024-07-25
+ * @version v1.4.8-Final
+ * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.4.7:
- * Esta versión se enfoca en refinar la lógica de resolución de conflictos en tiempo real y la gestión de timestamps
- * para asegurar que la "última escritura" prevalezca de manera más fiable y que los cambios remotos se apliquen
- * correctamente, evitando el descarte de actualizaciones legítimas.
+ * PROPÓSITO DE LA VERSIÓN v1.4.8-Final:
+ * Esta versión se enfoca en mejorar la persistencia de datos ante el cierre de la aplicación
+ * y en refinar la experiencia del usuario con el botón de sincronización manual.
  *
  * CAMBIOS CLAVE EN ESTA VERSIÓN:
- * - **Lógica de Conflicto Relajada en Realtime:** En los listeners de Realtime, la comparación de `updated_at`
- *   ahora permite que la versión remota gane si su timestamp es `mayor o igual` al local, resolviendo el problema
- *   de "Keeping local session as it's newer or same" para cambios legítimos.
- * - **Gestión de `updated_at` por Supabase:** Se ha modificado el código para que el campo `updated_at`
- *   sea omitido en los payloads de `upsert` enviados a Supabase. Esto delega la responsabilidad de establecer
- *   y actualizar este timestamp al servidor de Supabase, garantizando que siempre sea el tiempo real del servidor
- *   y eliminando problemas de desincronización de relojes entre clientes.
- * - **Estabilización de Realtime `useEffect`:** La lógica de suscripción a Realtime ha sido refactorizada
- *   para asegurar que el `useEffect` solo se ejecute una vez al montar el componente, evitando re-suscripciones
- *   innecesarias y el cierre/apertura constante de canales.
- * - **Persistencia Atómica:** Se ha confirmado y reforzado que los datos se guardan en Dexie (localmente)
- *   antes de intentar la sincronización con Supabase, garantizando la persistencia incluso si la conexión falla.
- * - **Documentación Actualizada:** Se ha añadido una nota explícita en la documentación sobre la necesidad
- *   de configurar `DEFAULT now()` y `ON UPDATE now()` para la columna `updated_at` en las tablas de Supabase.
+ * - **Guardado Debounced Centralizado:** La lógica de `debouncedSave` se ha movido de `InventoryTable`
+ *   al `InventoryContext`. Esto permite una gestión centralizada del guardado de la sesión activa.
+ * - **Listener `beforeunload`:** Se ha añadido un listener para el evento `beforeunload` en el contexto.
+ *   Este listener llama a `flushPendingSessionSave()` para forzar la ejecución inmediata de cualquier
+ *   guardado debounced pendiente antes de que la pestaña o ventana se cierre, actuando como un "seguro de vida".
+ * - **Botón "Guardar y Sincronizar Ahora" Mejorado:**
+ *   - Ahora, al hacer clic, primero se llama a `flushPendingSessionSave()` para asegurar que los últimos
+ *     cambios de la UI se persistan en Dexie inmediatamente.
+ *   - Luego, se dispara `syncFromSupabase` para realizar una sincronización bidireccional completa,
+ *     subiendo todos los cambios pendientes y descargando las últimas actualizaciones.
+ * - **Refactorización de `updateInventoryItem`:** La función `updateInventoryItem` en `InventoryTable`
+ *   ahora utiliza la nueva función `updateAndDebounceSaveInventoryItem` del contexto para gestionar
+ *   la actualización del estado y el guardado debounced.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -233,6 +231,8 @@ interface InventoryContextType extends InventoryState {
   handleVisibilityChangeSync: () => Promise<void>;
   resetAllProductConfigs: (buffer: Uint8Array) => Promise<void>;
   clearLocalDatabase: () => Promise<void>;
+  updateAndDebounceSaveInventoryItem: (index: number, key: keyof InventoryItem, value: number | boolean) => void; // Nueva función
+  flushPendingSessionSave: () => void; // Nueva función
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -251,6 +251,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const lastSyncTimestampRef = useRef(0);
   const channelsRef = useRef<{ sessions: RealtimeChannel | null; productRules: RealtimeChannel | null }>({ sessions: null, productRules: null });
   const syncLockRef = useRef(false); // Control de concurrencia
+
+  // Ref para la función debounced de guardado de sesión
+  const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[]) => void) & { flush: () => void } | null>(null);
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -1956,6 +1959,70 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     updateSyncStatus();
   }, [updateSyncStatus]);
 
+  // --- NEW: Debounced Save for Current Session ---
+  // Inicializar la función debounced una vez
+  useEffect(() => {
+    debouncedSaveCurrentSessionRef.current = debounce(async (data: InventoryItem[]) => {
+      if (state.sessionId && state.inventoryType) {
+        console.log('[Debounced Save] Executing debounced save for current session.');
+        await saveCurrentSession(data, state.inventoryType, new Date());
+      }
+    }, 1000); // Guardar 1 segundo después de la última edición
+    
+    // Cleanup para el debounce
+    return () => {
+      debouncedSaveCurrentSessionRef.current?.cancel();
+    };
+  }, [state.sessionId, state.inventoryType, saveCurrentSession]);
+
+  // Función para actualizar el estado y disparar el guardado debounced
+  const updateAndDebounceSaveInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
+    setSyncStatus('pending'); // Establecer estado de sincronización a 'pending' inmediatamente
+    dispatch(prevState => {
+      const updatedData = [...prevState.rawInventoryItemsFromDb];
+      if (key === "physicalQuantity") {
+        updatedData[index][key] = Math.max(0, value as number);
+        updatedData[index].hasBeenEdited = true;
+      } else if (key === "averageSales") {
+        updatedData[index][key] = value as number;
+      } else if (key === "hasBeenEdited") {
+        updatedData[index][key] = value as boolean;
+      }
+      
+      // Disparar el guardado debounced con los datos actualizados
+      if (debouncedSaveCurrentSessionRef.current && prevState.sessionId && prevState.inventoryType) {
+        debouncedSaveCurrentSessionRef.current(updatedData);
+      }
+      
+      return { ...prevState, rawInventoryItemsFromDb: updatedData };
+    });
+  }, [setSyncStatus]);
+
+  // Función para forzar la ejecución del guardado debounced
+  const flushPendingSessionSave = useCallback(() => {
+    if (debouncedSaveCurrentSessionRef.current) {
+      debouncedSaveCurrentSessionRef.current.flush();
+      console.log('[Flush Save] Forced execution of pending debounced save.');
+    }
+  }, []);
+
+  // --- NEW: beforeunload listener for emergency save ---
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (state.sessionId && state.inventoryType && state.rawInventoryItemsFromDb.length > 0) {
+        console.log('[BeforeUnload] Flushing pending session save...');
+        flushPendingSessionSave();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [state.sessionId, state.inventoryType, state.rawInventoryItemsFromDb, flushPendingSessionSave]);
+
+
   const value = useMemo(() => ({
     ...state,
     filteredInventoryData,
@@ -1978,6 +2045,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     handleVisibilityChangeSync,
     resetAllProductConfigs,
     clearLocalDatabase,
+    updateAndDebounceSaveInventoryItem, // Exponer la nueva función
+    flushPendingSessionSave, // Exponer la nueva función
   }), [
     state,
     filteredInventoryData,
@@ -2000,6 +2069,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     handleVisibilityChangeSync,
     resetAllProductConfigs,
     clearLocalDatabase,
+    updateAndDebounceSaveInventoryItem,
+    flushPendingSessionSave,
   ]);
 
   return (

@@ -27,6 +27,8 @@ const InventoryDashboard = () => {
     resetAllProductConfigs, // Importar para 'Reiniciar toda la configuración'
     isOnline, // Para deshabilitar el botón si no hay conexión
     isSupabaseSyncInProgress, // Para deshabilitar el botón si ya está en curso
+    flushPendingSessionSave, // Importar la nueva función para forzar el guardado
+    updateSyncStatus, // Importar para actualizar el estado de sincronización
   } = useInventoryContext();
   
   const [hasSessionHistory, setHasSessionHistory] = useState(false);
@@ -102,7 +104,14 @@ const InventoryDashboard = () => {
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
   const handleManualSync = async () => {
+    // 1. Forzar el guardado de cualquier cambio pendiente en la sesión actual
+    flushPendingSessionSave();
+    // Dar un pequeño respiro para que Dexie procese el flush (aunque es síncrono, es buena práctica)
+    await new Promise(resolve => setTimeout(resolve, 50)); 
+    
+    // 2. Luego, iniciar la sincronización total con Supabase
     await syncFromSupabase("UserManualSave", true);
+    updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
   };
 
   // Eliminados handleUpdateOnlyNew y handleResetAndReload ya que la lógica se mueve a SettingsPage
