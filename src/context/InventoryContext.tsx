@@ -18,7 +18,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase';
-import { RealtimeChannel, REALTIME_CHANNEL_STATES } from '@supabase/supabase-js';
+import { RealtimeChannel, REALTIME_CHANNEL_STATES, RealtimeChannelState } from '@supabase/supabase-js'; // Importar RealtimeChannelState
 
 // Interfaces
 export interface InventoryItemFromDB {
@@ -62,7 +62,7 @@ interface InventoryState {
   isOnline: boolean;
   isSupabaseSyncInProgress: boolean;
   isSyncBlockedWarningActive: boolean;
-  realtimeStatus: REALTIME_CHANNEL_STATES;
+  realtimeStatus: RealtimeChannelState; // Corregido el tipo aquí
 }
 
 const initialState: InventoryState = {
@@ -92,7 +92,7 @@ type InventoryAction =
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean }
   | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean }
-  | { type: 'SET_REALTIME_STATUS'; payload: REALTIME_CHANNEL_STATES }
+  | { type: 'SET_REALTIME_STATUS'; payload: RealtimeChannelState } // Corregido el tipo aquí
   | { type: 'UPDATE_SINGLE_PRODUCT_RULE'; payload: MasterProductConfig }
   | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } }
   | { type: 'DELETE_SESSION'; payload: string }
@@ -1611,7 +1611,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de sesión remota.');
           }
         })
-        .subscribe((status) => {
+        .subscribe((status: RealtimeChannelState) => { // Corregido el tipo aquí
           console.log(`[Realtime] Sessions channel status: ${status}`);
           dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
 
@@ -1676,7 +1676,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de configuración de producto remota.');
           }
         })
-        .subscribe((status) => {
+        .subscribe((status: RealtimeChannelState) => { // Corregido el tipo aquí
           console.log(`[Realtime] Product rules channel status: ${status}`);
           dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
 
