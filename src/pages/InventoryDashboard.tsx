@@ -5,8 +5,9 @@ import { InventoryTable } from "@/components/InventoryTable";
 import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
 import { SessionManager } from "@/components/SessionManager";
 import { Button } from "@/components/ui/button";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, RefreshCcw } from "lucide-react"; // Importar RefreshCcw
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils"; // Importar cn para estilos condicionales
 
 const InventoryDashboard = () => {
   const { 
@@ -24,6 +25,8 @@ const InventoryDashboard = () => {
     syncFromSupabase,
     processDbForMasterConfigs, // Importar para 'Actualizar solo nuevos'
     resetAllProductConfigs, // Importar para 'Reiniciar toda la configuración'
+    isOnline, // Para deshabilitar el botón si no hay conexión
+    isSupabaseSyncInProgress, // Para deshabilitar el botón si ya está en curso
   } = useInventoryContext();
   
   const [hasSessionHistory, setHasSessionHistory] = useState(false);
@@ -98,6 +101,10 @@ const InventoryDashboard = () => {
     // Limpiado dbBufferForConfigOptions y showConfigOptions
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
+  const handleManualSync = async () => {
+    await syncFromSupabase("UserManualSave", true);
+  };
+
   // Eliminados handleUpdateOnlyNew y handleResetAndReload ya que la lógica se mueve a SettingsPage
 
 
@@ -115,13 +122,23 @@ const InventoryDashboard = () => {
   if (sessionId && inventoryType && filteredInventoryData.length > 0) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col p-4">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">
             Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
           </h1>
-          <Button onClick={handleStartNewSession} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base">
-            <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleManualSync} 
+              disabled={loading || !isOnline || isSupabaseSyncInProgress} 
+              className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base"
+            >
+              <RefreshCcw className={cn("mr-2 h-4 w-4", isSupabaseSyncInProgress && "animate-spin")} />
+              Guardar y Sincronizar Ahora
+            </Button>
+            <Button onClick={handleStartNewSession} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base">
+              <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión
+            </Button>
+          </div>
         </div>
         {error ? (
           <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
