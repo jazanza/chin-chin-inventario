@@ -1,12 +1,11 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global simplificado para la gestión de inventarios, sesiones y sincronización con Supabase.
- * @version v1.5.2
+ * @version v1.5.3
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.5.2:
- * Eliminar Realtime, corregir errores de TypeErrors por funciones faltantes,
- * y asegurar la carga inicial silenciosa de configuraciones y sesiones desde Supabase.
+ * PROPÓSITO DE LA VERSIÓN v1.5.3:
+ * Corregir la función updateAndDebounceSaveInventoryItem para que actualice el estado local y dispare el guardado debounced correctamente.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -1732,11 +1731,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // Función para actualizar el estado y disparar el guardado debounced
   const updateAndDebounceSaveInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
     setSyncStatus('pending'); // Establecer estado de sincronización a 'pending' inmediatamente
-    
-    let updatedData: InventoryItem[] = [];
-
     dispatch(prevState => {
-      updatedData = [...prevState.rawInventoryItemsFromDb];
+      const updatedData = [...prevState.rawInventoryItemsFromDb];
       if (updatedData[index]) {
         // Solo actualizamos physicalQuantity y marcamos como editado
         if (key === "physicalQuantity") {
@@ -1748,7 +1744,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           updatedData[index].hasBeenEdited = value as boolean;
         }
       }
-      
+
       // Disparar el guardado debounced con la data actualizada
       if (debouncedSaveCurrentSessionRef.current && prevState.sessionId && prevState.inventoryType) {
         // Llamamos al debounced con la copia de la data que acabamos de modificar
