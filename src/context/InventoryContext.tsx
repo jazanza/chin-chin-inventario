@@ -1,9 +1,9 @@
 /**
- * PROPOSITO: InventoryContext v1.4.6 - Reconstrucción completa
+ * PROPOSITO: InventoryContext v1.4.6 - Reconstrucción completa y corrección de tipado final
  * FECHA: 2024-05-23
  * CAMBIOS:
  * - Reconstrucción completa del archivo para asegurar integridad.
- * - Todas las importaciones necesarias, incluyendo RealtimeChannel y RealtimeChannelState.
+ * - Todas las importaciones necesarias, incluyendo RealtimeChannel.
  * - Todas las interfaces (InventoryItemFromDB, InventoryItem, OrderItem, InventorySession, MasterProductConfig, ProductRule, SupplierConfig).
  * - Configuración completa del reducer y estado inicial.
  * - Implementación completa de InventoryProvider y useInventoryContext.
@@ -13,6 +13,7 @@
  * - Manejo robusto de eventos DELETE en Realtime, verificando la existencia de dateKey/productId.
  * - Lógica de sincronización bidireccional (syncFromSupabase) con debounce y bloqueo de concurrencia.
  * - Manejo de estado de red y advertencias de sincronización pendiente.
+ * - **CORRECCIÓN FINAL DE TIPADO**: Eliminado RealtimeChannelState de las importaciones y reemplazado por la unión de literales de cadena en el tipado de 'status' y en la interfaz de estado.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -24,7 +25,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase';
-import { RealtimeChannel, REALTIME_CHANNEL_STATES, RealtimeChannelState } from '@supabase/supabase-js';
+import { RealtimeChannel, REALTIME_CHANNEL_STATES } from '@supabase/supabase-js'; // Eliminado RealtimeChannelState de aquí
 
 // Interfaces
 export interface InventoryItemFromDB {
@@ -56,6 +57,7 @@ export interface OrderItem {
 
 // --- Reducer Setup ---
 type SyncStatus = 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
+type RealtimeChannelStatusLiteral = 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR' | 'disconnected'; // Nuevo tipo literal
 
 interface InventoryState {
   dbBuffer: Uint8Array | null;
@@ -69,7 +71,7 @@ interface InventoryState {
   isOnline: boolean;
   isSupabaseSyncInProgress: boolean;
   isSyncBlockedWarningActive: boolean;
-  realtimeStatus: RealtimeChannelState;
+  realtimeStatus: RealtimeChannelStatusLiteral; // Usando el nuevo tipo literal
 }
 
 const initialState: InventoryState = {
@@ -99,7 +101,7 @@ type InventoryAction =
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean }
   | { type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE'; payload: boolean }
-  | { type: 'SET_REALTIME_STATUS'; payload: RealtimeChannelState }
+  | { type: 'SET_REALTIME_STATUS'; payload: RealtimeChannelStatusLiteral } // Usando el nuevo tipo literal
   | { type: 'UPDATE_SINGLE_PRODUCT_RULE'; payload: MasterProductConfig }
   | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } }
   | { type: 'DELETE_SESSION'; payload: string }
@@ -1187,7 +1189,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     if (syncBlockedWarningTimeoutRef.current) {
       clearTimeout(syncBlockedWarningTimeoutRef.current);
-      syncBlockedWarningTimeoutRef.current = null;
+      syncBlockedWarningTimeoutRef = null;
     }
     if (state.isSyncBlockedWarningActive) {
       dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: false });
@@ -1618,7 +1620,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de sesión remota.');
           }
         })
-        .subscribe((status: RealtimeChannelState) => {
+        .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => { // <-- Tipo corregido aquí
           console.log(`[Realtime] Sessions channel status: ${status}`);
           dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
 
@@ -1683,7 +1685,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de configuración de producto remota.');
           }
         })
-        .subscribe((status: RealtimeChannelState) => {
+        .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => { // <-- Tipo corregido aquí
           console.log(`[Realtime] Product rules channel status: ${status}`);
           dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
 
