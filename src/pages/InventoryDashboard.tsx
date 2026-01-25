@@ -31,17 +31,22 @@ const InventoryDashboard = () => {
   const [showFileUploader, setShowFileUploader] = useState(false);
   const [sessionHistory, setSessionHistory] = useState<any[] | null>(null);
 
+  console.log("InventoryDashboard Render:", { loading, sessionId, dbBuffer: !!dbBuffer, inventoryType, showFileUploader, sessionHistory: sessionHistory?.length });
+
   // 1. Cargar historial de sesiones al inicio y cuando el estado de carga cambia
   useEffect(() => {
     const checkHistory = async () => {
+      console.log("InventoryDashboard useEffect: checkHistory triggered.");
       const history = await getSessionHistory();
       setSessionHistory(history);
       
       // Si no hay sesión activa ni dbBuffer, y hay historial, mostramos el SessionManager por defecto.
       if (history.length > 0 && !dbBuffer && !sessionId) {
+        console.log("InventoryDashboard: Showing SessionManager by default.");
         setShowFileUploader(false);
       } else if (history.length === 0 && !dbBuffer && !sessionId) {
         // Si no hay historial, forzamos el FileUploader
+        console.log("InventoryDashboard: No history, forcing FileUploader.");
         setShowFileUploader(true);
       }
     };
@@ -49,16 +54,19 @@ const InventoryDashboard = () => {
   }, [getSessionHistory, dbBuffer, sessionId, loading]); // Dependencia 'loading' para reaccionar a la sincronización inicial
 
   const handleFileLoaded = (buffer: Uint8Array) => {
+    console.log("InventoryDashboard: handleFileLoaded called.");
     setDbBuffer(buffer); // Guardar el buffer en el contexto para el inventario
     setInventoryType(null); // Reset inventory type selection
     setShowFileUploader(false); // Ocultar FileUploader una vez que el archivo está cargado
   };
 
   const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
+    console.log("InventoryDashboard: handleInventoryTypeSelect called with type:", type);
     setInventoryType(type);
   };
 
   const handleStartNewSession = useCallback(() => {
+    console.log("InventoryDashboard: handleStartNewSession called.");
     resetInventoryState(); // Resetear el estado del inventario
     setDbBuffer(null); // Forzar la carga de un nuevo archivo DB
     setInventoryType(null); // Asegurarse de que el tipo de inventario se seleccione de nuevo
@@ -66,6 +74,7 @@ const InventoryDashboard = () => {
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
   const handleManualSync = async () => {
+    console.log("InventoryDashboard: handleManualSync called.");
     flushPendingSessionSave();
     await new Promise(resolve => setTimeout(resolve, 50)); 
     await syncToSupabase();
@@ -74,6 +83,7 @@ const InventoryDashboard = () => {
 
   // Lógica de renderizado condicional
   if (loading && !sessionId) {
+    console.log("InventoryDashboard: Rendering 'Cargando o procesando datos...' (loading && !sessionId)");
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <p className="text-base sm:text-lg text-center text-gray-700">Cargando o procesando datos...</p>
@@ -84,6 +94,7 @@ const InventoryDashboard = () => {
 
   // 1. Si una sesión está completamente cargada (nueva o del historial), mostrar la InventoryTable
   if (sessionId && inventoryType && filteredInventoryData.length > 0) {
+    console.log("InventoryDashboard: Rendering InventoryTable (sessionId && inventoryType && filteredInventoryData)");
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col p-4">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
@@ -115,11 +126,13 @@ const InventoryDashboard = () => {
 
   // 2. Si no hay dbBuffer cargado, no se ha forzado el FileUploader, y hay historial, mostrar SessionManager
   if (!dbBuffer && !showFileUploader && sessionHistory && sessionHistory.length > 0) {
+    console.log("InventoryDashboard: Rendering SessionManager (!dbBuffer && !showFileUploader && sessionHistory)");
     return <SessionManager onStartNewSession={handleStartNewSession} />;
   }
 
   // 3. Si no hay dbBuffer cargado, o se ha forzado el FileUploader (ej. se hizo clic en "Nueva Sesión")
   if (!dbBuffer || showFileUploader) {
+    console.log("InventoryDashboard: Rendering FileUploader (!dbBuffer || showFileUploader)");
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <div className="text-center">
@@ -142,6 +155,7 @@ const InventoryDashboard = () => {
 
   // 4. Si dbBuffer está cargado, pero el tipo de inventario aún no ha sido seleccionado
   if (dbBuffer && !inventoryType) {
+    console.log("InventoryDashboard: Rendering InventoryTypeSelector (dbBuffer && !inventoryType)");
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <InventoryTypeSelector onSelect={handleInventoryTypeSelect} loading={loading} />
@@ -151,6 +165,7 @@ const InventoryDashboard = () => {
   }
 
   // Fallback
+  console.log("InventoryDashboard: Rendering Fallback 'Cargando base de datos. Espera unos segundos.'");
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
       <p className="text-base sm:text-lg text-center text-gray-700">Cargando base de datos. Espera unos segundos.</p>

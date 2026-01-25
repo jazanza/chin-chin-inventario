@@ -103,6 +103,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
     case 'SET_MASTER_PRODUCT_CONFIGS':
       return { ...state, masterProductConfigs: action.payload };
     case 'SET_LOADING':
+      console.log(`InventoryContext: SET_LOADING to ${action.payload}`);
       return { ...state, loading: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload, loading: false };
@@ -215,6 +216,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // Ref para la función debounced de guardado de sesión
   const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[]) => void) & { flush: () => void; cancel: () => void } | null>(null);
+
+  console.log("InventoryContext Render:", { loading: state.loading, sessionId: state.sessionId, dbBuffer: !!state.dbBuffer, inventoryType: state.inventoryType });
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -712,244 +715,265 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   // --- DB Processing Functions ---
   const processInventoryData = useCallback(
     async (buffer: Uint8Array, type: "weekly" | "monthly") => {
+      console.log(`InventoryContext: processInventoryData called for ${type} inventory.`);
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
       console.log(`Starting database processing for ${type} inventory.`);
 
-      try {
-        await initDb();
-        const dbInstance = loadDb(buffer);
-        let inventoryQuery: string;
+      try { // Outer try block to catch any unexpected errors
+        try { // Inner try block for main logic
+          console.log("InventoryContext: processInventoryData - Initializing DB.");
+          await initDb();
+          const dbInstance = loadDb(buffer);
+          let inventoryQuery: string;
 
-        if (type === "weekly") {
-          inventoryQuery = WEEKLY_INVENTORY_QUERY;
-        } else {
-          inventoryQuery = MONTHLY_INVENTORY_QUERY;
-        }
-
-        const rawInventoryItems: InventoryItemFromDB[] = queryData(
-          dbInstance,
-          inventoryQuery
-        );
-        dbInstance.close();
-
-        if (rawInventoryItems.length === 0) {
-          console.warn("No inventory items found in the database for processing.");
-          dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: [] });
-          dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
-          dispatch({ type: 'SET_SESSION_ID', payload: format(new Date(), 'yyyy-MM-dd') });
-          showError('No se encontraron productos de inventario en la base de datos.');
-          return;
-        }
-
-        if (!db.isOpen()) await db.open();
-        const allMasterProductConfigs = await db.productRules.toArray();
-        const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
-
-        const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
-        const configsToUpsertToSupabase: MasterProductConfig[] = [];
-        let newProductsCount = 0;
-        let updatedProductNamesCount = 0;
-        const nowIso = new Date().toISOString(); // Local timestamp for Dexie
-
-        rawInventoryItems.forEach((dbItem) => {
-          if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
-            console.warn("Skipping product due to invalid ProductId:", dbItem);
-            return;
-          }
-          const currentProductId = Number(dbItem.ProductId);
-
-          let supplierNameFromDb = dbItem.SupplierName;
-          const lowerCaseSupplierName = supplierNameFromDb.toLowerCase();
-
-          if (lowerCaseSupplierName.includes("finca yaruqui") || lowerCaseSupplierName.includes("elbe")) {
-            supplierNameFromDb = "ELBE S.A.";
-          } else if (lowerCaseSupplierName.includes("ac bebidas")) {
-            supplierNameFromDb = "AC Bebidas (Coca Cola)";
-          }
-
-          const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
-          if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
-            supplierNameFromDb = "AC Bebidas (Coca Cola)";
-          }
-
-          let masterConfig = masterProductConfigsMap.get(currentProductId);
-          let configChanged = false;
-
-          if (!masterConfig) {
-            masterConfig = {
-              productId: currentProductId,
-              productName: dbItem.Producto,
-              rules: [],
-              supplier: supplierNameFromDb,
-              isHidden: false,
-              sync_pending: true,
-              updated_at: nowIso, // Use local timestamp for Dexie
-            };
-            newProductsCount++;
-            configChanged = true;
+          if (type === "weekly") {
+            inventoryQuery = WEEKLY_INVENTORY_QUERY;
           } else {
-            const updatedConfig = { ...masterConfig };
-            if (updatedConfig.productName !== dbItem.Producto) {
-              updatedConfig.productName = dbItem.Producto;
-              updatedProductNamesCount++;
-              configChanged = true;
+            inventoryQuery = MONTHLY_INVENTORY_QUERY;
+          }
+
+          console.log("InventoryContext: processInventoryData - Querying raw inventory items.");
+          const rawInventoryItems: InventoryItemFromDB[] = queryData(
+            dbInstance,
+            inventoryQuery
+          );
+          dbInstance.close();
+          console.log("InventoryContext: processInventoryData - Raw inventory items queried:", rawInventoryItems.length);
+
+          if (rawInventoryItems.length === 0) {
+            console.warn("No inventory items found in the database for processing.");
+            dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: [] });
+            dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
+            dispatch({ type: 'SET_SESSION_ID', payload: format(new Date(), 'yyyy-MM-dd') });
+            showError('No se encontraron productos de inventario en la base de datos.');
+            return; // Early exit, loading should be false in finally
+          }
+
+          console.log("InventoryContext: processInventoryData - Opening Dexie DB and fetching master configs.");
+          if (!db.isOpen()) await db.open();
+          const allMasterProductConfigs = await db.productRules.toArray();
+          const masterProductConfigsMap = new Map(allMasterProductConfigs.map(config => [config.productId, config]));
+          console.log("InventoryContext: processInventoryData - Master configs fetched:", allMasterProductConfigs.length);
+
+          const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
+          const configsToUpsertToSupabase: MasterProductConfig[] = [];
+          let newProductsCount = 0;
+          let updatedProductNamesCount = 0;
+          const nowIso = new Date().toISOString(); // Local timestamp for Dexie
+
+          rawInventoryItems.forEach((dbItem) => {
+            if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
+              console.warn("Skipping product due to invalid ProductId:", dbItem);
+              return;
             }
-            masterConfig = updatedConfig;
+            const currentProductId = Number(dbItem.ProductId);
+
+            let supplierNameFromDb = dbItem.SupplierName;
+            const lowerCaseSupplierName = supplierNameFromDb.toLowerCase();
+
+            if (lowerCaseSupplierName.includes("finca yaruqui") || lowerCaseSupplierName.includes("elbe")) {
+              supplierNameFromDb = "ELBE S.A.";
+            } else if (lowerCaseSupplierName.includes("ac bebidas")) {
+              supplierNameFromDb = "AC Bebidas (Coca Cola)";
+            }
+
+            const productsToForceACBebidas = ["Coca Cola", "Fioravanti", "Fanta", "Sprite", "Imperial Toronja"];
+            if (productsToForceACBebidas.some(p => dbItem.Producto.includes(p))) {
+              supplierNameFromDb = "AC Bebidas (Coca Cola)";
+            }
+
+            let masterConfig = masterProductConfigsMap.get(currentProductId);
+            let configChanged = false;
+
+            if (!masterConfig) {
+              masterConfig = {
+                productId: currentProductId,
+                productName: dbItem.Producto,
+                rules: [],
+                supplier: supplierNameFromDb,
+                isHidden: false,
+                sync_pending: true,
+                updated_at: nowIso, // Use local timestamp for Dexie
+              };
+              newProductsCount++;
+              configChanged = true;
+            } else {
+              const updatedConfig = { ...masterConfig };
+              if (updatedConfig.productName !== dbItem.Producto) {
+                updatedConfig.productName = dbItem.Producto;
+                updatedProductNamesCount++;
+                configChanged = true;
+              }
+              masterConfig = updatedConfig;
+            }
+
+            if (configChanged) {
+              masterConfig.sync_pending = true;
+              masterConfig.updated_at = nowIso; // Use local timestamp for Dexie
+              configsToUpsertToSupabase.push(masterConfig);
+            }
+            configsToUpdateOrAddInDexie.push(masterConfig);
+          });
+
+          if (configsToUpdateOrAddInDexie.length > 0) {
+            console.log("InventoryContext: processInventoryData - Bulk putting master configs to Dexie.");
+            await db.productRules.bulkPut(configsToUpdateOrAddInDexie);
+            console.log(`Updated/Added ${configsToUpdateOrAddInDexie.length} master product configs in Dexie.`);
           }
 
-          if (configChanged) {
-            masterConfig.sync_pending = true;
-            masterConfig.updated_at = nowIso; // Use local timestamp for Dexie
-            configsToUpsertToSupabase.push(masterConfig);
-          }
-          configsToUpdateOrAddInDexie.push(masterConfig);
-        });
+          const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
+          if (supabase && state.isOnline && pendingForSupabase.length > 0) {
+            console.log("InventoryContext: processInventoryData - Upserting master configs to Supabase.");
+            // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
+            const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = pendingForSupabase.map(c => ({
+              productId: c.productId,
+              productName: c.productName,
+              rules: c.rules,
+              supplier: c.supplier,
+              isHidden: c.isHidden || false,
+            }));
+            const { data: fetchedData, error: supabaseUpsertError } = await supabase
+              .from('product_rules')
+              .upsert(supabaseConfigs, { onConflict: 'productId' })
+              .select('productId, updated_at'); // Select productId for finding
 
-        if (configsToUpdateOrAddInDexie.length > 0) {
-          await db.productRules.bulkPut(configsToUpdateOrAddInDexie);
-          console.log(`Updated/Added ${configsToUpdateOrAddInDexie.length} master product configs in Dexie.`);
-        }
-
-        const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
-        if (supabase && state.isOnline && pendingForSupabase.length > 0) {
-          // Use the Database['public']['Tables']['product_rules']['Insert'] type directly
-          const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = pendingForSupabase.map(c => ({
-            productId: c.productId,
-            productName: c.productName,
-            rules: c.rules,
-            supplier: c.supplier,
-            isHidden: c.isHidden || false,
-          }));
-          const { data: fetchedData, error: supabaseUpsertError } = await supabase
-            .from('product_rules')
-            .upsert(supabaseConfigs, { onConflict: 'productId' })
-            .select('productId, updated_at'); // Select productId for finding
-
-          if (supabaseUpsertError) {
-            console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
-            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-          } else if (fetchedData && fetchedData.length > 0) {
-            const fetchedConfigsMap = new Map(fetchedData.map(item => [item.productId, item])); // Use a map for efficient lookup
-            for (const config of pendingForSupabase) {
-              const fetchedConfig = fetchedConfigsMap.get(config.productId); // Use map for lookup
-              if (fetchedConfig) {
-                await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
-              } else {
+            if (supabaseUpsertError) {
+              console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
+              showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+            } else if (fetchedData && fetchedData.length > 0) {
+              const fetchedConfigsMap = new Map(fetchedData.map(item => [item.productId, item])); // Use a map for efficient lookup
+              for (const config of pendingForSupabase) {
+                const fetchedConfig = fetchedConfigsMap.get(config.productId); // Use map for lookup
+                if (fetchedConfig) {
+                  await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+                } else {
+                  await db.productRules.update(config.productId, { sync_pending: false });
+                }
+                warnedItems.current.delete(`product-${config.productId}`);
+              }
+              let successMessage = '';
+              if (newProductsCount > 0) {
+                successMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
+              }
+              if (updatedProductNamesCount > 0) {
+                successMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
+                }
+              if (successMessage === '') {
+                successMessage = 'Configuraciones de productos sincronizadas.';
+              }
+              showSuccess(successMessage.trim());
+            } else {
+              // Fallback if fetchedData is null or empty but no error
+              for (const config of pendingForSupabase) {
                 await db.productRules.update(config.productId, { sync_pending: false });
               }
-              warnedItems.current.delete(`product-${config.productId}`);
             }
-            let successMessage = '';
+          } else if (pendingForSupabase.length > 0) {
+            let localMessage = '';
             if (newProductsCount > 0) {
-              successMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
+              localMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
             }
             if (updatedProductNamesCount > 0) {
-              successMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
+              localMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
             }
-            if (successMessage === '') {
-              successMessage = 'Configuraciones de productos sincronizadas.';
+            if (localMessage === '') {
+              localMessage = 'Configuraciones de productos actualizadas localmente.';
             }
-            showSuccess(successMessage.trim());
+            showError(`${localMessage.trim()} (Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total).`);
           } else {
-            // Fallback if fetchedData is null or empty but no error
-            for (const config of pendingForSupabase) {
-              await db.productRules.update(config.productId, { sync_pending: false });
+            showSuccess('No se encontraron nuevos productos o cambios de nombre para agregar/actualizar.');
+          }
+          await loadMasterProductConfigs(); // Reload configs to reflect any server-generated updated_at
+          console.log("InventoryContext: processInventoryData - Master configs reloaded.");
+
+          const finalProcessedInventory = rawInventoryItems.map(dbItem => {
+            const currentProductId = Number(dbItem.ProductId);
+            const masterConfig = masterProductConfigsMap.get(currentProductId);
+            const rules = masterConfig?.rules || [];
+            const supplier = masterConfig?.supplier || dbItem.SupplierName;
+            const isHidden = masterConfig?.isHidden || false;
+
+            return {
+              productId: currentProductId,
+              productName: dbItem.Producto,
+              category: dbItem.Categoria,
+              systemQuantity: dbItem.Stock_Actual,
+              physicalQuantity: dbItem.Stock_Actual,
+              averageSales: 0,
+              supplier: supplier,
+              hasBeenEdited: false,
+              rules: rules,
+              isHidden: isHidden,
+            };
+          }).filter(item => !item.isHidden && item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
+          console.log("InventoryContext: processInventoryData - Final inventory processed:", finalProcessedInventory.length);
+
+          dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: finalProcessedInventory });
+          dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
+
+          const dateKey = format(new Date(), 'yyyy-MM-dd');
+          const effectiveness = calculateEffectiveness(finalProcessedInventory);
+
+          const newSession: InventorySession = {
+            dateKey,
+            inventoryType: type,
+            inventoryData: finalProcessedInventory,
+            timestamp: new Date(),
+            effectiveness,
+            ordersBySupplier: undefined, // Initialize as undefined
+            sync_pending: true,
+            updated_at: nowIso, // Use local timestamp for Dexie
+          };
+          console.log("InventoryContext: processInventoryData - Putting new session to Dexie.");
+          await db.sessions.put(newSession); // Persistir en Dexie primero
+          dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+          console.log("InventoryContext: processInventoryData - New session put to Dexie.");
+
+          if (supabase && state.isOnline) {
+            console.log("InventoryContext: processInventoryData - Upserting new session to Supabase.");
+            // Use the Database['public']['Tables']['inventory_sessions']['Insert'] type directly
+            const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+              dateKey: newSession.dateKey,
+              inventoryType: newSession.inventoryType,
+              inventoryData: newSession.inventoryData,
+              timestamp: newSession.timestamp.toISOString(),
+              effectiveness: newSession.effectiveness,
+              ordersBySupplier: newSession.ordersBySupplier,
+            };
+            const { data, error } = await supabase
+              .from('inventory_sessions')
+              .upsert(supabaseSession, { onConflict: 'dateKey' })
+              .select('dateKey, updated_at') // Select dateKey for consistency
+              .single();
+
+            const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'dateKey' | 'updated_at'> | null;
+
+            if (error) {
+              console.error("Error saving new session to Supabase:", error);
+              showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+            } else if (fetchedSession) {
+                await db.sessions.update(dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
+              showSuccess('Nueva sesión de inventario iniciada y guardada.');
+              warnedItems.current.delete(`session-${dateKey}`);
+            } else {
+                // Fallback if fetchedSession is null but no error
+                await db.sessions.update(dateKey, { sync_pending: false });
             }
-          }
-        } else if (pendingForSupabase.length > 0) {
-          let localMessage = '';
-          if (newProductsCount > 0) {
-            localMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
-          }
-          if (updatedProductNamesCount > 0) {
-            localMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
-          }
-          if (localMessage === '') {
-            localMessage = 'Configuraciones de productos actualizadas localmente.';
-          }
-          showError(`${localMessage.trim()} (Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total).`);
-        }
-      await loadMasterProductConfigs(); // Reload configs to reflect any server-generated updated_at
-
-        const finalProcessedInventory = rawInventoryItems.map(dbItem => {
-          const currentProductId = Number(dbItem.ProductId);
-          const masterConfig = masterProductConfigsMap.get(currentProductId);
-          const rules = masterConfig?.rules || [];
-          const supplier = masterConfig?.supplier || dbItem.SupplierName;
-          const isHidden = masterConfig?.isHidden || false;
-
-          return {
-            productId: currentProductId,
-            productName: dbItem.Producto,
-            category: dbItem.Categoria,
-            systemQuantity: dbItem.Stock_Actual,
-            physicalQuantity: dbItem.Stock_Actual,
-            averageSales: 0,
-            supplier: supplier,
-            hasBeenEdited: false,
-            rules: rules,
-            isHidden: isHidden,
-          };
-        }).filter(item => !item.isHidden && item.supplier !== "KYR S.A.S" && item.supplier !== "Desconocido");
-
-        dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: finalProcessedInventory });
-        dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
-
-        const dateKey = format(new Date(), 'yyyy-MM-dd');
-        const effectiveness = calculateEffectiveness(finalProcessedInventory);
-
-        const newSession: InventorySession = {
-          dateKey,
-          inventoryType: type,
-          inventoryData: finalProcessedInventory,
-          timestamp: new Date(),
-          effectiveness,
-          ordersBySupplier: undefined, // Initialize as undefined
-          sync_pending: true,
-          updated_at: nowIso, // Use local timestamp for Dexie
-        };
-        await db.sessions.put(newSession); // Persistir en Dexie primero
-        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
-
-        if (supabase && state.isOnline) {
-          // Use the Database['public']['Tables']['inventory_sessions']['Insert'] type directly
-          const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
-            dateKey: newSession.dateKey,
-            inventoryType: newSession.inventoryType,
-            inventoryData: newSession.inventoryData,
-            timestamp: newSession.timestamp.toISOString(),
-            effectiveness: newSession.effectiveness,
-            ordersBySupplier: newSession.ordersBySupplier,
-          };
-          const { data, error } = await supabase
-            .from('inventory_sessions')
-            .upsert(supabaseSession, { onConflict: 'dateKey' })
-            .select('dateKey, updated_at') // Select dateKey for consistency
-            .single();
-
-          const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'dateKey' | 'updated_at'> | null;
-
-          if (error) {
-            console.error("Error saving new session to Supabase:", error);
+          } else {
+            console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
             showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-          } else if (fetchedSession) {
-              await db.sessions.update(dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
-            showSuccess('Nueva sesión de inventario iniciada y guardada.');
-            warnedItems.current.delete(`session-${dateKey}`);
-          } else {
-              // Fallback if fetchedSession is null but no error
-              await db.sessions.update(dateKey, { sync_pending: false });
           }
-        } else {
-          console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
-          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+        } catch (innerError: any) { // Inner catch block
+          console.error("Inner Error processing database for inventory:", innerError);
+          dispatch({ type: 'SET_ERROR', payload: innerError.message });
+          showError(`Error al procesar el inventario: ${innerError.message}`);
         }
-      } catch (e: any) {
-        console.error("Error processing database for inventory:", e);
-        dispatch({ type: 'SET_ERROR', payload: e.message });
-        showError(`Error al procesar el inventario: ${e.message}`);
+      } catch (outerError: any) { // Outer catch block
+        console.error("Outer Error processing database for inventory:", outerError);
+        dispatch({ type: 'SET_ERROR', payload: outerError.message });
+        showError(`Error inesperado al procesar el inventario: ${outerError.message}`);
       } finally {
         dispatch({ type: 'SET_LOADING', payload: false });
         dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
@@ -1634,9 +1658,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   useEffect(() => {
     // Solo ejecutar si Dexie está vacío (no hay configuraciones ni sesiones)
     const checkDexieEmptyAndFetch = async () => {
+      console.log("InventoryContext useEffect: checkDexieEmptyAndFetch triggered.");
       if (!db.isOpen()) await db.open();
       const productRulesCount = await db.productRules.count();
       const sessionsCount = await db.sessions.count();
+      console.log(`Dexie counts: productRules=${productRulesCount}, sessions=${sessionsCount}`);
 
       if (productRulesCount === 0 && sessionsCount === 0) {
         console.log("Dexie is empty, fetching initial data from Supabase...");
