@@ -1618,6 +1618,113 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     };
   }, [state.isOnline, state.isSupabaseSyncInProgress]);
 
+  // --- NEW: Fetch Initial Data from Supabase ---
+  const fetchInitialData = useCallback(async () => {
+    if (!supabase || !state.isOnline) {
+      console.log("Supabase not available or offline, skipping initial data fetch.");
+      return;
+    }
+
+    console.log("Fetching initial data from Supabase...");
+    dispatch({ type: 'SET_LOADING', payload: true });
+
+    try {
+      if (!db.isOpen()) await db.open();
+
+      // 1. Fetch product_rules from Supabase
+      const { data: supabaseProductRules, error: productRulesError } = await supabase
+        .from('product_rules')
+        .select('*');
+
+      if (productRulesError) {
+        console.error("Error fetching product_rules from Supabase:", productRulesError);
+      } else if (supabaseProductRules && supabaseProductRules.length > 0) {
+        // Convert Supabase data to Dexie format
+        const productRulesToPut: MasterProductConfig[] = supabaseProductRules.map(rule => ({
+          productId: rule.productId,
+          productName: rule.productName,
+          rules: rule.rules,
+          supplier: rule.supplier,
+          isHidden: rule.isHidden || false,
+          sync_pending: false,
+          updated_at: rule.updated_at,
+        }));
+
+        // Save to Dexie
+        await db.productRules.bulkPut(productRulesToPut);
+        console.log(`Loaded ${productRulesToPut.length} product rules from Supabase into Dexie.`);
+
+        // Update state
+        dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: productRulesToPut.filter(r => !r.isHidden) });
+      }
+
+      // 2. Fetch inventory_sessions from Supabase
+      const { data: supabaseSessions, error: sessionsError } = await supabase
+        .from('inventory_sessions')
+        .select('*');
+
+      if (sessionsError) {
+        console.error("Error fetching inventory_sessions from Supabase:", sessionsError);
+      } else if (supabaseSessions && supabaseSessions.length > 0) {
+        // Convert Supabase data to Dexie format
+        const sessionsToPut: InventorySession[] = supabaseSessions.map(session => ({
+          dateKey: session.dateKey,
+          inventoryType: session.inventoryType,
+          inventoryData: session.inventoryData,
+          timestamp: new Date(session.timestamp),
+          effectiveness: session.effectiveness,
+          ordersBySupplier: session.ordersBySupplier,
+          sync_pending: false,
+          updated_at: session.updated_at,
+        }));
+
+        // Save to Dexie
+        await db.sessions.bulkPut(sessionsToPut);
+        console.log(`Loaded ${sessionsToPut.length} sessions from Supabase into Dexie.`);
+
+        // Update state if there's a current session
+        if (state.sessionId) {
+          const currentSession = sessionsToPut.find(s => s.dateKey === state.sessionId);
+          if (currentSession) {
+            dispatch({ type: 'UPDATE_CURRENT_SESSION_DATA', payload: {
+              dateKey: currentSession.dateKey,
+              inventoryData: currentSession.inventoryData,
+              effectiveness: currentSession.effectiveness
+            }});
+          }
+        }
+      }
+
+      console.log("Initial data fetch completed successfully.");
+    } catch (e) {
+      console.error("Error during initial data fetch:", e);
+      showError('Error al cargar datos iniciales desde la nube.');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [supabase, state.isOnline, state.sessionId]);
+
+  // --- NEW: Fetch Initial Data on Mount ---
+  useEffect(() => {
+    // Solo ejecutar si Dexie está vacío (no hay configuraciones ni sesiones)
+    const checkDexieEmpty = async () => {
+      if (!db.isOpen()) await db.open();
+      const productRulesCount = await db.productRules.count();
+      const sessionsCount = await db.sessions.count();
+
+      if (productRulesCount === 0 && sessionsCount === 0) {
+        console.log("Dexie is empty, fetching initial data from Supabase...");
+        await fetchInitialData();
+      } else {
+        console.log("Dexie already has data, skipping initial fetch.");
+        // Aún así, cargamos las configuraciones en el estado
+        await loadMasterProductConfigs();
+      }
+    };
+
+    checkDexieEmpty();
+  }, [fetchInitialData, loadMasterProductConfigs]);
+
   // --- Supabase Realtime Subscriptions ---
   const setupRealtime = useCallback(() => {
     // --- SYSTEM --- Este log confirma que la función setupRealtime se está ejecutando.
@@ -1865,20 +1972,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setSyncStatus('pending'); // Establecer estado de sincronización a 'pending' inmediatamente
     dispatch(prevState => {
       const updatedData = [...prevState.rawInventoryItemsFromDb];
-      if (key === "physicalQuantity") {
+      if (updatedData[index]) {
         updatedData[index][key] = Math.max(0, value as number);
         updatedData[index].hasBeenEdited = true;
-      } else if (key === "averageSales") {
-        updatedData[index][key] = value as number;
-      } else if (key === "hasBeenEdited") {
-        updatedData[index][key] = value as boolean;
       }
-
-      // Disparar el guardado debounced con los datos actualizados
-      if (debouncedSaveCurrentSessionRef.current && prevState.sessionId && prevState.inventoryType) {
-        debouncedSaveCurrentSessionRef.current(updatedData);
-      }
-
       return { ...prevState, rawInventoryItemsFromDb: updatedData };
     });
   }, [setSyncStatus]);
