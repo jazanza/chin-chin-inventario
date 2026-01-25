@@ -290,7 +290,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
 
     const masterConfigsMap = new Map(state.masterProductConfigs.map(config => [config.productId, config]));
-    const previousDataMap = new Map(previousFilteredInventoryDataRef.current.map(item => [item.productId, item]));
+    // No necesitamos previousDataMap aquí, ya que physicalQuantity y hasBeenEdited
+    // se actualizan directamente en state.rawInventoryItemsFromDb
 
     const newFilteredData: InventoryItem[] = [];
 
@@ -300,17 +301,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      const previousItem = previousDataMap.get(item.productId);
+      // Usar las propiedades physicalQuantity y hasBeenEdited directamente del 'item'
+      // ya que 'item' proviene de state.rawInventoryItemsFromDb que ya está actualizado.
       newFilteredData.push({
-        ...item,
-        physicalQuantity: previousItem ? previousItem.physicalQuantity : item.systemQuantity,
-        hasBeenEdited: previousItem ? previousItem.hasBeenEdited : false,
+        ...item, // Esto ya incluye physicalQuantity y hasBeenEdited actualizadas
         rules: masterConfig.rules,
         supplier: masterConfig.supplier,
       });
     });
 
-    previousFilteredInventoryDataRef.current = newFilteredData;
+    previousFilteredInventoryDataRef.current = newFilteredData; // Mantener para futuras referencias si es necesario
     return newFilteredData;
   }, [state.rawInventoryItemsFromDb, state.masterProductConfigs]);
 
