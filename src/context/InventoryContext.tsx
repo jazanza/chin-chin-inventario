@@ -1,22 +1,24 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global para la gestión de inventarios, sesiones y sincronización con Supabase.
- * @version v1.4.6
+ * @version v1.4.7
  * @date 2024-07-25
  *
- * PROPÓSITO DE LA VERSIÓN v1.4.6:
- * Esta versión se enfoca en la estabilización y robustez de la sincronización en tiempo real con Supabase,
- * la corrección de errores de tipado y la mejora de la gestión de concurrencia para evitar conflictos de datos.
- * Se han implementado mecanismos de bloqueo (`syncLockRef`) y se ha refinado el manejo de eventos Realtime
- * para asegurar la integridad y consistencia de los datos entre clientes y la base de datos local (IndexedDB).
+ * PROPÓSITO DE LA VERSIÓN v1.4.7:
+ * Esta versión se enfoca en refinar la lógica de resolución de conflictos en tiempo real y la gestión de timestamps
+ * para asegurar que la "última escritura" prevalezca de manera más fiable y que los cambios remotos se apliquen
+ * correctamente, evitando el descarte de actualizaciones legítimas.
  *
  * CAMBIOS CLAVE EN ESTA VERSIÓN:
- * - Corrección de errores de tipado relacionados con `RealtimeChannelState` de Supabase.
- * - Implementación y uso consistente de `syncLockRef` para controlar la concurrencia en operaciones de escritura/sincronización.
- * - Aseguramiento de la liberación de `syncLockRef` mediante bloques `finally`.
- * - Refinamiento de la lógica de sincronización bidireccional (`syncFromSupabase`) y reintentos.
- * - Mejora en el manejo de eventos `DELETE` de Realtime, asumiendo `REPLICA IDENTITY FULL` en Supabase.
- * - Adición de logs de diagnóstico (`--- SYSTEM ---`) para facilitar la depuración del flujo de Realtime.
+ * - **Lógica de Conflicto Relajada en Realtime:** En los listeners de Realtime, la comparación de `updated_at`
+ *   ahora permite que la versión remota gane si su timestamp es `mayor o igual` al local, resolviendo el problema
+ *   de "Keeping local session as it's newer or same" para cambios legítimos.
+ * - **Gestión de `updated_at` por Supabase:** Se ha modificado el código para que el campo `updated_at`
+ *   sea omitido en los payloads de `upsert` enviados a Supabase. Esto delega la responsabilidad de establecer
+ *   y actualizar este timestamp al servidor de Supabase, garantizando que siempre sea el tiempo real del servidor
+ *   y eliminando problemas de desincronización de relojes entre clientes.
+ * - **Documentación Actualizada:** Se ha añadido una nota explícita en la documentación sobre la necesidad
+ *   de configurar `DEFAULT now()` y `ON UPDATE now()` para la columna `updated_at` en las tablas de Supabase.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -361,7 +363,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
     const dateKey = format(timestamp, 'yyyy-MM-dd'); // ISO 8601
     const effectiveness = calculateEffectiveness(data);
-    const nowIso = new Date().toISOString();
+    const nowIso = new Date().toISOString(); // Local timestamp for Dexie
 
     try {
       if (!db.isOpen()) await db.open();
@@ -376,7 +378,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         effectiveness,
         ordersBySupplier: ordersToSave,
         sync_pending: true,
-        updated_at: nowIso,
+        updated_at: nowIso, // Use local timestamp for Dexie
       };
 
       await db.sessions.put(sessionToSave);
@@ -391,14 +393,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+      // Omit updated_at from Supabase payload to let the server manage it
+      const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
         dateKey: sessionToSave.dateKey,
         inventoryType: sessionToSave.inventoryType,
         inventoryData: sessionToSave.inventoryData,
         timestamp: sessionToSave.timestamp.toISOString(),
         effectiveness: sessionToSave.effectiveness,
         ordersBySupplier: sessionToSave.ordersBySupplier,
-        updated_at: sessionToSave.updated_at,
+        // updated_at is omitted here
       };
       const { error } = await (supabase
         .from('inventory_sessions') as any)
@@ -408,7 +411,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.error("Error saving session to Supabase:", error);
         showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
       } else {
-        await db.sessions.update(dateKey, { sync_pending: false });
+        // After successful Supabase upsert, fetch the server-generated updated_at
+        // and update Dexie to reflect it, marking as not pending.
+        const { data: fetchedSession, error: fetchError } = await supabase
+          .from('inventory_sessions')
+          .select('updated_at')
+          .eq('dateKey', dateKey)
+          .single();
+
+        if (fetchError || !fetchedSession) {
+          console.error("Error fetching updated_at after upsert:", fetchError);
+          // Fallback: just mark as not pending, keep local updated_at
+          await db.sessions.update(dateKey, { sync_pending: false });
+        } else {
+          await db.sessions.update(dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
+        }
         console.log("Session saved to Supabase successfully.");
         warnedItems.current.delete(`session-${dateKey}`);
       }
@@ -541,7 +558,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
     try {
       if (!db.isOpen()) await db.open();
-      const nowIso = new Date().toISOString();
+      const nowIso = new Date().toISOString(); // Local timestamp for Dexie
       const configToSave = { ...config, productId: Number(config.productId), sync_pending: true, updated_at: nowIso };
       await db.productRules.put(configToSave);
 
@@ -552,13 +569,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
-      const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
+      // Omit updated_at from Supabase payload to let the server manage it
+      const supabaseConfig: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'> = {
         productId: configToSave.productId,
         productName: configToSave.productName,
         rules: configToSave.rules,
         supplier: configToSave.supplier,
         isHidden: configToSave.isHidden || false,
-        updated_at: configToSave.updated_at,
+        // updated_at is omitted here
       };
       const { error } = await (supabase
         .from('product_rules') as any)
@@ -568,9 +586,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.error("Error saving master product config to Supabase:", error);
         showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
       } else {
-        await db.productRules.update(configToSave.productId, { sync_pending: false });
+        // After successful Supabase upsert, fetch the server-generated updated_at
+        // and update Dexie to reflect it, marking as not pending.
+        const { data: fetchedConfig, error: fetchError } = await supabase
+          .from('product_rules')
+          .select('updated_at')
+          .eq('productId', configToSave.productId)
+          .single();
+
+        if (fetchError || !fetchedConfig) {
+          console.error("Error fetching updated_at after upsert:", fetchError);
+          // Fallback: just mark as not pending, keep local updated_at
+          await db.productRules.update(configToSave.productId, { sync_pending: false });
+        } else {
+          await db.productRules.update(configToSave.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+        }
         console.log("Master product config saved to Supabase successfully.");
-        warnedItems.current.delete(`product-${configToSave.productId}`);
+        warnedItems.current.delete(`product-${config.productId}`);
       }
       await loadMasterProductConfigs();
     } catch (e) {
@@ -599,7 +631,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       const newIsHidden = !currentConfig.isHidden;
-      const nowIso = new Date().toISOString();
+      const nowIso = new Date().toISOString(); // Local timestamp for Dexie
 
       await db.productRules.update(numericProductId, { isHidden: newIsHidden, sync_pending: true, updated_at: nowIso });
 
@@ -613,16 +645,31 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
+      // Omit updated_at from Supabase payload to let the server manage it
       const { error } = await (supabase
         .from('product_rules') as any)
-        .update({ isHidden: newIsHidden, updated_at: nowIso })
+        .update({ isHidden: newIsHidden /* updated_at is omitted here */ })
         .eq('productId', numericProductId);
 
       if (error) {
         console.error("Error toggling master product config from Supabase:", error);
         showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
       } else {
-        await db.productRules.update(numericProductId, { sync_pending: false });
+        // After successful Supabase update, fetch the server-generated updated_at
+        // and update Dexie to reflect it, marking as not pending.
+        const { data: fetchedConfig, error: fetchError } = await supabase
+          .from('product_rules')
+          .select('updated_at')
+          .eq('productId', numericProductId)
+          .single();
+
+        if (fetchError || !fetchedConfig) {
+          console.error("Error fetching updated_at after toggle upsert:", fetchError);
+          // Fallback: just mark as not pending, keep local updated_at
+          await db.productRules.update(numericProductId, { sync_pending: false });
+        } else {
+          await db.productRules.update(numericProductId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+        }
         console.log("Master product config visibility toggled in Supabase successfully.");
         warnedItems.current.delete(`product-${numericProductId}`);
       }
@@ -777,7 +824,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const configsToUpsertToSupabase: MasterProductConfig[] = [];
         let newProductsCount = 0;
         let updatedProductNamesCount = 0;
-        const nowIso = new Date().toISOString();
+        const nowIso = new Date().toISOString(); // Local timestamp for Dexie
 
         rawInventoryItems.forEach((dbItem) => {
           if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -811,7 +858,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               supplier: supplierNameFromDb,
               isHidden: false,
               sync_pending: true,
-              updated_at: nowIso,
+              updated_at: nowIso, // Use local timestamp for Dexie
             };
             newProductsCount++;
             configChanged = true;
@@ -827,7 +874,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
           if (configChanged) {
             masterConfig.sync_pending = true;
-            masterConfig.updated_at = nowIso;
+            masterConfig.updated_at = nowIso; // Use local timestamp for Dexie
             configsToUpsertToSupabase.push(masterConfig);
           }
           configsToUpdateOrAddInDexie.push(masterConfig);
@@ -838,14 +885,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log(`Updated/Added ${configsToUpdateOrAddInDexie.length} master product configs in Dexie.`);
         }
 
-        if (supabase && state.isOnline && configsToUpsertToSupabase.length > 0) {
-          const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = configsToUpsertToSupabase.map(c => ({
+        const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
+        if (supabase && state.isOnline && pendingForSupabase.length > 0) {
+          // Omit updated_at from Supabase payload to let the server manage it
+          const supabaseConfigs: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'>[] = pendingForSupabase.map(c => ({
             productId: c.productId,
             productName: c.productName,
             rules: c.rules,
             supplier: c.supplier,
             isHidden: c.isHidden || false,
-            updated_at: c.updated_at,
+            // updated_at is omitted here
           }));
           const { error: supabaseUpsertError } = await (supabase
             .from('product_rules') as any)
@@ -855,16 +904,50 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
             showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
           } else {
-            for (const config of configsToUpsertToSupabase) {
-              await db.productRules.update(config.productId, { sync_pending: false });
+            // After successful Supabase upsert, fetch the server-generated updated_at
+            // and update Dexie to reflect it, marking as not pending.
+            for (const config of pendingForSupabase) {
+              const { data: fetchedConfig, error: fetchError } = await supabase
+                .from('product_rules')
+                .select('updated_at')
+                .eq('productId', config.productId)
+                .single();
+
+              if (fetchError || !fetchedConfig) {
+                console.error("Error fetching updated_at after upsert:", fetchError);
+                // Fallback: just mark as not pending, keep local updated_at
+                await db.productRules.update(config.productId, { sync_pending: false });
+              } else {
+                await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+              }
               warnedItems.current.delete(`product-${config.productId}`);
             }
-            showSuccess('Configuraciones de productos actualizadas y sincronizadas.');
+            let successMessage = '';
+            if (newProductsCount > 0) {
+              successMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
+            }
+            if (updatedProductNamesCount > 0) {
+              successMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
+            }
+            if (successMessage === '') {
+              successMessage = 'Configuraciones de productos sincronizadas.';
+            }
+            showSuccess(successMessage.trim());
           }
-        } else if (configsToUpsertToSupabase.length > 0) {
-          console.log("Supabase client not available or offline, skipping bulk upsert to Supabase. Marked as sync_pending.");
-          showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+        } else if (pendingForSupabase.length > 0) {
+          let localMessage = '';
+          if (newProductsCount > 0) {
+            localMessage += `Se agregaron ${newProductsCount} nuevos productos. `;
+          }
+          if (updatedProductNamesCount > 0) {
+            localMessage += `Se actualizaron ${updatedProductNamesCount} nombres de productos. `;
+          }
+          if (localMessage === '') {
+            localMessage = 'Configuraciones de productos actualizadas localmente.';
+          }
+          showError(`${localMessage.trim()} (Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total).`);
         }
+      await loadMasterProductConfigs(); // Reload configs to reflect any server-generated updated_at
 
         const finalProcessedInventory = rawInventoryItems.map(dbItem => {
           const currentProductId = Number(dbItem.ProductId);
@@ -900,20 +983,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           timestamp: new Date(),
           effectiveness,
           sync_pending: true,
-          updated_at: nowIso,
+          updated_at: nowIso, // Use local timestamp for Dexie
         };
         await db.sessions.put(newSession);
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
 
         if (supabase && state.isOnline) {
-          const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+          // Omit updated_at from Supabase payload to let the server manage it
+          const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
             dateKey: newSession.dateKey,
             inventoryType: newSession.inventoryType,
             inventoryData: newSession.inventoryData,
             timestamp: newSession.timestamp.toISOString(),
             effectiveness: newSession.effectiveness,
             ordersBySupplier: newSession.ordersBySupplier,
-            updated_at: newSession.updated_at,
+            // updated_at is omitted here
           };
           const { error } = await (supabase
             .from('inventory_sessions') as any)
@@ -923,7 +1007,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             console.error("Error saving new session to Supabase:", error);
             showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
           } else {
-            await db.sessions.update(dateKey, { sync_pending: false });
+            // After successful Supabase upsert, fetch the server-generated updated_at
+            // and update Dexie to reflect it, marking as not pending.
+            const { data: fetchedSession, error: fetchError } = await supabase
+              .from('inventory_sessions')
+              .select('updated_at')
+              .eq('dateKey', dateKey)
+              .single();
+
+            if (fetchError || !fetchedSession) {
+              console.error("Error fetching updated_at after upsert:", fetchError);
+              // Fallback: just mark as not pending, keep local updated_at
+              await db.sessions.update(dateKey, { sync_pending: false });
+            } else {
+              await db.sessions.update(dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
+            }
             showSuccess('Nueva sesión de inventario iniciada y guardada.');
             warnedItems.current.delete(`session-${dateKey}`);
           }
@@ -943,7 +1041,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Database inventory processing finished.");
       }
     },
-    [state.isOnline, updateSyncStatus]
+    [state.isOnline, updateSyncStatus, loadMasterProductConfigs]
   );
 
   const processDbForMasterConfigs = useCallback(async (buffer: Uint8Array) => {
@@ -975,7 +1073,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const configsToUpsertToSupabase: MasterProductConfig[] = [];
       let newProductsCount = 0;
       let updatedProductNamesCount = 0;
-      const nowIso = new Date().toISOString();
+      const nowIso = new Date().toISOString(); // Local timestamp for Dexie
 
       for (const dbItem of rawInventoryItems) {
         if (dbItem.ProductId === null || dbItem.ProductId === undefined || isNaN(Number(dbItem.ProductId)) || Number(dbItem.ProductId) === 0) {
@@ -1009,7 +1107,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             supplier: supplierNameFromDb,
             isHidden: false,
             sync_pending: true,
-            updated_at: nowIso,
+            updated_at: nowIso, // Use local timestamp for Dexie
           };
           newProductsCount++;
           configChangedForSync = true;
@@ -1025,7 +1123,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         if (configChangedForSync || masterConfig.sync_pending) {
           masterConfig.sync_pending = true;
-          masterConfig.updated_at = nowIso;
+          masterConfig.updated_at = nowIso; // Use local timestamp for Dexie
           configsToUpsertToSupabase.push(masterConfig);
         }
         configsToUpdateOrAddInDexie.push(masterConfig);
@@ -1038,13 +1136,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const pendingForSupabase = configsToUpsertToSupabase.filter(c => c.sync_pending);
       if (supabase && state.isOnline && pendingForSupabase.length > 0) {
-        const supabaseConfigs: Database['public']['Tables']['product_rules']['Insert'][] = pendingForSupabase.map(c => ({
+        // Omit updated_at from Supabase payload to let the server manage it
+        const supabaseConfigs: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'>[] = pendingForSupabase.map(c => ({
           productId: c.productId,
           productName: c.productName,
           rules: c.rules,
           supplier: c.supplier,
           isHidden: c.isHidden || false,
-          updated_at: c.updated_at,
+          // updated_at is omitted here
         }));
         const { error: supabaseUpsertError } = await (supabase
           .from('product_rules') as any)
@@ -1054,8 +1153,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
+          // After successful Supabase upsert, fetch the server-generated updated_at
+          // and update Dexie to reflect it, marking as not pending.
           for (const config of pendingForSupabase) {
-            await db.productRules.update(config.productId, { sync_pending: false });
+            const { data: fetchedConfig, error: fetchError } = await supabase
+              .from('product_rules')
+              .select('updated_at')
+              .eq('productId', config.productId)
+              .single();
+
+            if (fetchError || !fetchedConfig) {
+              console.error("Error fetching updated_at after upsert:", fetchError);
+              // Fallback: just mark as not pending, keep local updated_at
+              await db.productRules.update(config.productId, { sync_pending: false });
+            } else {
+              await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+            }
             warnedItems.current.delete(`product-${config.productId}`);
           }
           let successMessage = '';
@@ -1085,7 +1198,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       } else {
         showSuccess('No se encontraron nuevos productos o cambios de nombre para agregar/actualizar.');
       }
-      await loadMasterProductConfigs();
+      await loadMasterProductConfigs(); // Reload configs to reflect any server-generated updated_at
     } catch (e: any) {
       console.error("Error during processing database for master configs:", e);
       showError(`Error al procesar el archivo DB para configuraciones: ${e.message}`);
@@ -1114,14 +1227,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingSessions) {
         console.log(`Retrying session: ${session.dateKey}`); // Diagnóstico: Reintentando sesión específica
-        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+        // Omit updated_at from Supabase payload to let the server manage it
+        const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
           timestamp: session.timestamp.toISOString(),
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
-          updated_at: session.updated_at,
+          // updated_at is omitted here
         };
         const { error } = await (supabase
           .from('inventory_sessions') as any)
@@ -1131,7 +1245,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
-          await db.sessions.update(session.dateKey, { sync_pending: false });
+          // After successful Supabase upsert, fetch the server-generated updated_at
+          // and update Dexie to reflect it, marking as not pending.
+          const { data: fetchedSession, error: fetchError } = await supabase
+            .from('inventory_sessions')
+            .select('updated_at')
+            .eq('dateKey', session.dateKey)
+            .single();
+
+          if (fetchError || !fetchedSession) {
+            console.error("Error fetching updated_at after retry upsert:", fetchError);
+            await db.sessions.update(session.dateKey, { sync_pending: false });
+          } else {
+            await db.sessions.update(session.dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
+          }
           console.log(`Session ${session.dateKey} synced successfully.`); // Diagnóstico: Sesión sincronizada con éxito
           warnedItems.current.delete(`session-${session.dateKey}`);
         }
@@ -1140,13 +1267,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingProductRules) {
         console.log(`Retrying product config: ${config.productName} (${config.productId})`); // Diagnóstico: Reintentando configuración de producto
-        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
+        // Omit updated_at from Supabase payload to let the server manage it
+        const supabaseConfig: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'> = {
           productId: config.productId,
           productName: config.productName,
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
-          updated_at: config.updated_at,
+          // updated_at is omitted here
         };
         const { error } = await (supabase
           .from('product_rules') as any)
@@ -1156,7 +1284,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
-          await db.productRules.update(config.productId, { sync_pending: false });
+          // After successful Supabase upsert, fetch the server-generated updated_at
+          // and update Dexie to reflect it, marking as not pending.
+          const { data: fetchedConfig, error: fetchError } = await supabase
+            .from('product_rules')
+            .select('updated_at')
+            .eq('productId', config.productId)
+            .single();
+
+          if (fetchError || !fetchedConfig) {
+            console.error("Error fetching updated_at after retry upsert:", fetchError);
+            await db.productRules.update(config.productId, { sync_pending: false });
+          } else {
+            await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+          }
           console.log(`Product config ${config.productId} synced successfully.`); // Diagnóstico: Configuración de producto sincronizada con éxito
           warnedItems.current.delete(`product-${config.productId}`);
         }
@@ -1219,14 +1360,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.log("[Sync] Uploading local pending sessions..."); // Diagnóstico: Subiendo sesiones pendientes
       const pendingLocalSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingLocalSessions) {
-        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+        // Omit updated_at from Supabase payload to let the server manage it
+        const supabaseSession: Omit<Database['public']['Tables']['inventory_sessions']['Insert'], 'updated_at'> = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
           timestamp: session.timestamp.toISOString(),
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
-          updated_at: session.updated_at,
+          // updated_at is omitted here
         };
         const { error } = await (supabase
           .from('inventory_sessions') as any)
@@ -1235,20 +1377,34 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.error(`[Sync] Error uploading pending session ${session.dateKey} to Supabase:`, error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
-          await db.sessions.update(session.dateKey, { sync_pending: false });
+          // After successful Supabase upsert, fetch the server-generated updated_at
+          // and update Dexie to reflect it, marking as not pending.
+          const { data: fetchedSession, error: fetchError } = await supabase
+            .from('inventory_sessions')
+            .select('updated_at')
+            .eq('dateKey', session.dateKey)
+            .single();
+
+          if (fetchError || !fetchedSession) {
+            console.error("Error fetching updated_at after sync upload upsert:", fetchError);
+            await db.sessions.update(session.dateKey, { sync_pending: false });
+          } else {
+            await db.sessions.update(session.dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
+          }
           warnedItems.current.delete(`session-${session.dateKey}`);
         }
       }
       console.log("[Sync] Uploading local pending product configs..."); // Diagnóstico: Subiendo configuraciones de producto pendientes
       const pendingLocalProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingLocalProductRules) {
-        const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
+        // Omit updated_at from Supabase payload to let the server manage it
+        const supabaseConfig: Omit<Database['public']['Tables']['product_rules']['Insert'], 'updated_at'> = {
           productId: config.productId,
           productName: config.productName,
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
-          updated_at: config.updated_at,
+          // updated_at is omitted here
         };
         const { error } = await (supabase
           .from('product_rules') as any)
@@ -1257,7 +1413,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.error(`[Sync] Error uploading pending product config ${config.productId} to Supabase:`, error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
-          await db.productRules.update(config.productId, { sync_pending: false });
+          // After successful Supabase upsert, fetch the server-generated updated_at
+          // and update Dexie to reflect it, marking as not pending.
+          const { data: fetchedConfig, error: fetchError } = await supabase
+            .from('product_rules')
+            .select('updated_at')
+            .eq('productId', config.productId)
+            .single();
+
+          if (fetchError || !fetchedConfig) {
+            console.error("Error fetching updated_at after sync upload upsert:", fetchError);
+            await db.productRules.update(config.productId, { sync_pending: false });
+          } else {
+            await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+          }
           warnedItems.current.delete(`product-${config.productId}`);
         }
       }
@@ -1289,12 +1458,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           };
           const localSession = localSessionsMap.get(typedSession.dateKey);
 
-          if (!localSession || new Date(typedSession.updated_at) > new Date(localSession.updated_at)) {
+          // Remote wins if newer or equal, unless local is pending
+          if (!localSession || (new Date(typedSession.updated_at) >= new Date(localSession.updated_at) && localSession.sync_pending === false)) {
             sessionsToPutLocally.push(typedSession);
-          } else if (new Date(localSession.updated_at) >= new Date(typedSession.updated_at) && localSession.sync_pending === true) {
-            console.log(`[Sync] Keeping local pending session ${localSession.dateKey} as it's newer or same and pending.`); // Diagnóstico: Manteniendo sesión local pendiente
+          } else if (localSession.sync_pending === true) {
+            console.log(`[Sync] Keeping local pending session ${localSession.dateKey} as it's pending.`); // Diagnóstico: Manteniendo sesión local pendiente
           } else {
-            sessionsToPutLocally.push(typedSession);
+            console.log(`[Sync] Keeping local session ${localSession.dateKey} as it's newer than remote.`);
           }
         }
         await db.sessions.bulkPut(sessionsToPutLocally);
@@ -1342,12 +1512,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           };
           const localConfig = localProductRulesMap.get(typedConfig.productId);
 
-          if (!localConfig || new Date(typedConfig.updated_at) > new Date(localConfig.updated_at)) {
+          // Remote wins if newer or equal, unless local is pending
+          if (!localConfig || (new Date(typedConfig.updated_at) >= new Date(localConfig.updated_at) && localConfig.sync_pending === false)) {
             productRulesToPutLocally.push(typedConfig);
-          } else if (new Date(localConfig.updated_at) >= new Date(typedConfig.updated_at) && localConfig.sync_pending === true) {
-            console.log(`[Sync] Keeping local pending product config ${localConfig.productId} as it's newer or same and pending.`); // Diagnóstico: Manteniendo configuración local pendiente
+          } else if (localConfig.sync_pending === true) {
+            console.log(`[Sync] Keeping local pending product config ${localConfig.productId} as it's pending.`); // Diagnóstico: Manteniendo configuración local pendiente
           } else {
-            productRulesToPutLocally.push(typedConfig);
+            console.log(`[Sync] Keeping local product config ${localConfig.productId} as it's newer than remote.`);
           }
         }
         await db.productRules.bulkPut(productRulesToPutLocally);
@@ -1590,11 +1761,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 effectiveness: newRecord.effectiveness,
                 ordersBySupplier: newRecord.ordersBySupplier,
                 sync_pending: false,
-                updated_at: newRecord.updated_at,
+                updated_at: newRecord.updated_at, // This is the server's updated_at
               };
 
               const localSession = await db.sessions.get(typedSession.dateKey);
-              if (!localSession || new Date(typedSession.updated_at) > new Date(localSession.updated_at)) {
+              // Remote wins if newer or equal, unless local is pending
+              if (!localSession || (new Date(typedSession.updated_at) >= new Date(localSession.updated_at) && localSession.sync_pending === false)) {
                 if (state.sessionId === typedSession.dateKey) {
                   dispatch({
                     type: 'UPDATE_CURRENT_SESSION_DATA',
@@ -1610,8 +1782,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 console.log(`[Realtime] Session ${typedSession.dateKey} updated from remote.`);
                 showSuccess(`Sesión del ${typedSession.dateKey} actualizada remotamente.`);
                 await getSessionHistory();
+              } else if (localSession.sync_pending === true) {
+                console.log(`[Realtime] Keeping local pending session ${typedSession.dateKey} as it's pending.`);
               } else {
-                console.log(`[Realtime] Keeping local session ${typedSession.dateKey} as it's newer or same.`);
+                console.log(`[Realtime] Keeping local session ${typedSession.dateKey} as it's newer than remote.`);
               }
             } else if (payload.eventType === 'DELETE') {
               const dateKey = payload.old?.dateKey;
@@ -1670,17 +1844,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 supplier: newRecord.supplier,
                 isHidden: newRecord.isHidden || false,
                 sync_pending: false,
-                updated_at: newRecord.updated_at,
+                updated_at: newRecord.updated_at, // This is the server's updated_at
               };
 
               const localConfig = await db.productRules.get(typedConfig.productId);
-              if (!localConfig || new Date(typedConfig.updated_at) > new Date(localConfig.updated_at)) {
+              // Remote wins if newer or equal, unless local is pending
+              if (!localConfig || (new Date(typedConfig.updated_at) >= new Date(localConfig.updated_at) && localConfig.sync_pending === false)) {
                 dispatch({ type: 'UPDATE_SINGLE_PRODUCT_RULE', payload: typedConfig });
                 await db.productRules.put(typedConfig);
                 console.log(`[Realtime] Product config ${typedConfig.productName} updated from remote.`);
                 showSuccess(`Configuración de producto ${typedConfig.productName} actualizada remotamente.`);
+              } else if (localConfig.sync_pending === true) {
+                console.log(`[Realtime] Keeping local pending product config ${typedConfig.productId} as it's pending.`);
               } else {
-                console.log(`[Realtime] Keeping local product config ${typedConfig.productId} as it's newer or same.`);
+                console.log(`[Realtime] Keeping local product config ${typedConfig.productId} as it's newer than remote.`);
               }
             } else if (payload.eventType === 'DELETE') {
               const productId = payload.old?.productId;

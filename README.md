@@ -93,7 +93,7 @@ public/               # Archivos estáticos
 *   **Actualización en Tiempo Real:** La app se suscribe a cambios en Supabase (`Realtime`). Cuando otro usuario modifica datos, estos cambios se reflejan **inmediatamente** en la UI de todos los clientes conectados.
 *   **Reconciliación de Conflictos:** La sincronización bidireccional (`syncFromSupabase`) y la lógica de `updated_at` en `Dexie` aseguran que la versión más reciente de los datos prevalezca.
 *   **Sincronización al Volver al Primer Plano:** En móviles o pestañas inactivas, al volver a la app se dispara una sincronización rápida.
-*   **Requisito de Supabase (`REPLICA IDENTITY FULL`):** Para garantizar que los eventos de `DELETE` de Supabase Realtime incluyan los datos `old` (especialmente `dateKey` para sesiones y `productId` para reglas de producto), es **IMPRESCINDIBLE** configurar `REPLICA IDENTITY FULL` en las tablas `inventory_sessions` y `product_rules` en tu base de datos Supabase. Sin esta configuración, la aplicación no podrá identificar qué registro eliminar localmente al recibir un evento de borrado remoto.
+*   **Requisito de Supabase (`REPLICA IDENTITY FULL` y `updated_at` gestionado por el servidor):** Para garantizar que los eventos de `DELETE` de Supabase Realtime incluyan los datos `old` (especialmente `dateKey` para sesiones y `productId` para reglas de producto), es **IMPRESCINDIBLE** configurar `REPLICA IDENTITY FULL` en las tablas `inventory_sessions` y `product_rules` en tu base de datos Supabase. Sin esta configuración, la aplicación no podrá identificar qué registro eliminar localmente al recibir un evento de borrado remoto. Además, para asegurar que el timestamp `updated_at` sea siempre el tiempo real del servidor y evitar problemas de desincronización de relojes entre clientes, es **CRUCIAL** configurar la columna `updated_at` en ambas tablas con `DEFAULT now()` y `ON UPDATE now()`. La aplicación está diseñada para omitir `updated_at` en los payloads de `upsert` a Supabase, delegando su gestión al servidor.
 
 ## 📦 Desarrollo
 
@@ -119,12 +119,23 @@ yarn install
 
 1.  Crea un proyecto en [Supabase](https://supabase.com/).
 2.  Crea las tablas `inventory_sessions` y `product_rules` según las interfaces definidas en `src/lib/persistence.ts`.
-3.  **Configura `REPLICA IDENTITY FULL`:** En tu base de datos Supabase, ejecuta el siguiente comando SQL para cada tabla (`inventory_sessions` y `product_rules`):
+3.  **Configura `REPLICA IDENTITY FULL` y `updated_at` gestionado por el servidor:** En tu base de datos Supabase, ejecuta los siguientes comandos SQL para cada tabla (`inventory_sessions` y `product_rules`):
     ```sql
     ALTER TABLE public.inventory_sessions REPLICA IDENTITY FULL;
     ALTER TABLE public.product_rules REPLICA IDENTITY FULL;
+
+    -- Asegúrate de que la columna updated_at exista y tenga estas propiedades
+    ALTER TABLE public.inventory_sessions ALTER COLUMN updated_at SET DEFAULT now();
+    ALTER TABLE public.inventory_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+    CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.inventory_sessions
+      FOR EACH ROW EXECUTE FUNCTION moddatetime('updated_at');
+
+    ALTER TABLE public.product_rules ALTER COLUMN updated_at SET DEFAULT now();
+    ALTER TABLE public.product_rules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+    CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.product_rules
+      FOR EACH ROW EXECUTE FUNCTION moddatetime('updated_at');
     ```
-    Esto es crucial para que los eventos `DELETE` de Realtime incluyan los datos `old` necesarios para la sincronización.
+    Esto es crucial para que los eventos `DELETE` de Realtime incluyan los datos `old` necesarios para la sincronización y para que `updated_at` sea siempre un timestamp fiable del servidor.
 4.  Habilita el servicio `Realtime` en la configuración de tu proyecto Supabase.
 5.  Crea un archivo `.env.local` en la raíz del proyecto y agrega tus claves:
 

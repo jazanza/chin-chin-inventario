@@ -70,7 +70,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Ofrece una interfaz para **gestionar las reglas de pedido por producto**, permitiendo añadir, editar y eliminar condiciones de stock/cantidad a pedir.
     *   Permite **cambiar el proveedor** asociado a un producto.
     *   Incluye un toggle para **mostrar/ocultar productos** (soft delete), lo que afecta su visibilidad en el inventario y los pedidos.
-    *   Proporciona herramientas de base de datos como "Forzar Sincronización Total" y "Limpiar Base de Datos Local".
+    *   Proporciona herramientas de base de datos como "Forzar Sincronización Total" o "Limpiar Base de Datos Local".
 8.  **Sincronización en Segundo Plano**: Un mecanismo de reintento automático (`retryPendingSyncs`) se ejecuta periódicamente para subir a Supabase cualquier sesión o configuración de producto que esté marcada como `sync_pending` (por ejemplo, debido a una pérdida de conexión temporal).
 
 ## 4. Componentes Clave y su Lógica
@@ -185,7 +185,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **Detalle del Pedido**:
     *   Muestra una tabla con el `product`, `adjustedQuantity` (columna "Sugerencia" centrada) y `finalOrderQuantity` (columna "Pedir" editable) para el `selectedSupplier`.
     *   Botón "Copiar Pedido" que genera un texto formateado y lo copia al portapapeles, utilizando las `finalOrderQuantity` editadas.
-*   **Guardado de Pedidos**: Al copiar el pedido, se llama a `saveCurrentSession` para guardar el estado actual de los pedidos en la sesión de IndexedDB y marcarlos como `sync_pending`.
+    *   **Guardado de Pedidos**: Al copiar el pedido, se llama a `saveCurrentSession` para guardar el estado actual de los pedidos en la sesión de IndexedDB y marcarlos como `sync_pending`.
 *   **Toasts**: Utiliza `showSuccess` y `showError` de `src/utils/toast.ts` para feedback al usuario.
 
 ### `src/components/SessionManager.tsx`
@@ -323,58 +323,77 @@ La gestión de productos y reglas de pedido ahora se centraliza en la aplicació
 1.  **Clonar el repositorio**: `git clone [URL_DEL_REPOSITORIO]`
 2.  **Instalar dependencias**: `npm install` o `yarn install`
 3.  **Configurar Supabase**: Asegúrate de tener las variables de entorno `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` configuradas en tu archivo `.env.local`.
-    **¡Importante! Configuración de `REPLICA IDENTITY FULL` en Supabase:**
+    **¡Importante! Configuración de `REPLICA IDENTITY FULL` y `updated_at` gestionado por el servidor en Supabase:**
     Para que la sincronización en tiempo real de eventos `DELETE` funcione correctamente y la aplicación pueda identificar los registros eliminados, es **esencial** configurar `REPLICA IDENTITY FULL` en las tablas `inventory_sessions` y `product_rules` de tu base de datos Supabase. Puedes hacerlo ejecutando los siguientes comandos SQL en el editor de consultas de Supabase:
     ```sql
     ALTER TABLE public.inventory_sessions REPLICA IDENTITY FULL;
     ALTER TABLE public.product_rules REPLICA IDENTITY FULL;
     ```
-    Sin esta configuración, los eventos `DELETE` de Realtime no contendrán la información `old` necesaria para que la aplicación elimine el registro correspondiente en la base de datos local.
-4.  **Ejecutar en modo desarrollo (web)**: `npm run dev` o `yarn dev`
-5.  **Ejecutar Electron en desarrollo**: `npm run build:electron` (esto construirá la app y luego la ejecutará en Electron).
+    Además, para asegurar que el timestamp `updated_at` sea siempre el tiempo real del servidor y evitar problemas de desincronización de relojes entre clientes, es **CRUCIAL** configurar la columna `updated_at` en ambas tablas con `DEFAULT now()` y `ON UPDATE now()`. La aplicación está diseñada para omitir `updated_at` en los payloads de `upsert` a Supabase, delegando su gestión al servidor. Aquí tienes un ejemplo de cómo configurar la columna `updated_at` para que sea gestionada automáticamente por el servidor:
+    ```sql
+    -- Para la tabla inventory_sessions
+    ALTER TABLE public.inventory_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+    ALTER TABLE public.inventory_sessions ALTER COLUMN updated_at SET DEFAULT now();
+    CREATE OR REPLACE FUNCTION public.moddatetime()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        NEW.updated_at = now();
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.inventory_sessions
+      FOR EACH ROW EXECUTE FUNCTION public.moddatetime();
 
-**Ajustes de Configuración para `tailwindcss-animate`:**
-Se han realizado ajustes en la configuración para resolver problemas de resolución de módulos con `tailwindcss-animate` en el entorno de desarrollo de Vite:
-*   En `tailwind.config.ts`, la importación de `tailwindcss-animate` se cambió de `require()` a `import` para compatibilidad con ES Modules.
-*   En `vite.config.ts`, `tailwindcss-animate` se añadió a `optimizeDeps.include` para asegurar que Vite lo pre-bundle correctamente y evite errores de "Cannot find module".
+    -- Para la tabla product_rules
+    ALTER TABLE public.product_rules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+    ALTER TABLE public.product_rules ALTER COLUMN updated_at SET DEFAULT now();
+    CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.product_rules
+      FOR EACH ROW EXECUTE FUNCTION public.moddatetime();
+    ```
+    Asegúrate de que la función `moddatetime` exista o créala si es necesario.
+4.  Habilita el servicio `Realtime` en la configuración de tu proyecto Supabase.
+5.  Crea un archivo `.env.local` en la raíz del proyecto y agrega tus claves:
 
-## 8. Despliegue
+```env
+VITE_SUPABASE_URL=tu_url_de_supabase
+VITE_SUPABASE_ANON_KEY=tu_clave_anonima_de_supabase
+```
 
-La aplicación está configurada para ser desplegada como una aplicación de escritorio Electron.
-*   `npm run build:electron` o `yarn build:electron` generará los ejecutables para las plataformas configuradas en `package.json` (sección `build`).
-*   Para despliegue web, se puede usar `npm run build` y luego servir la carpeta `dist`.
+### Ejecutar en Modo Desarrollo
 
-## 9. Regresiones Técnicas y Cómo Evitarlas
+```bash
+# Para la aplicación web
+npm run dev
+# o
+yarn dev
 
-### Áreas Críticas
-*   **Consultas SQL en `InventoryContext.tsx`**: Cualquier cambio en `WEEKLY_INVENTORY_QUERY`, `MONTHLY_INVENTORY_QUERY` o `ALL_PRODUCTS_QUERY` puede alterar drásticamente los datos de inventario o el catálogo de productos.
-    *   **Prevención**: Siempre prueba las consultas SQL directamente en una herramienta de base de datos (ej. DB Browser for SQLite) con un archivo `.db` de muestra antes de integrarlas. Asegúrate de que los nombres de las columnas (`Categoria`, `Producto`, `Stock_Actual`, `SupplierName`) coincidan con las interfaces (`InventoryItemFromDB`). Verifica que la subconsulta devuelva el proveedor correcto del último documento de compra y que solo se incluyan proveedores activos.
-*   **Lógica de `InventoryContext.tsx` (Estado Global y Sincronización)**: Es el centro de la gestión de estado y la sincronización. Cambios aquí pueden tener efectos en cascada en toda la aplicación. La refactorización a `useReducer` mejora la previsibilidad, pero requiere atención.
-    *   **Prevención**: Entiende completamente el flujo de datos y las dependencias antes de modificar el contexto. Asegúrate de que las acciones del `reducer` sean atómicas y que los `payloads` sean correctos. Presta especial atención a `syncFromSupabase`, `saveCurrentSession`, `saveMasterProductConfig` y sus interacciones con `isSupabaseSyncInProgress`, `lastSyncTimestampRef` y `sync_pending`.
-*   **Persistencia de Sesiones y Configuraciones (`src/lib/persistence.ts`, `InventoryContext.tsx`)**: La integración de Dexie.js y el manejo de `sessionId`, `sync_pending`, `updated_at` y `isHidden` es fundamental.
-    *   **Prevención**: Prueba los escenarios de guardar, cargar, iniciar nueva sesión, guardar pedidos, eliminar sesiones, crear/editar/ocultar configuraciones de producto. Asegúrate de que los datos se persistan y recuperen correctamente, que el `debounce` funcione como se espera sin perder datos, y que la eliminación de una sesión (especialmente la activa) resetea el estado de la aplicación de forma coherente. Verifica que las interfaces (`InventorySession`, `MasterProductConfig`) sean consistentes en todos los lugares donde se usan.
-*   **Sincronización con Supabase (`src/lib/supabase.ts`, `InventoryContext.tsx`)**: La lógica de `syncFromSupabase` (subida de pendientes, descarga y fusión) es compleja y crítica para la integridad de los datos.
-    *   **Prevención**: Realiza pruebas exhaustivas de sincronización en diferentes escenarios: con y sin conexión, con cambios locales pendientes, con cambios remotos, y con conflictos (aunque la estrategia actual es "last write wins" basada en `updated_at`). Monitorea los logs de Supabase para detectar errores.
-    *   **Requisito `REPLICA IDENTITY FULL`**: Es crucial que las tablas `inventory_sessions` y `product_rules` en Supabase tengan configurado `REPLICA IDENTITY FULL`. Esto asegura que los eventos `DELETE` de Realtime incluyan los datos `old` (como `dateKey` o `productId`) en el `payload`, permitiendo que la aplicación identifique y elimine correctamente el registro local. Sin esta configuración, los eventos de borrado remoto no se reflejarán correctamente en la aplicación.
-*   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es un área crítica.
-    *   **Prevención**: Asegúrate de que `finalOrders` se inicialice correctamente con `adjustedQuantity` y que los cambios del usuario se reflejen solo en `finalOrderQuantity`. Verifica que la función `copyOrderToClipboard` siempre use `finalOrderQuantity` y que el resumen de Belbier se maneje como se espera (visible en UI, no en copiado).
-*   **`SettingsPage.tsx` (Gestión de Configuraciones)**: La interfaz para editar proveedores, reglas y ocultar productos es nueva y afecta directamente el comportamiento del inventario y los pedidos.
-    *   **Prevención**: Prueba la creación de nuevas reglas, la edición de valores, la eliminación de reglas, el cambio de proveedor y la funcionalidad de ocultar/restaurar productos. Verifica que los cambios se reflejen correctamente en `InventoryTable` y `OrderGenerationModule`.
+# Para la aplicación de escritorio (Electron)
+npm run build:electron
+# o
+yarn build:electron
+```
 
-### Buenas Prácticas Generales
-*   **Inmutabilidad**: Al actualizar arrays u objetos en el estado de React (o Context), siempre crea nuevas copias en lugar de mutar directamente los objetos existentes (ej. `[...array]`, `{...object}`). Esto se sigue en `InventoryTable` y `InventoryContext`.
-*   **Tipado Fuerte (TypeScript)**: Utiliza las interfaces (`InventoryItem`, `InventoryItemFromDB`, `OrderItem`, `InventorySession`, `MasterProductConfig`, `ProductRule`) para asegurar la consistencia de los datos y atrapar errores en tiempo de desarrollo.
-*   **Modularización**: Mantén los componentes y módulos pequeños y con una única responsabilidad (ej. `FileUploader` solo carga archivos, `InventoryTable` solo muestra y edita la tabla, `SessionManager` gestiona sesiones).
-*   **Comentarios Claros**: Añade comentarios donde la lógica sea compleja o no obvia.
-*   **Pruebas (Futuro)**: Implementar pruebas unitarias y de integración para los componentes críticos y la lógica de negocio (ej. `processInventoryData`, `OrderGenerationModule`, `saveCurrentSession`, `loadSession`, `deleteSession`, `syncFromSupabase`, `saveMasterProductConfig`).
+### Construir para Producción
 
-## 10. Posibles Mejoras Futuras
+```bash
+# Para la web
+npm run build
+# o
+yarn build
 
-*   **Gestión de Proveedores**: Una interfaz dedicada para gestionar proveedores (añadir, editar, eliminar) y sus configuraciones.
-*   **Historial de Pedidos Detallado**: Una vista dedicada para explorar los pedidos guardados en cada sesión.
-*   **Exportación de Pedidos**: Exportar pedidos a otros formatos (CSV, PDF).
-*   **Autenticación**: Si la aplicación crece y necesita acceso a recursos protegidos (más allá de la clave anónima de Supabase).
-*   **Optimización de Consultas**: Para bases de datos muy grandes, optimizar las consultas SQL o considerar un ORM.
-*   **Temas (Dark Mode)**: Implementar un modo oscuro completo.
+# Para Electron (genera ejecutables)
+npm run build:electron
+# o
+yarn build:electron
+```
 
-Esta documentación debería servir como una guía sólida para entender, mantener y expandir la aplicación Chin Chin.
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la Licencia MIT - consulta el archivo `LICENSE` para más detalles.
+
+## 🙏 Agradecimientos
+
+*   [shadcn/ui](https://ui.shadcn.com/) por los excelentes componentes.
+*   [Supabase](https://supabase.com/) por la increíble plataforma backend.
+*   [sql.js](https://github.com/sql-js/sql.js/) por permitirnos trabajar con SQLite en el navegador.
+*   [Dexie.js](https://dexie.org/) por simplificar IndexedDB.
