@@ -1672,15 +1672,24 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setSyncStatus('pending');
 
     const currentRawInventoryItems = state.rawInventoryItemsFromDb;
-    const updatedData = [...currentRawInventoryItems];
+    const updatedData = [...currentRawInventoryItems]; // Crear una nueva referencia de array
     if (updatedData[index]) {
       if (key === "physicalQuantity") {
-        updatedData[index].physicalQuantity = Math.max(0, value as number);
-        updatedData[index].hasBeenEdited = true;
+        updatedData[index] = { // Crear una nueva referencia para el objeto modificado
+          ...updatedData[index],
+          physicalQuantity: Math.max(0, value as number),
+          hasBeenEdited: true,
+        };
       } else if (key === "averageSales") {
-        updatedData[index].averageSales = value as number;
+        updatedData[index] = { // Crear una nueva referencia para el objeto modificado
+          ...updatedData[index],
+          averageSales: value as number,
+        };
       } else if (key === "hasBeenEdited") {
-        updatedData[index].hasBeenEdited = value as boolean;
+        updatedData[index] = { // Crear una nueva referencia para el objeto modificado
+          ...updatedData[index],
+          hasBeenEdited: value as boolean,
+        };
       }
     }
 
