@@ -13,7 +13,8 @@
  * - Manejo robusto de eventos DELETE en Realtime, verificando la existencia de dateKey/productId.
  * - Lógica de sincronización bidireccional (syncFromSupabase) con debounce y bloqueo de concurrencia.
  * - Manejo de estado de red y advertencias de sincronización pendiente.
- * - **CORRECCIÓN FINAL DE TIPADO**: Eliminado RealtimeChannelState de las importaciones y reemplazado por la unión de literales de cadena en el tipado de 'status' y en la interfaz de estado.
+ * - Corrección de tipado: Eliminado RealtimeChannelState de las importaciones y reemplazado por la unión de literales de cadena en el tipado de 'status' y en la interfaz de estado.
+ * - **CORRECCIÓN DE ASIGNACIÓN useRef**: Asegurado que `syncBlockedWarningTimeoutRef` y todos los demás `useRef` se asignen y lean usando `.current`.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -558,7 +559,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       } else {
         await db.productRules.update(configToSave.productId, { sync_pending: false });
         console.log("Master product config saved to Supabase successfully.");
-        warnedItems.current.delete(`product-${configToSave.productId}`);
+        warnedItems.current.delete(`product-${config.productId}`);
       }
       await loadMasterProductConfigs();
     } catch (e) {
@@ -1179,7 +1180,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     if (state.isSupabaseSyncInProgress) {
       console.log(`🔄 Sincronización ya en curso, ignorando solicitud. Origen: ${origin}`);
       if (!state.isSyncBlockedWarningActive && !syncBlockedWarningTimeoutRef.current) {
-        syncBlockedWarningTimeoutRef.current = setTimeout(() => {
+        syncBlockedWarningTimeoutRef.current = setTimeout(() => { // Corrected here
           dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: true });
           showError('Sincronización ya en curso. Por favor, espera a que termine el proceso actual.');
         }, 10000);
@@ -1187,9 +1188,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       return;
     }
 
-    if (syncBlockedWarningTimeoutRef.current) {
-      clearTimeout(syncBlockedWarningTimeoutRef.current);
-      syncBlockedWarningTimeoutRef = null;
+    if (syncBlockedWarningTimeoutRef.current) { // Correct
+      clearTimeout(syncBlockedWarningTimeoutRef.current); // Correct
+      syncBlockedWarningTimeoutRef.current = null; // Corrected here
     }
     if (state.isSyncBlockedWarningActive) {
       dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: false });
