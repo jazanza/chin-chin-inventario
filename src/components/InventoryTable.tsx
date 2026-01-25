@@ -9,33 +9,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
-  // onInventoryChange ya no es necesario, las actualizaciones van directamente al contexto
 }
 
 export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
   const { 
     updateAndDebounceSaveInventoryItem 
   } = useInventoryContext(); 
-  // Eliminado: const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
-  // Eliminado: useEffect para sincronizar editableInventory con inventoryData
 
   // La función de actualización ahora solo llama al contexto con el índice, clave y valor
   const updateItemInContext = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
     updateAndDebounceSaveInventoryItem(index, key, value);
   }, [updateAndDebounceSaveInventoryItem]);
 
-  const handlePhysicalQuantityChange = useCallback((index: number, value: string) => {
+  const handlePhysicalQuantityChange = (index: number, value: string) => {
     const newQuantity = parseInt(value, 10);
     updateItemInContext(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
-  }, [updateItemInContext]);
-
-  const handleIncrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
-    updateItemInContext(index, "physicalQuantity", currentQuantity + 1);
-  }, [updateItemInContext]);
-
-  const handleDecrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
-    updateItemInContext(index, "physicalQuantity", currentQuantity - 1);
-  }, [updateItemInContext]);
+  };
 
   const formatProductName = (productName: string) => {
     return productName;
@@ -81,7 +70,7 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {inventoryData.map((item, index) => { {/* Usar directamente inventoryData */}
+            {inventoryData.map((item, index) => {
               const isMatch = item.systemQuantity === item.physicalQuantity;
               const isExcess = item.physicalQuantity > item.systemQuantity;
               const isDeficit = item.physicalQuantity < item.systemQuantity;
@@ -97,7 +86,10 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleDecrementPhysicalQuantity(index, item.physicalQuantity)}
+                        onClick={() => {
+                          console.log("Botón presionado para index:", index, "Acción: Decrementar");
+                          updateAndDebounceSaveInventoryItem(index, 'physicalQuantity', item.physicalQuantity - 1);
+                        }}
                         disabled={item.physicalQuantity <= 0}
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
@@ -116,7 +108,10 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleIncrementPhysicalQuantity(index, item.physicalQuantity)}
+                        onClick={() => {
+                          console.log("Botón presionado para index:", index, "Acción: Incrementar");
+                          updateAndDebounceSaveInventoryItem(index, 'physicalQuantity', item.physicalQuantity + 1);
+                        }}
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
                         <Plus className="h-3 w-3" />
