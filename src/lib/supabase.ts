@@ -62,7 +62,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Crear el cliente de Supabase solo si las variables están presentes
 export const supabase = supabaseUrl && supabaseAnonKey ? 
-  createClient<Database>(supabaseUrl, supabaseAnonKey) : 
+  createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    realtime: {
+      params: {
+        eventsPerSecond: 10 // Configuración para Realtime
+      }
+    }
+  }) : 
   null;
 
 // Verificar si el cliente se creó correctamente

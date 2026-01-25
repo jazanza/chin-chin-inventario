@@ -4,6 +4,8 @@
  * CAMBIOS:
  * - Corregir importación de RealtimeChannelStatus
  * - Añadir tipado explícito para supabaseSessions y supabaseProductRules
+ * - Ajustar condición de inicialización del useEffect de Realtime para no depender de isOnline
+ * - Añadir log de depuración para el montaje del Realtime useEffect
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -1507,6 +1509,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- Supabase Realtime Subscriptions ---
   useEffect(() => {
+    console.log('--- SYSTEM: Intentando montar Realtime ---'); // Blood log
+
     if (!supabase) {
       console.warn("Supabase client not initialized, Realtime subscriptions skipped.");
       return;
