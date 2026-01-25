@@ -33,7 +33,7 @@ const SettingsPage = () => {
     processDbForMasterConfigs,
     loadMasterProductConfigs,
     clearLocalDatabase,
-    syncToSupabase, // Error 33: Reemplazado syncFromSupabase con syncToSupabase
+    syncToSupabase,
     isOnline,
     isSupabaseSyncInProgress,
   } = useInventoryContext();
@@ -71,7 +71,7 @@ const SettingsPage = () => {
       if (!grouped[config.supplier]) {
         grouped[config.supplier] = [];
       }
-      grouped[supplier].push(config);
+      grouped[config.supplier].push(config); // Corregido: usar config.supplier
     });
     // Ordenar productos alfabéticamente dentro de cada grupo
     for (const supplier in grouped) {
@@ -307,7 +307,7 @@ const SettingsPage = () => {
   };
 
   const handleForceTotalSync = async () => {
-    await syncToSupabase(); // Error 33: Usar syncToSupabase
+    await syncToSupabase();
   };
 
   if (loading || isUploadingConfig) {

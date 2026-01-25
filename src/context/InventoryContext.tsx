@@ -195,7 +195,7 @@ interface InventoryContextType extends InventoryState {
   updateAndDebounceSaveInventoryItem: (index: number, key: keyof InventoryItem, value: number | boolean) => void;
   flushPendingSessionSave: () => void;
   fetchInitialData: () => Promise<void>; // Añadido fetchInitialData
-  updateSyncStatus: () => Promise<void>; // Error 31: Añadido updateSyncStatus a la interfaz
+  updateSyncStatus: () => Promise<void>; // Añadido updateSyncStatus a la interfaz
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -214,7 +214,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const lastSyncTimestampRef = useRef(0);
 
   // Ref para la función debounced de guardado de sesión
-  // Error 29: Añadido 'cancel' a la tipificación de la función debounced
   const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[]) => void) & { flush: () => void; cancel: () => void } | null>(null);
 
   // --- Basic Setters ---
@@ -324,8 +323,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   ) => {
     if (!data || data.length === 0) return;
 
-    // No bloquear la UI, solo indicar que hay una operación en curso
-    // dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true }); 
     const dateKey = format(timestamp, 'yyyy-MM-dd'); // ISO 8601
     const effectiveness = calculateEffectiveness(data);
     const nowIso = new Date().toISOString(); // Local timestamp for Dexie
@@ -364,16 +361,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           ordersBySupplier: sessionToSave.ordersBySupplier,
           // updated_at is omitted here
         };
-        const { data: fetchedSession, error } = await (supabase
-          .from('inventory_sessions') as any)
+        const { data, error } = await supabase
+          .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' })
-          .select('updated_at') // Seleccionar updated_at para tipado
+          .select('updated_at')
           .single();
+
+        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
 
         if (error) {
           console.error("Error saving session to Supabase:", error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-        } else if (fetchedSession) { // Error 6, 10, 12, 14: Asegurar que fetchedSession no es null
+        } else if (fetchedSession) {
             await db.sessions.update(dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
           console.log("Session saved to Supabase successfully.");
           warnedItems.current.delete(`session-${dateKey}`);
@@ -389,7 +388,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError('Error al guardar la sesión localmente.');
       throw e;
     } finally {
-      // dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false }); // Eliminado para no bloquear
       updateSyncStatus();
     }
   }, [state.sessionId, state.isOnline, updateSyncStatus]);
@@ -525,11 +523,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         isHidden: configToSave.isHidden || false,
         // updated_at is omitted here
       };
-      const { data: fetchedConfig, error } = await (supabase
-        .from('product_rules') as any)
+      const { data, error } = await supabase
+        .from('product_rules')
         .upsert(supabaseConfig, { onConflict: 'productId' })
-        .select('updated_at') // Seleccionar updated_at para tipado
+        .select('updated_at')
         .single();
+
+      const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
 
       if (error) {
         console.error("Error saving master product config to Supabase:", error);
@@ -583,12 +583,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       // Omit updated_at from Supabase payload to let the server manage it
-      const { data: fetchedConfig, error } = await (supabase
-        .from('product_rules') as any)
+      const { data, error } = await supabase
+        .from('product_rules')
         .update({ isHidden: newIsHidden /* updated_at is omitted here */ })
         .eq('productId', numericProductId)
-        .select('updated_at') // Seleccionar updated_at para tipado
+        .select('updated_at')
         .single();
+
+      const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
 
       if (error) {
         console.error("Error toggling master product config from Supabase:", error);
@@ -823,29 +825,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             isHidden: c.isHidden || false,
             // updated_at is omitted here
           }));
-          const { error: supabaseUpsertError } = await (supabase
-            .from('product_rules') as any)
-            .upsert(supabaseConfigs, { onConflict: 'productId' });
+          const { data, error: supabaseUpsertError } = await supabase
+            .from('product_rules')
+            .upsert(supabaseConfigs, { onConflict: 'productId' })
+            .select('updated_at');
 
           if (supabaseUpsertError) {
             console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
             showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-          } else {
-            // After successful Supabase upsert, fetch the server-generated updated_at
-            // and update Dexie to reflect it, marking as not pending.
+          } else if (data && data.length > 0) {
             for (const config of pendingForSupabase) {
-              const { data: fetchedConfig, error: fetchError } = await supabase
-                .from('product_rules')
-                .select('updated_at')
-                .eq('productId', config.productId)
-                .single();
-
-              if (fetchError || !fetchedConfig) {
-                console.error("Error fetching updated_at after upsert:", fetchError);
-                // Fallback: just mark as not pending, keep local updated_at
-                await db.productRules.update(config.productId, { sync_pending: false });
-              } else {
+              const fetchedConfig = data.find(item => item.productId === config.productId);
+              if (fetchedConfig) {
                 await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+              } else {
+                await db.productRules.update(config.productId, { sync_pending: false });
               }
               warnedItems.current.delete(`product-${config.productId}`);
             }
@@ -860,6 +854,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               successMessage = 'Configuraciones de productos sincronizadas.';
             }
             showSuccess(successMessage.trim());
+          } else {
+            // Fallback if data is null or empty but no error
+            for (const config of pendingForSupabase) {
+              await db.productRules.update(config.productId, { sync_pending: false });
+            }
           }
         } else if (pendingForSupabase.length > 0) {
           let localMessage = '';
@@ -926,11 +925,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             ordersBySupplier: newSession.ordersBySupplier,
             // updated_at is omitted here
           };
-          const { data: fetchedSession, error } = await (supabase
-            .from('inventory_sessions') as any)
+          const { data, error } = await supabase
+            .from('inventory_sessions')
             .upsert(supabaseSession, { onConflict: 'dateKey' })
-            .select('updated_at') // Seleccionar updated_at para tipado
+            .select('updated_at')
             .single();
+
+          const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
 
           if (error) {
             console.error("Error saving new session to Supabase:", error);
@@ -1062,29 +1063,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: c.isHidden || false,
           // updated_at is omitted here
         }));
-        const { error: supabaseUpsertError } = await (supabase
-          .from('product_rules') as any)
-          .upsert(supabaseConfigs, { onConflict: 'productId' });
+        const { data, error: supabaseUpsertError } = await supabase
+          .from('product_rules')
+          .upsert(supabaseConfigs, { onConflict: 'productId' })
+          .select('updated_at');
 
         if (supabaseUpsertError) {
           console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-        } else {
-          // After successful Supabase upsert, fetch the server-generated updated_at
-          // and update Dexie to reflect it, marking as not pending.
+        } else if (data && data.length > 0) {
           for (const config of pendingForSupabase) {
-            const { data: fetchedConfig, error: fetchError } = await supabase
-              .from('product_rules')
-              .select('updated_at')
-              .eq('productId', config.productId)
-              .single();
-
-            if (fetchError || !fetchedConfig) {
-              console.error("Error fetching updated_at after upsert:", fetchError);
-              // Fallback: just mark as not pending, keep local updated_at
-              await db.productRules.update(config.productId, { sync_pending: false });
-            } else {
+            const fetchedConfig = data.find(item => item.productId === config.productId);
+            if (fetchedConfig) {
               await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
+            } else {
+              await db.productRules.update(config.productId, { sync_pending: false });
             }
             warnedItems.current.delete(`product-${config.productId}`);
           }
@@ -1099,6 +1092,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             successMessage = 'Configuraciones de productos sincronizadas.';
           }
           showSuccess(successMessage.trim());
+        } else {
+          // Fallback if data is null or empty but no error
+          for (const config of pendingForSupabase) {
+            await db.productRules.update(config.productId, { sync_pending: false });
+          }
         }
       } else if (pendingForSupabase.length > 0) {
         let localMessage = '';
@@ -1153,11 +1151,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           ordersBySupplier: session.ordersBySupplier,
           // updated_at is omitted here
         };
-        const { data: fetchedSession, error } = await (supabase
-          .from('inventory_sessions') as any)
+        const { data, error } = await supabase
+          .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' })
-          .select('updated_at') // Seleccionar updated_at para tipado
+          .select('updated_at')
           .single();
+
+        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
+
         if (error) {
           console.error(`Failed to retry session ${session.dateKey}:`, error);
           dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
@@ -1184,11 +1185,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: config.isHidden || false,
           // updated_at is omitted here
         };
-        const { data: fetchedConfig, error } = await (supabase
-          .from('product_rules') as any)
+        const { data, error } = await supabase
+          .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('updated_at') // Seleccionar updated_at para tipado
+          .select('updated_at')
           .single();
+
+        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
+
         if (error) {
           console.error(`Failed to retry product config ${config.productId}:`, error);
           dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
@@ -1242,11 +1246,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           ordersBySupplier: session.ordersBySupplier,
           // updated_at is omitted here
         };
-        const { data: fetchedSession, error } = await (supabase
-          .from('inventory_sessions') as any)
+        const { data, error } = await supabase
+          .from('inventory_sessions')
           .upsert(supabaseSession, { onConflict: 'dateKey' })
-          .select('updated_at') // Seleccionar updated_at para tipado
+          .select('updated_at')
           .single();
+
+        const fetchedSession = data as Pick<Database['public']['Tables']['inventory_sessions']['Row'], 'updated_at'> | null;
+
         if (error) {
           console.error(`[Sync] Error uploading pending session ${session.dateKey} to Supabase:`, error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
@@ -1270,11 +1277,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: config.isHidden || false,
           // updated_at is omitted here
         };
-        const { data: fetchedConfig, error } = await (supabase
-          .from('product_rules') as any)
+        const { data, error } = await supabase
+          .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('updated_at') // Seleccionar updated_at para tipado
+          .select('updated_at')
           .single();
+
+        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'updated_at'> | null;
+
         if (error) {
           console.error(`[Sync] Error uploading pending product config ${config.productId} to Supabase:`, error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
@@ -1301,7 +1311,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const sessionsToDeleteLocally: string[] = [];
 
       if (supabaseSessions && supabaseSessions.length > 0) {
-        for (const s of supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]) { // Error 22-28: Aserción de tipo
+        for (const s of supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]) {
           const typedSession: InventorySession = {
             dateKey: s.dateKey,
             inventoryType: s.inventoryType,
@@ -1350,7 +1360,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const productRulesToDeleteLocally: number[] = [];
 
       if (supabaseProductRules && supabaseProductRules.length > 0) {
-        for (const c of supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]) { // Error 16-21: Aserción de tipo
+        for (const c of supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]) {
           const typedConfig: MasterProductConfig = {
             productId: c.productId,
             productName: c.productName,
@@ -1562,7 +1572,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.error("Error fetching product_rules from Supabase:", productRulesError);
       } else if (supabaseProductRules && supabaseProductRules.length > 0) {
         // Convert Supabase data to Dexie format
-        const productRulesToPut: MasterProductConfig[] = (supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]).map(rule => ({ // Error 16-21: Aserción de tipo
+        const productRulesToPut: MasterProductConfig[] = (supabaseProductRules as Database['public']['Tables']['product_rules']['Row'][]).map(rule => ({
           productId: rule.productId,
           productName: rule.productName,
           rules: rule.rules,
@@ -1589,7 +1599,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.error("Error fetching inventory_sessions from Supabase:", sessionsError);
       } else if (supabaseSessions && supabaseSessions.length > 0) {
         // Convert Supabase data to Dexie format
-        const sessionsToPut: InventorySession[] = (supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]).map(session => ({ // Error 22-28: Aserción de tipo
+        const sessionsToPut: InventorySession[] = (supabaseSessions as Database['public']['Tables']['inventory_sessions']['Row'][]).map(session => ({
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
@@ -1659,37 +1669,34 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     // Cleanup para el debounce
     return () => {
-      debouncedSaveCurrentSessionRef.current?.cancel(); // Error 29: 'cancel' ahora existe en el tipo
+      debouncedSaveCurrentSessionRef.current?.cancel();
     };
   }, [state.sessionId, state.inventoryType, saveCurrentSession]);
 
   // Función para actualizar el estado y disparar el guardado debounced
   const updateAndDebounceSaveInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
-    setSyncStatus('pending'); // Establecer estado de sincronización a 'pending' inmediatamente
-    // Error 30: Despachar una acción con el tipo y payload correctos
-    dispatch(prevState => {
-      const updatedData = [...prevState.rawInventoryItemsFromDb];
-      if (updatedData[index]) {
-        // Solo actualizamos physicalQuantity y marcamos como editado
-        if (key === "physicalQuantity") {
-          updatedData[index].physicalQuantity = Math.max(0, value as number);
-          updatedData[index].hasBeenEdited = true;
-        } else if (key === "averageSales") {
-          updatedData[index].averageSales = value as number;
-        } else if (key === "hasBeenEdited") {
-          updatedData[index].hasBeenEdited = value as boolean;
-        }
-      }
+    setSyncStatus('pending');
 
-      // Disparar el guardado debounced con la data actualizada
-      if (debouncedSaveCurrentSessionRef.current && prevState.sessionId && prevState.inventoryType) {
-        // Llamamos al debounced con la copia de la data que acabamos de modificar
-        debouncedSaveCurrentSessionRef.current(updatedData);
+    const currentRawInventoryItems = state.rawInventoryItemsFromDb;
+    const updatedData = [...currentRawInventoryItems];
+    if (updatedData[index]) {
+      if (key === "physicalQuantity") {
+        updatedData[index].physicalQuantity = Math.max(0, value as number);
+        updatedData[index].hasBeenEdited = true;
+      } else if (key === "averageSales") {
+        updatedData[index].averageSales = value as number;
+      } else if (key === "hasBeenEdited") {
+        updatedData[index].hasBeenEdited = value as boolean;
       }
+    }
 
-      return { ...prevState, rawInventoryItemsFromDb: updatedData };
-    });
-  }, [setSyncStatus]);
+    dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: updatedData });
+
+    // Disparar el guardado debounced con la data actualizada
+    if (debouncedSaveCurrentSessionRef.current && state.sessionId && state.inventoryType) {
+      debouncedSaveCurrentSessionRef.current(updatedData);
+    }
+  }, [setSyncStatus, state.rawInventoryItemsFromDb, state.sessionId, state.inventoryType]);
 
   // Función para forzar la ejecución del guardado debounced
   const flushPendingSessionSave = useCallback(() => {
@@ -1739,8 +1746,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     clearLocalDatabase,
     updateAndDebounceSaveInventoryItem,
     flushPendingSessionSave,
-    fetchInitialData, // Asegurar que fetchInitialData esté exportado
-    updateSyncStatus, // Error 31: Añadido updateSyncStatus al valor del contexto
+    fetchInitialData,
+    updateSyncStatus,
   }), [
     state,
     filteredInventoryData,
@@ -1766,7 +1773,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     updateAndDebounceSaveInventoryItem,
     flushPendingSessionSave,
     fetchInitialData,
-    updateSyncStatus, // Error 31: Añadido updateSyncStatus a las dependencias
+    updateSyncStatus,
   ]);
 
   return (
