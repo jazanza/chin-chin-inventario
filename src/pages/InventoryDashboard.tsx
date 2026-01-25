@@ -25,56 +25,33 @@ const InventoryDashboard = () => {
     isOnline,
     isSupabaseSyncInProgress,
     flushPendingSessionSave,
-    updateSyncStatus, // Importado correctamente
-    fetchInitialData,
+    updateSyncStatus,
   } = useInventoryContext();
   
-  const [hasSessionHistory, setHasSessionHistory] = useState(false);
   const [showFileUploader, setShowFileUploader] = useState(false);
-  const [initialSyncDone, setInitialSyncDone] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState<any[] | null>(null);
 
-  // 1. Verificar historial y decidir qué mostrar al inicio
+  // 1. Cargar historial de sesiones al inicio y cuando el estado de carga cambia
   useEffect(() => {
     const checkHistory = async () => {
       const history = await getSessionHistory();
-      setHasSessionHistory(history.length > 0);
+      setSessionHistory(history);
       
-      // Si no hay historial y no hay dbBuffer ni sessionId, mostrar el FileUploader por defecto
-      if (history.length === 0 && !dbBuffer && !sessionId) {
+      // Si no hay sesión activa ni dbBuffer, y hay historial, mostramos el SessionManager por defecto.
+      if (history.length > 0 && !dbBuffer && !sessionId) {
+        setShowFileUploader(false);
+      } else if (history.length === 0 && !dbBuffer && !sessionId) {
+        // Si no hay historial, forzamos el FileUploader
         setShowFileUploader(true);
       }
-      setInitialSyncDone(true); // Marcar como hecho después de la primera verificación
     };
     checkHistory();
-  }, [getSessionHistory, dbBuffer, sessionId]);
-
-  // 2. Manejar la carga inicial de datos de la nube (si Dexie estaba vacío)
-  useEffect(() => {
-    // fetchInitialData se llama en el contexto si Dexie está vacío.
-    // Aquí solo nos aseguramos de que el estado de la UI se actualice después de la carga.
-    if (!initialSyncDone) {
-      fetchInitialData().then(() => {
-        // Después de la carga inicial, re-verificamos el historial
-        getSessionHistory().then(history => {
-          setHasSessionHistory(history.length > 0);
-          if (history.length > 0 && !dbBuffer && !sessionId) {
-            setShowFileUploader(false);
-          }
-          setInitialSyncDone(true);
-        });
-      });
-    }
-  }, [fetchInitialData, getSessionHistory, dbBuffer, sessionId, initialSyncDone]);
-
+  }, [getSessionHistory, dbBuffer, sessionId, loading]); // Dependencia 'loading' para reaccionar a la sincronización inicial
 
   const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer); // Guardar el buffer en el contexto para el inventario
     setInventoryType(null); // Reset inventory type selection
     setShowFileUploader(false); // Ocultar FileUploader una vez que el archivo está cargado
-  };
-
-  const handleInventoryChange = (updatedData: InventoryItem[]) => {
-    // La lógica de guardado debounced se maneja en InventoryTable y Context
   };
 
   const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
@@ -89,18 +66,14 @@ const InventoryDashboard = () => {
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
   const handleManualSync = async () => {
-    // 1. Forzar el guardado de cualquier cambio pendiente en la sesión actual
     flushPendingSessionSave();
-    // Dar un pequeño respiro para que Dexie procese el flush
     await new Promise(resolve => setTimeout(resolve, 50)); 
-    
-    // 2. Luego, iniciar la sincronización total con Supabase
     await syncToSupabase();
-    updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
+    updateSyncStatus();
   };
 
   // Lógica de renderizado condicional
-  if (loading && !initialSyncDone) {
+  if (loading && !sessionId) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
         <p className="text-base sm:text-lg text-center text-gray-700">Cargando o procesando datos...</p>
@@ -141,13 +114,11 @@ const InventoryDashboard = () => {
   }
 
   // 2. Si no hay dbBuffer cargado, no se ha forzado el FileUploader, y hay historial, mostrar SessionManager
-  // Este es el punto de entrada cuando la app inicia con sesiones existentes.
-  if (!dbBuffer && !showFileUploader && hasSessionHistory) {
+  if (!dbBuffer && !showFileUploader && sessionHistory && sessionHistory.length > 0) {
     return <SessionManager onStartNewSession={handleStartNewSession} />;
   }
 
   // 3. Si no hay dbBuffer cargado, o se ha forzado el FileUploader (ej. se hizo clic en "Nueva Sesión")
-  // Esto es para iniciar una sesión completamente nueva subiendo un archivo.
   if (!dbBuffer || showFileUploader) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
@@ -155,7 +126,7 @@ const InventoryDashboard = () => {
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 text-gray-900">Chin Chin Inventarios y Pedidos</h1>
           <FileUploader onFileLoaded={handleFileLoaded} loading={loading} />
           {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
-          {hasSessionHistory && ( // Solo mostrar "O cargar una sesión existente" si hay historial
+          {sessionHistory && sessionHistory.length > 0 && ( // Solo mostrar "O cargar una sesión existente" si hay historial
             <Button 
               onClick={() => setShowFileUploader(false)} // Este botón debe ocultar FileUploader y mostrar SessionManager
               variant="link" 
@@ -179,10 +150,10 @@ const InventoryDashboard = () => {
     );
   }
 
-  // Fallback, idealmente no debería alcanzarse si la lógica es completa
+  // Fallback
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
-      <p className="text-base sm:text-lg text-center text-gray-700">Cargando base de datos. Espera unos segundo.</p>
+      <p className="text-base sm:text-lg text-center text-gray-700">Cargando base de datos. Espera unos segundos.</p>
     </div>
   );
 };

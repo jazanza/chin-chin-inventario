@@ -87,7 +87,6 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
                         variant="outline"
                         size="icon"
                         onClick={() => {
-                          console.log("Botón presionado para index:", index, "Acción: Decrementar");
                           updateAndDebounceSaveInventoryItem(index, 'physicalQuantity', item.physicalQuantity - 1);
                         }}
                         disabled={item.physicalQuantity <= 0}
@@ -109,7 +108,6 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
                         variant="outline"
                         size="icon"
                         onClick={() => {
-                          console.log("Botón presionado para index:", index, "Acción: Incrementar");
                           updateAndDebounceSaveInventoryItem(index, 'physicalQuantity', item.physicalQuantity + 1);
                         }}
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"

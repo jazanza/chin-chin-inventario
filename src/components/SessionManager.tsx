@@ -59,7 +59,7 @@ export const SessionManager = ({ onStartNewSession }: SessionManagerProps) => {
                     <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Fecha</TableHead>
                     <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Tipo</TableHead>
                     <TableHead className="text-xs sm:text-sm text-gray-700 font-bold text-center">Efectividad</TableHead>
-                    <TableHead className="text-xs sm:text-sm text-gray-700 font-bold text-center">Acciones</TableHead> {/* Cambiado a Acciones */}
+                    <TableHead className="text-xs sm:text-sm text-gray-700 font-bold text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
