@@ -5,15 +5,15 @@ import { InventoryTable } from "@/components/InventoryTable";
 import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
 import { SessionManager } from "@/components/SessionManager";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, RefreshCcw } from "lucide-react"; // Importar RefreshCcw
+import { PlusCircle, RefreshCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils"; // Importar cn para estilos condicionales
+import { cn } from "@/lib/utils";
 
 const InventoryDashboard = () => {
   const { 
     dbBuffer, 
     inventoryType, 
-    filteredInventoryData, // Ahora usamos filteredInventoryData
+    filteredInventoryData,
     loading, 
     error, 
     sessionId, 
@@ -21,12 +21,12 @@ const InventoryDashboard = () => {
     setInventoryType, 
     resetInventoryState,
     getSessionHistory,
-    syncToSupabase, // Usar syncToSupabase
-    isOnline, // Para deshabilitar el botón si no hay conexión
-    isSupabaseSyncInProgress, // Para deshabilitar el botón si ya está en curso
-    flushPendingSessionSave, // Importar la nueva función para forzar el guardado
-    updateSyncStatus, // Importar para actualizar el estado de sincronización
-    fetchInitialData, // Importar fetchInitialData
+    syncToSupabase,
+    isOnline,
+    isSupabaseSyncInProgress,
+    flushPendingSessionSave,
+    updateSyncStatus, // Error 31: Importado correctamente
+    fetchInitialData,
   } = useInventoryContext();
   
   const [hasSessionHistory, setHasSessionHistory] = useState(false);
@@ -95,7 +95,7 @@ const InventoryDashboard = () => {
     await new Promise(resolve => setTimeout(resolve, 50)); 
     
     // 2. Luego, iniciar la sincronización total con Supabase
-    await syncToSupabase(); // Usar syncToSupabase
+    await syncToSupabase();
     updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
   };
 
@@ -134,7 +134,7 @@ const InventoryDashboard = () => {
         {error ? (
           <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
         ) : (
-          <InventoryTable inventoryData={filteredInventoryData} onInventoryChange={handleInventoryChange} />
+          <InventoryTable inventoryData={filteredInventoryData} /> {/* Error 32: Eliminada la prop onInventoryChange */}
         )}
       </div>
     );

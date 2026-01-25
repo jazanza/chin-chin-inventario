@@ -11,40 +11,40 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw } from "lucide-react"; // Importar RefreshCcw
+import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw } from "lucide-react";
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
 import { FileUploader } from "@/components/FileUploader";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Switch } from "@/components/ui/switch"; // Importar Switch
+import { Switch } from "@/components/ui/switch";
 
 
 const SettingsPage = () => {
   const {
-    filteredInventoryData, // <-- Corregido: Usar filteredInventoryData
-    masterProductConfigs, // Ahora solo contiene productos no ocultos por defecto
+    filteredInventoryData,
+    masterProductConfigs,
     saveMasterProductConfig,
-    deleteMasterProductConfig, // Ahora realiza un soft delete (ocultar)
+    deleteMasterProductConfig,
     saveCurrentSession,
     sessionId,
     inventoryType,
     loading,
     processDbForMasterConfigs,
-    loadMasterProductConfigs, // Para recargar después de un soft delete
-    clearLocalDatabase, // Nueva función para limpiar la DB local
-    syncFromSupabase, // Importar syncFromSupabase
-    isOnline, // Para deshabilitar el botón si no hay conexión
-    isSupabaseSyncInProgress, // Para deshabilitar el botón si ya está en curso
+    loadMasterProductConfigs,
+    clearLocalDatabase,
+    syncToSupabase, // Error 33: Reemplazado syncFromSupabase con syncToSupabase
+    isOnline,
+    isSupabaseSyncInProgress,
   } = useInventoryContext();
 
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
-    [productId: number]: MasterProductConfig; // Cambiado a productId
+    [productId: number]: MasterProductConfig;
   }>({});
-  const [showHiddenProducts, setShowHiddenProducts] = useState(false); // Nuevo estado para el toggle
+  const [showHiddenProducts, setShowHiddenProducts] = useState(false);
 
   const [savingStatus, setSavingStatus] = useState<{
-    [key: number]: 'saving' | 'saved' | 'error' | null; // key es productId
+    [key: number]: 'saving' | 'saved' | 'error' | null;
   }>({});
 
   const [isUploadingConfig, setIsUploadingConfig] = useState(false);
@@ -71,7 +71,7 @@ const SettingsPage = () => {
       if (!grouped[config.supplier]) {
         grouped[config.supplier] = [];
       }
-      grouped[config.supplier].push(config);
+      grouped[supplier].push(config);
     });
     // Ordenar productos alfabéticamente dentro de cada grupo
     for (const supplier in grouped) {
@@ -89,7 +89,7 @@ const SettingsPage = () => {
 
   // --- Handlers para MasterProductConfig ---
   const handleProductConfigChange = useCallback((
-    productId: number, // Cambiado a productId
+    productId: number,
     field: "supplier",
     value: string | number
   ) => {
@@ -108,7 +108,7 @@ const SettingsPage = () => {
     });
   }, []);
 
-  const handleProductInputBlur = useCallback(async (productId: number) => { // Cambiado a productId
+  const handleProductInputBlur = useCallback(async (productId: number) => {
     const config = editableProductConfigs[productId];
     if (!config) return;
 
@@ -130,7 +130,7 @@ const SettingsPage = () => {
     }
   }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
-  const handleProductSupplierChange = useCallback(async (productId: number, newSupplier: string) => { // Cambiado a productId
+  const handleProductSupplierChange = useCallback(async (productId: number, newSupplier: string) => {
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
       setEditableProductConfigs(prev => ({
@@ -156,15 +156,15 @@ const SettingsPage = () => {
     }
   }, [editableProductConfigs, saveMasterProductConfig, filteredInventoryData, saveCurrentSession, sessionId, inventoryType]);
 
-  const handleHideProductConfig = async (productId: number) => { // Cambiado a productId
+  const handleHideProductConfig = async (productId: number) => {
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
-      await deleteMasterProductConfig(productId); // Llama al soft delete (ocultar)
+      await deleteMasterProductConfig(productId);
       setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
       
       // Recargar las configuraciones maestras para que el producto oculto desaparezca de la vista
-      await loadMasterProductConfigs(showHiddenProducts); // Usar el estado actual del toggle
+      await loadMasterProductConfigs(showHiddenProducts);
 
       // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
@@ -179,7 +179,7 @@ const SettingsPage = () => {
   };
 
   // --- Handlers para Product Rules (reglas múltiples) ---
-  const handleAddRule = useCallback(async (productId: number) => { // Cambiado a productId
+  const handleAddRule = useCallback(async (productId: number) => {
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
       const currentConfig = editableProductConfigs[productId];
@@ -218,7 +218,7 @@ const SettingsPage = () => {
   }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
   const handleRuleChange = useCallback((
-    productId: number, // Cambiado a productId
+    productId: number,
     ruleIndex: number,
     field: keyof ProductRule,
     value: string
@@ -238,7 +238,7 @@ const SettingsPage = () => {
     });
   }, []);
 
-  const handleRuleBlur = useCallback(async (productId: number) => { // Cambiado a productId
+  const handleRuleBlur = useCallback(async (productId: number) => {
     const config = editableProductConfigs[productId];
     if (!config) return;
 
@@ -261,7 +261,7 @@ const SettingsPage = () => {
     }
   }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
-  const handleDeleteRule = useCallback(async (productId: number, ruleIndex: number) => { // Cambiado a productId
+  const handleDeleteRule = useCallback(async (productId: number, ruleIndex: number) => {
     setEditableProductConfigs(prev => {
       const newConfigs = { ...prev };
       const currentConfig = newConfigs[productId];
@@ -307,7 +307,7 @@ const SettingsPage = () => {
   };
 
   const handleForceTotalSync = async () => {
-    await syncFromSupabase("SettingsPage_UserAction", true); // <-- FIX: Añadir origen y marcar como acción de usuario
+    await syncToSupabase(); // Error 33: Usar syncToSupabase
   };
 
   if (loading || isUploadingConfig) {
@@ -381,17 +381,17 @@ const SettingsPage = () => {
                           {products.map((config) => {
                             const isHidden = config.isHidden;
                             return (
-                              <React.Fragment key={config.productId}> {/* Usar productId como key */}
+                              <React.Fragment key={config.productId}>
                                 <TableRow className={cn(
                                   "border-b border-gray-100 hover:bg-gray-100",
-                                  isHidden && "bg-gray-50 text-gray-400 italic" // Estilo para productos ocultos
+                                  isHidden && "bg-gray-50 text-gray-400 italic"
                                 )}>
                                   <TableCell className="py-2 px-2 text-xs sm:text-sm font-medium">{config.productName}</TableCell>
                                   <TableCell className="py-2 px-2">
                                     <Select
-                                      value={editableProductConfigs[config.productId]?.supplier ?? config.supplier} // Usar productId
-                                      onValueChange={(value) => handleProductSupplierChange(config.productId, value)} // Usar productId
-                                      disabled={isHidden} // Deshabilitar si está oculto
+                                      value={editableProductConfigs[config.productId]?.supplier ?? config.supplier}
+                                      onValueChange={(value) => handleProductSupplierChange(config.productId, value)}
+                                      disabled={isHidden}
                                     >
                                       <SelectTrigger className="w-[120px] text-xs sm:text-sm">
                                         <SelectValue placeholder="Seleccionar proveedor" />
@@ -406,13 +406,13 @@ const SettingsPage = () => {
                                     </Select>
                                   </TableCell>
                                   <TableCell className="py-2 px-2 text-center">
-                                    {savingStatus[config.productId] === 'saving' && ( // Usar productId
+                                    {savingStatus[config.productId] === 'saving' && (
                                       <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
                                     )}
-                                    {savingStatus[config.productId] === 'saved' && ( // Usar productId
+                                    {savingStatus[config.productId] === 'saved' && (
                                       <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
                                     )}
-                                    {savingStatus[config.productId] === 'error' && ( // Usar productId
+                                    {savingStatus[config.productId] === 'error' && (
                                       <XCircle className="h-4 w-4 text-red-500 inline-block" />
                                     )}
                                     {isHidden && !savingStatus[config.productId] && (
@@ -421,14 +421,14 @@ const SettingsPage = () => {
                                   </TableCell>
                                   <TableCell className="py-2 px-2 text-center">
                                     <Button
-                                      variant="outline" // Cambiado a outline para 'Ocultar'
+                                      variant="outline"
                                       size="sm"
-                                      onClick={() => handleHideProductConfig(config.productId)} // Usar productId
+                                      onClick={() => handleHideProductConfig(config.productId)}
                                       className={cn(
                                         "h-7 w-7 p-0",
                                         isHidden ? "text-green-600 border-green-600 hover:bg-green-600 hover:text-white" : "text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
                                       )}
-                                      disabled={savingStatus[config.productId] === 'saving'} // Usar productId
+                                      disabled={savingStatus[config.productId] === 'saving'}
                                     >
                                       {isHidden ? <Eye className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
                                     </Button>
@@ -439,34 +439,34 @@ const SettingsPage = () => {
                                   <TableCell colSpan={5} className="py-2 px-2">
                                     <div className="flex flex-col gap-2 pl-4">
                                       <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
-                                      {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => ( // Usar productId
+                                      {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => (
                                         <div key={ruleIndex} className="flex items-center gap-2 text-xs">
                                           <span>Si Stock es &lt;=</span>
                                           <Input
                                             type="number"
                                             value={rule.minStock}
-                                            onChange={(e) => handleRuleChange(config.productId, ruleIndex, "minStock", e.target.value)} // Usar productId
-                                            onBlur={() => handleRuleBlur(config.productId)} // Usar productId
+                                            onChange={(e) => handleRuleChange(config.productId, ruleIndex, "minStock", e.target.value)}
+                                            onBlur={() => handleRuleBlur(config.productId)}
                                             className="w-16 text-center"
                                             min="0"
-                                            disabled={isHidden} // Deshabilitar si está oculto
+                                            disabled={isHidden}
                                           />
                                           <span>Pedir</span>
                                           <Input
                                             type="number"
                                             value={rule.orderAmount}
-                                            onChange={(e) => handleRuleChange(config.productId, ruleIndex, "orderAmount", e.target.value)} // Usar productId
-                                            onBlur={() => handleRuleBlur(config.productId)} // Usar productId
+                                            onChange={(e) => handleRuleChange(config.productId, ruleIndex, "orderAmount", e.target.value)}
+                                            onBlur={() => handleRuleBlur(config.productId)}
                                             className="w-16 text-center"
                                             min="0"
-                                            disabled={isHidden} // Deshabilitar si está oculto
+                                            disabled={isHidden}
                                           />
                                           <Button
                                             variant="ghost"
                                             size="icon"
-                                            onClick={() => handleDeleteRule(config.productId, ruleIndex)} // Usar productId
+                                            onClick={() => handleDeleteRule(config.productId, ruleIndex)}
                                             className="h-6 w-6 text-red-500 hover:bg-red-100"
-                                            disabled={isHidden} // Deshabilitar si está oculto
+                                            disabled={isHidden}
                                           >
                                             <Trash2 className="h-3 w-3" />
                                           </Button>
@@ -475,9 +475,9 @@ const SettingsPage = () => {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => handleAddRule(config.productId)} // Usar productId
+                                        onClick={() => handleAddRule(config.productId)}
                                         className="mt-2 w-fit text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs"
-                                        disabled={isHidden} // Deshabilitar si está oculto
+                                        disabled={isHidden}
                                       >
                                         <PlusCircle className="h-3 w-3 mr-1" /> Añadir Condición
                                       </Button>
@@ -508,7 +508,7 @@ const SettingsPage = () => {
             <AlertDialogTrigger asChild>
               <Button 
                 variant="outline" 
-                disabled={loading || !isOnline || isSupabaseSyncInProgress} // Deshabilitar si offline o ya sincronizando
+                disabled={loading || !isOnline || isSupabaseSyncInProgress}
                 className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white"
               >
                 <RefreshCcw className={cn("h-4 w-4 mr-2", isSupabaseSyncInProgress && "animate-spin")} />
