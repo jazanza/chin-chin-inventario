@@ -6,6 +6,7 @@
  * - Añadir tipado explícito para supabaseSessions y supabaseProductRules
  * - Ajustar condición de inicialización del useEffect de Realtime para no depender de isOnline
  * - Añadir log de depuración para el montaje del Realtime useEffect
+ * - **CRÍTICO**: Asegurar que syncLockRef.current se ponga en false en todos los bloques finally.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -395,7 +396,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError('Error al guardar la sesión localmente.');
       throw e;
     } finally {
-      syncLockRef.current = false;
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
@@ -460,6 +461,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.error("Error deleting session:", e);
       showError('Error al eliminar la sesión.');
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
@@ -555,7 +557,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError('Error al guardar la configuración del producto localmente.');
       throw e;
     } finally {
-      syncLockRef.current = false;
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
@@ -615,6 +617,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError('Error al cambiar la visibilidad de la configuración de producto.');
       throw e;
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
@@ -751,6 +754,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         const configsToUpdateOrAddInDexie: MasterProductConfig[] = [];
         const configsToUpsertToSupabase: MasterProductConfig[] = [];
+        let newProductsCount = 0;
+        let updatedProductNamesCount = 0;
         const nowIso = new Date().toISOString();
 
         rawInventoryItems.forEach((dbItem) => {
@@ -787,11 +792,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               sync_pending: true,
               updated_at: nowIso,
             };
+            newProductsCount++;
             configChanged = true;
           } else {
             const updatedConfig = { ...masterConfig };
             if (updatedConfig.productName !== dbItem.Producto) {
               updatedConfig.productName = dbItem.Producto;
+              updatedProductNamesCount++;
               configChanged = true;
             }
             masterConfig = updatedConfig;
@@ -908,6 +915,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_ERROR', payload: e.message });
         showError(`Error al procesar el inventario: ${e.message}`);
       } finally {
+        syncLockRef.current = false; // Asegurar que se libere
         dispatch({ type: 'SET_LOADING', payload: false });
         dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
         updateSyncStatus();
@@ -1062,6 +1070,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError(`Error al procesar el archivo DB para configuraciones: ${e.message}`);
       dispatch({ type: 'SET_ERROR', payload: e.message });
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
@@ -1137,6 +1146,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
       showError('Error en la sincronización automática.');
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
@@ -1350,6 +1360,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError(`Error en la sincronización: ${e.message}`);
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
@@ -1366,13 +1377,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       if (syncLockRef.current) return;
-      syncLockRef.current = true;
+      syncLockRef.current = true; // Establecer el bloqueo
 
       try {
         console.log('[Sync] Tab became visible, performing recovery sync...');
         await syncFromSupabase("VisibilityChange");
       } finally {
-        syncLockRef.current = false;
+        syncLockRef.current = false; // Asegurar que se libere
       }
     }
   }, [state.isOnline, state.realtimeStatus, syncFromSupabase]);
@@ -1418,6 +1429,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError(`Error al reiniciar la configuración: ${e.message}`);
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
@@ -1453,6 +1465,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_ERROR', payload: e.message });
       showError(`Error al limpiar la base de datos local: ${e.message}`);
     } finally {
+      syncLockRef.current = false; // Asegurar que se libere
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
@@ -1509,6 +1522,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- Supabase Realtime Subscriptions ---
   useEffect(() => {
+    console.log('--- SYSTEM: Realtime useEffect is firing ---'); // Nuevo log para confirmar la ejecución del efecto
     console.log('--- SYSTEM: Intentando montar Realtime ---'); // Blood log
 
     if (!supabase) {
