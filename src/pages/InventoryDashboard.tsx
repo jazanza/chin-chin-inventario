@@ -19,23 +19,21 @@ const InventoryDashboard = () => {
     sessionId, 
     setDbBuffer, 
     setInventoryType, 
-    setRawInventoryItemsFromDb, // Nuevo setter para raw items
     resetInventoryState,
     getSessionHistory,
-    syncFromSupabase,
-    processDbForMasterConfigs, // Importar para 'Actualizar solo nuevos'
-    resetAllProductConfigs, // Importar para 'Reiniciar toda la configuración'
+    syncToSupabase, // Usar syncToSupabase
     isOnline, // Para deshabilitar el botón si no hay conexión
     isSupabaseSyncInProgress, // Para deshabilitar el botón si ya está en curso
     flushPendingSessionSave, // Importar la nueva función para forzar el guardado
     updateSyncStatus, // Importar para actualizar el estado de sincronización
+    fetchInitialData, // Importar fetchInitialData
   } = useInventoryContext();
   
   const [hasSessionHistory, setHasSessionHistory] = useState(false);
   const [showFileUploader, setShowFileUploader] = useState(false);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
-  // Eliminado dbBufferForConfigOptions y showConfigOptions ya que la carga de config se mueve a SettingsPage
 
+  // 1. Verificar historial y decidir qué mostrar al inicio
   useEffect(() => {
     const checkHistory = async () => {
       const history = await getSessionHistory();
@@ -45,50 +43,38 @@ const InventoryDashboard = () => {
       if (history.length === 0 && !dbBuffer && !sessionId) {
         setShowFileUploader(true);
       }
+      setInitialSyncDone(true); // Marcar como hecho después de la primera verificación
     };
     checkHistory();
   }, [getSessionHistory, dbBuffer, sessionId]);
 
-  // Manejar la sincronización inicial desde Supabase
+  // 2. Manejar la carga inicial de datos de la nube (si Dexie estaba vacío)
   useEffect(() => {
-    const performInitialSync = async () => {
-      if (!initialSyncDone) {
-        // Verificar si hay sesiones locales
-        const localSessions = await getSessionHistory();
-        
-        // Si no hay sesiones locales, intentar sincronizar desde Supabase
-        if (localSessions.length === 0) {
-          await syncFromSupabase("InventoryDashboard_InitialSync"); // <-- FIX: Añadir origen
-          
-          // Volver a verificar el historial después de la sincronización
-          const updatedHistory = await getSessionHistory();
-          setHasSessionHistory(updatedHistory.length > 0);
-          
-          // Si después de sincronizar hay sesiones, mostrar el SessionManager
-          if (updatedHistory.length > 0 && !dbBuffer && !sessionId) {
+    // fetchInitialData se llama en el contexto si Dexie está vacío.
+    // Aquí solo nos aseguramos de que el estado de la UI se actualice después de la carga.
+    if (!initialSyncDone) {
+      fetchInitialData().then(() => {
+        // Después de la carga inicial, re-verificamos el historial
+        getSessionHistory().then(history => {
+          setHasSessionHistory(history.length > 0);
+          if (history.length > 0 && !dbBuffer && !sessionId) {
             setShowFileUploader(false);
           }
-        }
-        
-        setInitialSyncDone(true);
-      }
-    };
+          setInitialSyncDone(true);
+        });
+      });
+    }
+  }, [fetchInitialData, getSessionHistory, dbBuffer, sessionId, initialSyncDone]);
 
-    performInitialSync();
-  }, [getSessionHistory, syncFromSupabase, dbBuffer, sessionId, initialSyncDone]);
 
   const handleFileLoaded = (buffer: Uint8Array) => {
     setDbBuffer(buffer); // Guardar el buffer en el contexto para el inventario
-    // Ya no se necesita dbBufferForConfigOptions ni showConfigOptions aquí
     setInventoryType(null); // Reset inventory type selection
     setShowFileUploader(false); // Ocultar FileUploader una vez que el archivo está cargado
   };
 
   const handleInventoryChange = (updatedData: InventoryItem[]) => {
-    // Cuando la tabla edita, actualiza la lista filtrada, que luego se guarda en la sesión
-    // No necesitamos un setter para rawInventoryItemsFromDb aquí, ya que la tabla edita la lista filtrada
-    // y saveCurrentSession tomará la lista filtrada directamente.
-    // La lógica de saveCurrentSession ya está ajustada para recibir la lista filtrada.
+    // La lógica de guardado debounced se maneja en InventoryTable y Context
   };
 
   const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
@@ -96,26 +82,22 @@ const InventoryDashboard = () => {
   };
 
   const handleStartNewSession = useCallback(() => {
-    resetInventoryState(); // Resetear el estado del inventario (excepto dbBuffer si ya estaba cargado)
+    resetInventoryState(); // Resetear el estado del inventario
     setDbBuffer(null); // Forzar la carga de un nuevo archivo DB
     setInventoryType(null); // Asegurarse de que el tipo de inventario se seleccione de nuevo
     setShowFileUploader(true); // Mostrar el FileUploader para la nueva sesión
-    // Limpiado dbBufferForConfigOptions y showConfigOptions
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
   const handleManualSync = async () => {
     // 1. Forzar el guardado de cualquier cambio pendiente en la sesión actual
     flushPendingSessionSave();
-    // Dar un pequeño respiro para que Dexie procese el flush (aunque es síncrono, es buena práctica)
+    // Dar un pequeño respiro para que Dexie procese el flush
     await new Promise(resolve => setTimeout(resolve, 50)); 
     
     // 2. Luego, iniciar la sincronización total con Supabase
-    await syncFromSupabase("UserManualSave", true);
+    await syncToSupabase(); // Usar syncToSupabase
     updateSyncStatus(); // Asegurarse de que el estado de sincronización se actualice
   };
-
-  // Eliminados handleUpdateOnlyNew y handleResetAndReload ya que la lógica se mueve a SettingsPage
-
 
   // Lógica de renderizado condicional
   if (loading && !initialSyncDone) {
@@ -160,7 +142,7 @@ const InventoryDashboard = () => {
 
   // 2. Si no hay dbBuffer cargado, no se ha forzado el FileUploader, y hay historial, mostrar SessionManager
   // Este es el punto de entrada cuando la app inicia con sesiones existentes.
-  if (!dbBuffer && !showFileUploader && (hasSessionHistory || initialSyncDone)) {
+  if (!dbBuffer && !showFileUploader && hasSessionHistory) {
     return <SessionManager onStartNewSession={handleStartNewSession} />;
   }
 

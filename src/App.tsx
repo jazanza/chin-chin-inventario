@@ -8,39 +8,7 @@ import OrdersPage from "./pages/OrdersPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
 import { Layout } from "./components/Layout";
-import { InventoryProvider, useInventoryContext } from "./context/InventoryContext";
-import { useEffect, useRef } from "react"; // Importar useRef
-
-// Componente para manejar la sincronización inicial y de visibilidad
-const AppInitializer = () => {
-  const { syncFromSupabase, handleVisibilityChangeSync } = useInventoryContext();
-  const initialSyncDoneRef = useRef(false); // Cambiado a useRef
-
-  useEffect(() => {
-    const initializeApp = async () => {
-      if (!initialSyncDoneRef.current) { // Usar la referencia
-        try {
-          // Siempre intentar sincronizar desde Supabase al inicio
-          await syncFromSupabase("AppInitializer"); // Pasar el origen
-          initialSyncDoneRef.current = true; // Marcar como hecho en la referencia
-        } catch (error) {
-          console.error("Error during app initialization:", error);
-        }
-      }
-    };
-
-    initializeApp();
-
-    // Añadir listener para el cambio de visibilidad de la pestaña
-    document.addEventListener('visibilitychange', handleVisibilityChangeSync);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChangeSync);
-    };
-  }, [syncFromSupabase, handleVisibilityChangeSync]); // Dependencias para asegurar que se ejecute una vez y se limpie
-
-  return null;
-};
+import { InventoryProvider } from "./context/InventoryContext";
 
 const queryClient = new QueryClient();
 
@@ -51,7 +19,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <InventoryProvider>
-          <AppInitializer />
+          {/* AppInitializer eliminado. La carga inicial se maneja dentro de InventoryProvider. */}
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<Navigate to="/inventario" replace />} />

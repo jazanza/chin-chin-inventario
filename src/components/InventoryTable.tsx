@@ -24,24 +24,25 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     setEditableInventory(inventoryData);
   }, [inventoryData]);
 
-  const updateInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
+  // La función de actualización ahora solo llama al contexto con el índice, clave y valor
+  const updateItemInContext = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
     updateAndDebounceSaveInventoryItem(index, key, value);
   }, [updateAndDebounceSaveInventoryItem]);
 
   const handlePhysicalQuantityChange = useCallback((index: number, value: string) => {
     const newQuantity = parseInt(value, 10);
-    updateInventoryItem(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
-  }, [updateInventoryItem]);
+    updateItemInContext(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
+  }, [updateItemInContext]);
 
   // MODIFICADO: Se pasa currentQuantity directamente para evitar stale closures
   const handleIncrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
-    updateInventoryItem(index, "physicalQuantity", currentQuantity + 1);
-  }, [updateInventoryItem]);
+    updateItemInContext(index, "physicalQuantity", currentQuantity + 1);
+  }, [updateItemInContext]);
 
   // MODIFICADO: Se pasa currentQuantity directamente para evitar stale closures
   const handleDecrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
-    updateInventoryItem(index, "physicalQuantity", currentQuantity - 1);
-  }, [updateInventoryItem]);
+    updateItemInContext(index, "physicalQuantity", currentQuantity - 1);
+  }, [updateItemInContext]);
 
   const formatProductName = (productName: string) => {
     return productName;
