@@ -1,11 +1,12 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global simplificado para la gestión de inventarios, sesiones y sincronización con Supabase.
- * @version v1.5.3
+ * @version v1.5.4
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.5.3:
- * Corregir la función updateAndDebounceSaveInventoryItem para que actualice el estado local y dispare el guardado debounced correctamente.
+ * PROPÓSITO DE LA VERSIÓN v1.5.4:
+ * Asegurar la interactividad de los botones de cantidad real eliminando el estado local de InventoryTable
+ * y centralizando las actualizaciones a través de updateAndDebounceSaveInventoryItem en el contexto.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";

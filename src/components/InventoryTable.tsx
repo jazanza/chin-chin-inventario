@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useMemo, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -6,23 +6,18 @@ import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InventoryItem, useInventoryContext } from "@/context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-// Eliminado import debounce from "lodash.debounce";
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
-  onInventoryChange: (updatedData: InventoryItem[]) => void;
+  // onInventoryChange ya no es necesario, las actualizaciones van directamente al contexto
 }
 
-export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTableProps) => {
+export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
   const { 
     updateAndDebounceSaveInventoryItem 
   } = useInventoryContext(); 
-  const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
-
-  useEffect(() => {
-    // Cuando inventoryData (la lista filtrada del contexto) cambia, actualizamos el estado local
-    setEditableInventory(inventoryData);
-  }, [inventoryData]);
+  // Eliminado: const [editableInventory, setEditableInventory] = useState<InventoryItem[]>(inventoryData);
+  // Eliminado: useEffect para sincronizar editableInventory con inventoryData
 
   // La función de actualización ahora solo llama al contexto con el índice, clave y valor
   const updateItemInContext = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
@@ -34,12 +29,10 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     updateItemInContext(index, "physicalQuantity", isNaN(newQuantity) ? 0 : newQuantity);
   }, [updateItemInContext]);
 
-  // MODIFICADO: Se pasa currentQuantity directamente para evitar stale closures
   const handleIncrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
     updateItemInContext(index, "physicalQuantity", currentQuantity + 1);
   }, [updateItemInContext]);
 
-  // MODIFICADO: Se pasa currentQuantity directamente para evitar stale closures
   const handleDecrementPhysicalQuantity = useCallback((index: number, currentQuantity: number) => {
     updateItemInContext(index, "physicalQuantity", currentQuantity - 1);
   }, [updateItemInContext]);
@@ -52,9 +45,9 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
     let matches = 0;
     let positiveDiscrepancies = 0;
     let negativeDiscrepancies = 0;
-    const totalItems = editableInventory.length;
+    const totalItems = inventoryData.length; // Usar directamente inventoryData
 
-    editableInventory.forEach(item => {
+    inventoryData.forEach(item => { // Usar directamente inventoryData
       if (item.systemQuantity === item.physicalQuantity) {
         matches++;
       } else if (item.physicalQuantity > item.systemQuantity) {
@@ -73,7 +66,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
       effectivenessPercentage,
       totalItems,
     };
-  }, [editableInventory]);
+  }, [inventoryData]); // Depender directamente de inventoryData
 
   return (
     <div className="w-full">
@@ -88,7 +81,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
             </TableRow>
           </TableHeader>
           <TableBody>
-            {editableInventory.map((item, index) => {
+            {inventoryData.map((item, index) => { {/* Usar directamente inventoryData */}
               const isMatch = item.systemQuantity === item.physicalQuantity;
               const isExcess = item.physicalQuantity > item.systemQuantity;
               const isDeficit = item.physicalQuantity < item.systemQuantity;
@@ -104,7 +97,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleDecrementPhysicalQuantity(index, item.physicalQuantity)} // Pasa la cantidad actual
+                        onClick={() => handleDecrementPhysicalQuantity(index, item.physicalQuantity)}
                         disabled={item.physicalQuantity <= 0}
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
@@ -123,7 +116,7 @@ export const InventoryTable = ({ inventoryData, onInventoryChange }: InventoryTa
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleIncrementPhysicalQuantity(index, item.physicalQuantity)} // Pasa la cantidad actual
+                        onClick={() => handleIncrementPhysicalQuantity(index, item.physicalQuantity)}
                         className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                       >
                         <Plus className="h-3 w-3" />
