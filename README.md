@@ -13,7 +13,7 @@ Una aplicación web y de escritorio (Electron) para gestionar inventarios de pro
 *   **Configuración de Productos Centralizada:** Gestiona proveedores, crea y edita múltiples reglas de pedido, y oculta productos que ya no deseas ver.
 *   **Sincronización Automática en la Nube (Supabase):** Todos los datos (sesiones, configuraciones) se guardan localmente y se sincronizan automáticamente con una base de datos en la nube.
 *   **Persistencia Offline:** Funciona completamente sin conexión. Los cambios se guardan localmente y se sincronizan cuando hay internet.
-*   **Actualizaciones en Tiempo Real:** Refleja inmediatamente los cambios realizados en otros dispositivos o por otros usuarios.
+*   **Actualizaciones en Tiempo Real (Arquitectura de Espejo):** La aplicación mantiene un "espejo" local de los datos de la nube. Cuando otro usuario o dispositivo modifica datos en Supabase, estos cambios se reflejan **inmediatamente** en la UI de todos los clientes conectados, creando una experiencia de colaboración fluida.
 *   **Herramientas de Mantenimiento:** Forzar sincronización total o limpiar la base de datos local.
 
 ## 🛠️ Tecnologías
@@ -55,6 +55,8 @@ public/               # Archivos estáticos
 2.  Descarga las últimas sesiones y configuraciones de productos.
 3.  Sube cualquier cambio local pendiente.
 4.  Si hay sesiones guardadas, se muestra el `SessionManager`. De lo contrario, se muestra el `FileUploader`.
+5.  **Arquitectura de Espejo (Realtime):** La aplicación mantiene una copia local (en IndexedDB) de los datos de la nube. Gracias a las suscripciones de Supabase Realtime, cualquier cambio (creación, actualización, eliminación) en las tablas `inventory_sessions` o `product_rules` en la nube se propaga **instantáneamente** a todos los clientes conectados. Esto asegura que todos los usuarios vean la información más reciente, creando un "espejo" de la base de datos en cada dispositivo.
+6.  **Control de Concurrencia (`syncLockRef`):** Para evitar conflictos y garantizar la integridad de los datos durante operaciones de guardado o sincronización complejas, se utiliza un `useRef` llamado `syncLockRef`. Cuando una operación de escritura o sincronización está en curso, `syncLockRef.current` se establece en `true`. Los listeners de Realtime verifican este bloqueo y pausan el procesamiento de cambios remotos si `syncLockRef` está activo, permitiendo que la operación local termine sin interrupciones. El uso de un bloque `finally` garantiza que `syncLockRef.current` siempre se restablezca a `false`, liberando el hilo y permitiendo que el Realtime reanude su trabajo.
 
 ### 2. Flujo de Inventario
 
@@ -91,6 +93,7 @@ public/               # Archivos estáticos
 *   **Actualización en Tiempo Real:** La app se suscribe a cambios en Supabase (`Realtime`). Cuando otro usuario modifica datos, estos cambios se reflejan **inmediatamente** en la UI de todos los clientes conectados.
 *   **Reconciliación de Conflictos:** La sincronización bidireccional (`syncFromSupabase`) y la lógica de `updated_at` en `Dexie` aseguran que la versión más reciente de los datos prevalezca.
 *   **Sincronización al Volver al Primer Plano:** En móviles o pestañas inactivas, al volver a la app se dispara una sincronización rápida.
+*   **Requisito de Supabase (`REPLICA IDENTITY FULL`):** Para garantizar que los eventos de `DELETE` de Supabase Realtime incluyan los datos `old` (especialmente `dateKey` para sesiones y `productId` para reglas de producto), es **IMPRESCINDIBLE** configurar `REPLICA IDENTITY FULL` en las tablas `inventory_sessions` y `product_rules` en tu base de datos Supabase. Sin esta configuración, la aplicación no podrá identificar qué registro eliminar localmente al recibir un evento de borrado remoto.
 
 ## 📦 Desarrollo
 
@@ -116,8 +119,14 @@ yarn install
 
 1.  Crea un proyecto en [Supabase](https://supabase.com/).
 2.  Crea las tablas `inventory_sessions` y `product_rules` según las interfaces definidas en `src/lib/persistence.ts`.
-3.  Habilita el servicio `Realtime` en la configuración de tu proyecto Supabase.
-4.  Crea un archivo `.env.local` en la raíz del proyecto y agrega tus claves:
+3.  **Configura `REPLICA IDENTITY FULL`:** En tu base de datos Supabase, ejecuta el siguiente comando SQL para cada tabla (`inventory_sessions` y `product_rules`):
+    ```sql
+    ALTER TABLE public.inventory_sessions REPLICA IDENTITY FULL;
+    ALTER TABLE public.product_rules REPLICA IDENTITY FULL;
+    ```
+    Esto es crucial para que los eventos `DELETE` de Realtime incluyan los datos `old` necesarios para la sincronización.
+4.  Habilita el servicio `Realtime` en la configuración de tu proyecto Supabase.
+5.  Crea un archivo `.env.local` en la raíz del proyecto y agrega tus claves:
 
 ```env
 VITE_SUPABASE_URL=tu_url_de_supabase

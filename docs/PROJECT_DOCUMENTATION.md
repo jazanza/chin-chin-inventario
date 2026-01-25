@@ -7,7 +7,7 @@ Este documento detalla la arquitectura, el flujo de trabajo y la lógica de la a
 La aplicación Chin Chin es una herramienta de escritorio (Electron) y web que permite a los usuarios:
 1.  Cargar un archivo de base de datos `.db` de Aronium.
 2.  **Guardar, cargar y eliminar sesiones de inventario** para continuar trabajando donde lo dejaron o gestionar entradas duplicadas.
-3.  **Sincronizar automáticamente** sesiones de inventario y configuraciones de productos con una base de datos en la nube (Supabase).
+3.  **Sincronizar automáticamente** sesiones de inventario y configuraciones de productos con una base de datos en la nube (Supabase), implementando una **arquitectura de "espejo" en tiempo real**.
 4.  Seleccionar un tipo de inventario (Semanal o Mensual).
 5.  Visualizar y editar el inventario actual de productos, registrando las discrepancias.
 6.  Generar listas de pedidos para diferentes proveedores, aplicando **reglas de negocio configurables por producto** y permitiendo la edición manual de las cantidades a pedir.
@@ -38,6 +38,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   Si existen sesiones guardadas (localmente o descargadas de la nube), se muestra el `SessionManager` para que el usuario elija cargar una sesión existente o iniciar una nueva.
     *   Si no hay sesiones, se muestra directamente el `FileUploader`.
     *   La sincronización también se dispara automáticamente cuando la pestaña del navegador se vuelve visible (`visibilitychange`).
+    *   **Arquitectura de Espejo (Realtime):** La aplicación implementa una arquitectura de "espejo" utilizando las capacidades de Realtime de Supabase. Esto significa que cada cliente mantiene una copia local de los datos relevantes (sesiones de inventario y configuraciones de productos). Cualquier cambio realizado en la base de datos de Supabase (ya sea por otro cliente o directamente en el backend) se transmite instantáneamente a todos los clientes suscritos, quienes actualizan su copia local y su interfaz de usuario en tiempo real. Esto garantiza que todos los usuarios estén siempre viendo la información más actualizada.
 2.  **Gestión de Sesiones**:
     *   El usuario puede **eliminar sesiones** no deseadas desde el `SessionManager`. Las eliminaciones se sincronizan con la nube.
 3.  **Carga de Archivo DB**:
@@ -213,6 +214,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
     *   `isOnline`: Estado de la conexión a internet.
     *   `isSupabaseSyncInProgress`: Booleano para bloquear múltiples sincronizaciones simultáneas.
     *   `isSyncBlockedWarningActive`: Booleano para controlar la advertencia de bloqueo de sincronización.
+    *   `realtimeStatus`: Estado del canal de Realtime de Supabase.
 *   **`filteredInventoryData` (`useMemo`)**: Una propiedad computada que toma `rawInventoryItemsFromDb` y aplica las `masterProductConfigs` (filtrando productos ocultos, asignando reglas y proveedor correctos) para generar la lista final de `InventoryItem` que se muestra en la tabla. Preserva `physicalQuantity` y `hasBeenEdited` de la sesión actual.
 *   **`processInventoryData` (`useCallback`)**:
     *   Función asíncrona que toma el `buffer` y el `type` de inventario.
@@ -233,7 +235,7 @@ El objetivo principal es optimizar el proceso de gestión de stock y la creació
 *   **`deleteMasterProductConfig` (`useCallback`)**: Realiza un "soft delete" de una `MasterProductConfig` (cambia `isHidden` a `true`) en Dexie y Supabase.
 *   **`syncFromSupabase` (`useCallback`)**:
     *   La función central de sincronización bidireccional.
-    *   **Bloqueo de seguridad**: No se ejecuta si ya hay una sincronización en curso (`isSupabaseSyncInProgress`) o si la última sincronización terminó hace menos de 30 segundos (a menos que sea una acción de usuario explícita).
+    *   **Bloqueo de seguridad (`syncLockRef`):** Utiliza `syncLockRef` para evitar que múltiples operaciones de sincronización o guardado se ejecuten simultáneamente, lo que podría causar conflictos o pérdida de datos. Este `useRef` se establece en `true` al inicio de la operación y se garantiza su liberación (`false`) en un bloque `finally`.
     *   Primero, sube todos los ítems `sync_pending: true` de Dexie a Supabase.
     *   Luego, descarga todas las sesiones y configuraciones de producto de Supabase y las fusiona con los datos locales en Dexie, priorizando la versión más reciente (`updated_at`).
     *   Actualiza `lastSyncTimestampRef` al finalizar.
@@ -321,6 +323,13 @@ La gestión de productos y reglas de pedido ahora se centraliza en la aplicació
 1.  **Clonar el repositorio**: `git clone [URL_DEL_REPOSITORIO]`
 2.  **Instalar dependencias**: `npm install` o `yarn install`
 3.  **Configurar Supabase**: Asegúrate de tener las variables de entorno `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` configuradas en tu archivo `.env.local`.
+    **¡Importante! Configuración de `REPLICA IDENTITY FULL` en Supabase:**
+    Para que la sincronización en tiempo real de eventos `DELETE` funcione correctamente y la aplicación pueda identificar los registros eliminados, es **esencial** configurar `REPLICA IDENTITY FULL` en las tablas `inventory_sessions` y `product_rules` de tu base de datos Supabase. Puedes hacerlo ejecutando los siguientes comandos SQL en el editor de consultas de Supabase:
+    ```sql
+    ALTER TABLE public.inventory_sessions REPLICA IDENTITY FULL;
+    ALTER TABLE public.product_rules REPLICA IDENTITY FULL;
+    ```
+    Sin esta configuración, los eventos `DELETE` de Realtime no contendrán la información `old` necesaria para que la aplicación elimine el registro correspondiente en la base de datos local.
 4.  **Ejecutar en modo desarrollo (web)**: `npm run dev` o `yarn dev`
 5.  **Ejecutar Electron en desarrollo**: `npm run build:electron` (esto construirá la app y luego la ejecutará en Electron).
 
@@ -346,6 +355,7 @@ La aplicación está configurada para ser desplegada como una aplicación de esc
     *   **Prevención**: Prueba los escenarios de guardar, cargar, iniciar nueva sesión, guardar pedidos, eliminar sesiones, crear/editar/ocultar configuraciones de producto. Asegúrate de que los datos se persistan y recuperen correctamente, que el `debounce` funcione como se espera sin perder datos, y que la eliminación de una sesión (especialmente la activa) resetea el estado de la aplicación de forma coherente. Verifica que las interfaces (`InventorySession`, `MasterProductConfig`) sean consistentes en todos los lugares donde se usan.
 *   **Sincronización con Supabase (`src/lib/supabase.ts`, `InventoryContext.tsx`)**: La lógica de `syncFromSupabase` (subida de pendientes, descarga y fusión) es compleja y crítica para la integridad de los datos.
     *   **Prevención**: Realiza pruebas exhaustivas de sincronización en diferentes escenarios: con y sin conexión, con cambios locales pendientes, con cambios remotos, y con conflictos (aunque la estrategia actual es "last write wins" basada en `updated_at`). Monitorea los logs de Supabase para detectar errores.
+    *   **Requisito `REPLICA IDENTITY FULL`**: Es crucial que las tablas `inventory_sessions` y `product_rules` en Supabase tengan configurado `REPLICA IDENTITY FULL`. Esto asegura que los eventos `DELETE` de Realtime incluyan los datos `old` (como `dateKey` o `productId`) en el `payload`, permitiendo que la aplicación identifique y elimine correctamente el registro local. Sin esta configuración, los eventos de borrado remoto no se reflejarán correctamente en la aplicación.
 *   **`OrderGenerationModule.tsx` (Lógica de `finalOrders` y Copiado)**: La introducción de la columna "Pedir" editable y la dependencia del copiado en `finalOrderQuantity` es un área crítica.
     *   **Prevención**: Asegúrate de que `finalOrders` se inicialice correctamente con `adjustedQuantity` y que los cambios del usuario se reflejen solo en `finalOrderQuantity`. Verifica que la función `copyOrderToClipboard` siempre use `finalOrderQuantity` y que el resumen de Belbier se maneje como se espera (visible en UI, no en copiado).
 *   **`SettingsPage.tsx` (Gestión de Configuraciones)**: La interfaz para editar proveedores, reglas y ocultar productos es nueva y afecta directamente el comportamiento del inventario y los pedidos.

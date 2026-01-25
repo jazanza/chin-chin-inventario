@@ -1,20 +1,22 @@
 /**
- * PROPOSITO: InventoryContext v1.4.6 - Reconstrucción completa y corrección de tipado final
- * FECHA: 2024-05-23
- * CAMBIOS:
- * - Reconstrucción completa del archivo para asegurar integridad.
- * - Todas las importaciones necesarias, incluyendo RealtimeChannel.
- * - Todas las interfaces (InventoryItemFromDB, InventoryItem, OrderItem, InventorySession, MasterProductConfig, ProductRule, SupplierConfig).
- * - Configuración completa del reducer y estado inicial.
- * - Implementación completa de InventoryProvider y useInventoryContext.
- * - useEffect de Realtime con logs de diagnóstico (--- SYSTEM ---), manejo de errores de canal y reintentos.
- * - Bloques finally con syncLockRef.current = false en todas las funciones de persistencia y sincronización.
- * - Validación de formato de dateKey con Regex en el listener de Realtime.
- * - Manejo robusto de eventos DELETE en Realtime, verificando la existencia de dateKey/productId.
- * - Lógica de sincronización bidireccional (syncFromSupabase) con debounce y bloqueo de concurrencia.
- * - Manejo de estado de red y advertencias de sincronización pendiente.
- * - Corrección de tipado: Eliminado RealtimeChannelState de las importaciones y reemplazado por la unión de literales de cadena en el tipado de 'status' y en la interfaz de estado.
- * - **CORRECCIÓN DE ASIGNACIÓN useRef**: Asegurado que `syncBlockedWarningTimeoutRef` y todos los demás `useRef` se asignen y lean usando `.current`.
+ * @file src/context/InventoryContext.tsx
+ * @description Contexto global para la gestión de inventarios, sesiones y sincronización con Supabase.
+ * @version v1.4.6
+ * @date 2024-07-25
+ *
+ * PROPÓSITO DE LA VERSIÓN v1.4.6:
+ * Esta versión se enfoca en la estabilización y robustez de la sincronización en tiempo real con Supabase,
+ * la corrección de errores de tipado y la mejora de la gestión de concurrencia para evitar conflictos de datos.
+ * Se han implementado mecanismos de bloqueo (`syncLockRef`) y se ha refinado el manejo de eventos Realtime
+ * para asegurar la integridad y consistencia de los datos entre clientes y la base de datos local (IndexedDB).
+ *
+ * CAMBIOS CLAVE EN ESTA VERSIÓN:
+ * - Corrección de errores de tipado relacionados con `RealtimeChannelState` de Supabase.
+ * - Implementación y uso consistente de `syncLockRef` para controlar la concurrencia en operaciones de escritura/sincronización.
+ * - Aseguramiento de la liberación de `syncLockRef` mediante bloques `finally`.
+ * - Refinamiento de la lógica de sincronización bidireccional (`syncFromSupabase`) y reintentos.
+ * - Mejora en el manejo de eventos `DELETE` de Realtime, asumiendo `REPLICA IDENTITY FULL` en Supabase.
+ * - Adición de logs de diagnóstico (`--- SYSTEM ---`) para facilitar la depuración del flujo de Realtime.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -26,7 +28,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase';
-import { RealtimeChannel, REALTIME_CHANNEL_STATES } from '@supabase/supabase-js'; // Eliminado RealtimeChannelState de aquí
+import { RealtimeChannel, REALTIME_CHANNEL_STATES } from '@supabase/supabase-js';
 
 // Interfaces
 export interface InventoryItemFromDB {
@@ -58,7 +60,16 @@ export interface OrderItem {
 
 // --- Reducer Setup ---
 type SyncStatus = 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
-type RealtimeChannelStatusLiteral = 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR' | 'disconnected'; // Nuevo tipo literal
+/**
+ * @technical_note Supabase RealtimeChannelState Typing:
+ * No utilizamos directamente `RealtimeChannelState` de `@supabase/supabase-js` para el tipado del estado del canal
+ * debido a inconsistencias en su exportación o definición en algunas versiones del SDK.
+ * En su lugar, optamos por una unión de literales de cadena (`'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR'`)
+ * que son los valores documentados y esperados por el callback de `subscribe`.
+ * Esto asegura la compatibilidad y evita errores de compilación si la definición interna del SDK cambia.
+ * Se añade 'disconnected' para el estado inicial o cuando no hay suscripción activa.
+ */
+type RealtimeChannelStatusLiteral = 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR' | 'disconnected';
 
 interface InventoryState {
   dbBuffer: Uint8Array | null;
@@ -559,7 +570,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       } else {
         await db.productRules.update(configToSave.productId, { sync_pending: false });
         console.log("Master product config saved to Supabase successfully.");
-        warnedItems.current.delete(`product-${config.productId}`);
+        warnedItems.current.delete(`product-${configToSave.productId}`);
       }
       await loadMasterProductConfigs();
     } catch (e) {
@@ -1095,14 +1106,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
 
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
-    console.log("Attempting to retry pending syncs...");
+    console.log("Attempting to retry pending syncs..."); // Diagnóstico: Intento de reintentar sincronizaciones pendientes
 
     try {
       if (!db.isOpen()) await db.open();
 
       const pendingSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingSessions) {
-        console.log(`Retrying session: ${session.dateKey}`);
+        console.log(`Retrying session: ${session.dateKey}`); // Diagnóstico: Reintentando sesión específica
         const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
@@ -1121,14 +1132,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.sessions.update(session.dateKey, { sync_pending: false });
-          console.log(`Session ${session.dateKey} synced successfully.`);
+          console.log(`Session ${session.dateKey} synced successfully.`); // Diagnóstico: Sesión sincronizada con éxito
           warnedItems.current.delete(`session-${session.dateKey}`);
         }
       }
 
       const pendingProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingProductRules) {
-        console.log(`Retrying product config: ${config.productName} (${config.productId})`);
+        console.log(`Retrying product config: ${config.productName} (${config.productId})`); // Diagnóstico: Reintentando configuración de producto
         const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
           productId: config.productId,
           productName: config.productName,
@@ -1146,7 +1157,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.productRules.update(config.productId, { sync_pending: false });
-          console.log(`Product config ${config.productId} synced successfully.`);
+          console.log(`Product config ${config.productId} synced successfully.`); // Diagnóstico: Configuración de producto sincronizada con éxito
           warnedItems.current.delete(`product-${config.productId}`);
         }
       }
@@ -1173,14 +1184,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const THIRTY_SECONDS = 30 * 1000;
 
     if (!isUserAction && (now - lastSyncTimestampRef.current < THIRTY_SECONDS)) {
-      console.log(`🔄 Sincronización bloqueada por debounce de 30s. Origen: ${origin}`);
+      console.log(`🔄 [Sync] Sincronización bloqueada por debounce de 30s. Origen: ${origin}`); // Diagnóstico: Sincronización bloqueada por debounce
       return;
     }
 
     if (state.isSupabaseSyncInProgress) {
-      console.log(`🔄 Sincronización ya en curso, ignorando solicitud. Origen: ${origin}`);
+      console.log(`🔄 [Sync] Sincronización ya en curso, ignorando solicitud. Origen: ${origin}`); // Diagnóstico: Sincronización ya en curso
       if (!state.isSyncBlockedWarningActive && !syncBlockedWarningTimeoutRef.current) {
-        syncBlockedWarningTimeoutRef.current = setTimeout(() => { // Corrected here
+        syncBlockedWarningTimeoutRef.current = setTimeout(() => {
           dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: true });
           showError('Sincronización ya en curso. Por favor, espera a que termine el proceso actual.');
         }, 10000);
@@ -1188,9 +1199,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       return;
     }
 
-    if (syncBlockedWarningTimeoutRef.current) { // Correct
-      clearTimeout(syncBlockedWarningTimeoutRef.current); // Correct
-      syncBlockedWarningTimeoutRef.current = null; // Corrected here
+    if (syncBlockedWarningTimeoutRef.current) {
+      clearTimeout(syncBlockedWarningTimeoutRef.current);
+      syncBlockedWarningTimeoutRef.current = null;
     }
     if (state.isSyncBlockedWarningActive) {
       dispatch({ type: 'SET_SYNC_BLOCKED_WARNING_ACTIVE', payload: false });
@@ -1200,12 +1211,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
     dispatch({ type: 'SET_ERROR', payload: null });
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
-    console.log(`🔄 Iniciando sincronización bidireccional. Origen: ${origin}`);
+    console.log(`🔄 [Sync] Iniciando sincronización bidireccional. Origen: ${origin}`); // Diagnóstico: Inicio de sincronización
 
     try {
       if (!db.isOpen()) await db.open();
 
-      console.log("Uploading local pending sessions...");
+      console.log("[Sync] Uploading local pending sessions..."); // Diagnóstico: Subiendo sesiones pendientes
       const pendingLocalSessions = await db.sessions.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const session of pendingLocalSessions) {
         const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
@@ -1221,14 +1232,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .from('inventory_sessions') as any)
           .upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) {
-          console.error(`Error uploading pending session ${session.dateKey} to Supabase:`, error);
+          console.error(`[Sync] Error uploading pending session ${session.dateKey} to Supabase:`, error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.sessions.update(session.dateKey, { sync_pending: false });
           warnedItems.current.delete(`session-${session.dateKey}`);
         }
       }
-      console.log("Uploading local pending product configs...");
+      console.log("[Sync] Uploading local pending product configs..."); // Diagnóstico: Subiendo configuraciones de producto pendientes
       const pendingLocalProductRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const config of pendingLocalProductRules) {
         const supabaseConfig: Database['public']['Tables']['product_rules']['Insert'] = {
@@ -1243,16 +1254,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .from('product_rules') as any)
           .upsert(supabaseConfig, { onConflict: 'productId' });
         if (error) {
-          console.error(`Error uploading pending product config ${config.productId} to Supabase:`, error);
+          console.error(`[Sync] Error uploading pending product config ${config.productId} to Supabase:`, error);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else {
           await db.productRules.update(config.productId, { sync_pending: false });
           warnedItems.current.delete(`product-${config.productId}`);
         }
       }
-      console.log('Cambios locales subidos a la nube.');
+      console.log('[Sync] Cambios locales subidos a la nube.'); // Diagnóstico: Cambios locales subidos
 
-      console.log("Downloading all sessions from Supabase...");
+      console.log("[Sync] Downloading all sessions from Supabase..."); // Diagnóstico: Descargando sesiones
       const { data: supabaseSessions, error: sessionsError } = await supabase
         .from('inventory_sessions')
         .select('*');
@@ -1281,7 +1292,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           if (!localSession || new Date(typedSession.updated_at) > new Date(localSession.updated_at)) {
             sessionsToPutLocally.push(typedSession);
           } else if (new Date(localSession.updated_at) >= new Date(typedSession.updated_at) && localSession.sync_pending === true) {
-            console.log(`Keeping local pending session ${localSession.dateKey} as it's newer or same and pending.`);
+            console.log(`[Sync] Keeping local pending session ${localSession.dateKey} as it's newer or same and pending.`); // Diagnóstico: Manteniendo sesión local pendiente
           } else {
             sessionsToPutLocally.push(typedSession);
           }
@@ -1296,17 +1307,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         });
         if (sessionsToDeleteLocally.length > 0) {
           await db.sessions.bulkDelete(sessionsToDeleteLocally);
-          console.log(`[Sync] Limpieza local: Eliminando sesiones que ya no existen en la nube: [${sessionsToDeleteLocally.join(', ')}]`);
+          console.log(`[Sync] Limpieza local: Eliminando sesiones que ya no existen en la nube: [${sessionsToDeleteLocally.join(', ')}]`); // Diagnóstico: Limpieza de sesiones
         }
       } else {
         const localNonPendingSessions = localSessions.filter(s => s.sync_pending === false);
         if (localNonPendingSessions.length > 0) {
           await db.sessions.bulkDelete(localNonPendingSessions.map(s => s.dateKey));
-          console.log(`[Sync] Limpieza local: Eliminando todas las sesiones no pendientes ya que Supabase está vacío: [${localNonPendingSessions.map(s => s.dateKey).join(', ')}]`);
+          console.log(`[Sync] Limpieza local: Eliminando todas las sesiones no pendientes ya que Supabase está vacío: [${localNonPendingSessions.map(s => s.dateKey).join(', ')}]`); // Diagnóstico: Limpieza de sesiones (Supabase vacío)
         }
       }
 
-      console.log("Downloading all product configs from Supabase...");
+      console.log("[Sync] Downloading all product configs from Supabase..."); // Diagnóstico: Descargando configuraciones de producto
       const { data: supabaseProductRules, error: productRulesError } = await supabase
         .from('product_rules')
         .select('*');
@@ -1334,7 +1345,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           if (!localConfig || new Date(typedConfig.updated_at) > new Date(localConfig.updated_at)) {
             productRulesToPutLocally.push(typedConfig);
           } else if (new Date(localConfig.updated_at) >= new Date(typedConfig.updated_at) && localConfig.sync_pending === true) {
-            console.log(`Keeping local pending product config ${localConfig.productId} as it's newer or same and pending.`);
+            console.log(`[Sync] Keeping local pending product config ${localConfig.productId} as it's newer or same and pending.`); // Diagnóstico: Manteniendo configuración local pendiente
           } else {
             productRulesToPutLocally.push(typedConfig);
           }
@@ -1349,23 +1360,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         });
         if (productRulesToDeleteLocally.length > 0) {
           await db.productRules.bulkDelete(productRulesToDeleteLocally);
-          console.log(`[Sync] Limpieza local: Eliminando configuraciones de producto que ya no existen en la nube: [${productRulesToDeleteLocally.join(', ')}]`);
+          console.log(`[Sync] Limpieza local: Eliminando configuraciones de producto que ya no existen en la nube: [${productRulesToDeleteLocally.join(', ')}]`); // Diagnóstico: Limpieza de configuraciones
         }
       } else {
         const localNonPendingProductRules = localProductRules.filter(c => c.sync_pending === false);
         if (localNonPendingProductRules.length > 0) {
           await db.productRules.bulkDelete(localNonPendingProductRules.map(c => c.productId));
-          console.log(`[Sync] Limpieza local: Eliminando todas las configuraciones de producto no pendientes ya que Supabase está vacío: [${localNonPendingProductRules.map(c => c.productId).join(', ')}]`);
+          console.log(`[Sync] Limpieza local: Eliminando todas las configuraciones de producto no pendientes ya que Supabase está vacío: [${localNonPendingProductRules.map(c => c.productId).join(', ')}]`); // Diagnóstico: Limpieza de configuraciones (Supabase vacío)
         }
       }
-      console.log('Configuraciones y sesiones descargadas de la nube.');
+      console.log('[Sync] Configuraciones y sesiones descargadas de la nube.'); // Diagnóstico: Descarga completada
 
-      console.log("Sincronización bidireccional finalizada con éxito.");
+      console.log("🔄 [Sync] Sincronización bidireccional finalizada con éxito."); // Diagnóstico: Sincronización finalizada
       lastSyncTimestampRef.current = Date.now();
       await loadMasterProductConfigs();
       await getSessionHistory();
     } catch (e: any) {
-      console.error(`Error during syncFromSupabase (total sync) from origin ${origin}:`, e);
+      console.error(`🔄 [Sync] Error during syncFromSupabase (total sync) from origin ${origin}:`, e); // Diagnóstico: Error en sincronización
       dispatch({ type: 'SET_ERROR', payload: e.message });
       showError(`Error en la sincronización: ${e.message}`);
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
@@ -1382,7 +1393,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     if (document.visibilityState === 'visible' && state.isOnline) {
       // Si ya estamos suscritos y conectados, no forzamos una descarga total innecesaria
       if (state.realtimeStatus === 'SUBSCRIBED') {
-        console.log('[Sync] Realtime active, skipping full visibility sync.');
+        console.log('[Sync] Realtime active, skipping full visibility sync.'); // Diagnóstico: Realtime activo, saltando sincronización
         return;
       }
 
@@ -1390,7 +1401,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       syncLockRef.current = true; // Establecer el bloqueo
 
       try {
-        console.log('[Sync] Tab became visible, performing recovery sync...');
+        console.log('[Sync] Tab became visible, performing recovery sync...'); // Diagnóstico: Pestaña visible, realizando sincronización de recuperación
         await syncFromSupabase("VisibilityChange");
       } finally {
         syncLockRef.current = false; // Asegurar que se libere
@@ -1405,7 +1416,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       return;
     }
     if (state.isSupabaseSyncInProgress) {
-      console.log('Sincronización ya en curso, ignorando solicitud de reinicio de configuración.');
+      console.log('Sincronización ya en curso, ignorando solicitud de reinicio de configuración.'); // Diagnóstico: Sincronización en curso, ignorando reinicio
       showError('Sincronización ya en curso. Por favor, espera a que termine el proceso actual.');
       return;
     }
@@ -1415,7 +1426,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
     showSuccess('Reiniciando todas las configuraciones de productos...');
-    console.log("Starting reset all product configurations...");
+    console.log("Starting reset all product configurations..."); // Diagnóstico: Iniciando reinicio de configuraciones
 
     try {
       if (!db.isOpen()) await db.open();
@@ -1428,7 +1439,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         .neq('productId', 0);
 
       if (deleteError) throw deleteError;
-      console.log("All product rules deleted from Supabase.");
+      console.log("All product rules deleted from Supabase."); // Diagnóstico: Reglas de producto eliminadas de Supabase
 
       await processDbForMasterConfigs(buffer);
       showSuccess('Configuración de productos reiniciada y cargada desde el archivo DB.');
@@ -1457,7 +1468,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_ERROR', payload: null });
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
     showSuccess('Limpiando base de datos local...');
-    console.log("Starting clear local database...");
+    console.log("Starting clear local database..."); // Diagnóstico: Iniciando limpieza de DB local
 
     try {
       if (db.isOpen()) {
@@ -1469,7 +1480,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'RESET_STATE' });
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: [] });
       showSuccess('Base de datos local limpiada con éxito.');
-      console.log("Local database cleared successfully.");
+      console.log("Local database cleared successfully."); // Diagnóstico: DB local limpiada
     } catch (e: any) {
       console.error("Error during clearLocalDatabase:", e);
       dispatch({ type: 'SET_ERROR', payload: e.message });
@@ -1532,8 +1543,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- Supabase Realtime Subscriptions ---
   useEffect(() => {
-    console.log('--- SYSTEM: Realtime useEffect is firing ---'); // Nuevo log para confirmar la ejecución del efecto
-    console.log('--- SYSTEM: Intentando montar Realtime ---'); // Blood log
+    // --- SYSTEM --- Este log confirma que el useEffect de Realtime se está ejecutando.
+    console.log('--- SYSTEM: Realtime useEffect is firing ---');
+    // --- SYSTEM --- Este log indica el intento de montar los listeners de Realtime.
+    console.log('--- SYSTEM: Intentando montar Realtime ---');
 
     if (!supabase) {
       console.warn("Supabase client not initialized, Realtime subscriptions skipped.");
@@ -1551,6 +1564,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       sessionsChannel = supabase
         .channel('inventory_sessions_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_sessions' }, async (payload) => {
+          // --- SYSTEM --- Este log indica que un cambio remoto fue detectado.
+          // Se puede desactivar en producción si el volumen de logs es muy alto.
           if (syncLockRef.current) {
             console.log('[Realtime] Skipping session change: sync lock active.');
             return;
@@ -1601,6 +1616,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             } else if (payload.eventType === 'DELETE') {
               const dateKey = payload.old?.dateKey;
               if (!dateKey) {
+                // --- SYSTEM --- Este error es CRÍTICO si REPLICA IDENTITY FULL no está configurado en Supabase.
                 console.error('[Realtime] DELETE event without dateKey. Ensure REPLICA IDENTITY FULL is set on the table.');
                 return;
               }
@@ -1621,7 +1637,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de sesión remota.');
           }
         })
-        .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => { // <-- Tipo corregido aquí
+        .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
           console.log(`[Realtime] Sessions channel status: ${status}`);
           dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
 
@@ -1635,6 +1651,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       productRulesChannel = supabase
         .channel('product_rules_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'product_rules' }, async (payload) => {
+          // --- SYSTEM --- Este log indica que un cambio remoto fue detectado.
+          // Se puede desactivar en producción si el volumen de logs es muy alto.
           if (syncLockRef.current) {
             console.log('[Realtime] Skipping product rule change: sync lock active.');
             return;
@@ -1667,6 +1685,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             } else if (payload.eventType === 'DELETE') {
               const productId = payload.old?.productId;
               if (!productId) {
+                // --- SYSTEM --- Este error es CRÍTICO si REPLICA IDENTITY FULL no está configurado en Supabase.
                 console.error('[Realtime] DELETE event without productId. Ensure REPLICA IDENTITY FULL is set on the table.');
                 return;
               }
@@ -1686,7 +1705,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             showError('Error al procesar actualización de configuración de producto remota.');
           }
         })
-        .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => { // <-- Tipo corregido aquí
+        .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
           console.log(`[Realtime] Product rules channel status: ${status}`);
           dispatch({ type: 'SET_REALTIME_STATUS', payload: status });
 
@@ -1702,7 +1721,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setupRealtime();
 
     return () => {
-      console.log('[Realtime] Cleaning up listeners...');
+      console.log('[Realtime] Cleaning up listeners...'); // Diagnóstico: Limpiando listeners de Realtime
       if (retryTimeout) clearTimeout(retryTimeout);
       sessionsChannel?.unsubscribe();
       productRulesChannel?.unsubscribe();
@@ -1712,7 +1731,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[Realtime] App became visible, re-subscribing to channels...');
+        console.log('[Realtime] App became visible, re-subscribing to channels...'); // Diagnóstico: App visible, re-suscribiendo
       }
     };
 
