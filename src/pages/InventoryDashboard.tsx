@@ -25,7 +25,7 @@ const InventoryDashboard = () => {
     isOnline,
     isSupabaseSyncInProgress,
     flushPendingSessionSave,
-    updateSyncStatus, // Error 31: Importado correctamente
+    updateSyncStatus, // Importado correctamente
     fetchInitialData,
   } = useInventoryContext();
   
@@ -134,7 +134,7 @@ const InventoryDashboard = () => {
         {error ? (
           <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
         ) : (
-          <InventoryTable inventoryData={filteredInventoryData} /> {/* Error 32: Eliminada la prop onInventoryChange */}
+          <InventoryTable inventoryData={filteredInventoryData} />
         )}
       </div>
     );
