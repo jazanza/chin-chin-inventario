@@ -313,6 +313,17 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       });
     });
 
+    // Añadir log para verificar los datos del primer elemento
+    if (newFilteredData.length > 0) {
+      console.log("InventoryContext: filteredInventoryData (primer elemento de muestra):", {
+        productId: newFilteredData[0].productId,
+        productName: newFilteredData[0].productName,
+        supplier: newFilteredData[0].supplier,
+        rules: newFilteredData[0].rules,
+        physicalQuantity: newFilteredData[0].physicalQuantity,
+      });
+    }
+
     previousFilteredInventoryDataRef.current = newFilteredData; // Mantener para futuras referencias si es necesario
     return newFilteredData;
   }, [state.rawInventoryItemsFromDb, state.masterProductConfigs]);
@@ -1208,9 +1219,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const { data, error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('productId, updated_at') // Select productId for consistency
-          .single();
-
+          .select('productId, updated_at'); // Select productId for consistency
+          
         const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
 
         if (error) {

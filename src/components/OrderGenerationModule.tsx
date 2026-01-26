@@ -27,9 +27,22 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   // Calcula las órdenes sugeridas (quantityToOrder) y las inicializa en finalOrders
   const ordersBySupplier = useMemo(() => {
     const orders: { [supplier: string]: OrderItem[] } = {};
+    let loggedFirstItem = false; // Flag para registrar solo el primer elemento
 
     inventoryData.forEach(item => { // Usar inventoryData (que ya es filteredInventoryData)
       if (!item.supplier) return;
+
+      // Añadir log para verificar los datos del primer elemento antes del cálculo
+      if (!loggedFirstItem && inventoryData.length > 0) {
+        console.log("OrderGenerationModule: Procesando elemento para cálculo de pedido (primer elemento de muestra):", {
+          productId: item.productId,
+          productName: item.productName,
+          supplier: item.supplier,
+          physicalQuantity: item.physicalQuantity,
+          rules: item.rules,
+        });
+        loggedFirstItem = true;
+      }
 
       let quantityToOrder = 0;
 
