@@ -48,8 +48,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
       // Aplicar la lógica de sugerencia basada en reglas múltiples
       if (item.rules && item.rules.length > 0) {
-        // Ordenar reglas de mayor a menor minStock para aplicar la más específica
-        const sortedRules = [...item.rules].sort((a, b) => b.minStock - a.minStock);
+        // Ordenar reglas de MENOR a MAYOR minStock para aplicar la más específica (stock más bajo)
+        const sortedRules = [...item.rules].sort((a, b) => a.minStock - b.minStock);
         for (const rule of sortedRules) {
           if (item.physicalQuantity <= rule.minStock) {
             quantityToOrder = rule.orderAmount;
