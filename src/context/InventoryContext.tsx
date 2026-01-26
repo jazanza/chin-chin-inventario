@@ -213,6 +213,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const warnedItems = useRef(new Set<string>());
   const syncBlockedWarningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncTimestampRef = useRef(0);
+  const initialFetchDoneRef = useRef(false); // Nueva bandera para la carga inicial
 
   // Ref para la función debounced de guardado de sesión
   const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[]) => void) & { flush: () => void; cancel: () => void } | null>(null);
@@ -1308,9 +1309,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         const { data, error } = await supabase
           .from('product_rules')
           .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('productId, updated_at') // Select productId for consistency
-          .single();
-
+          .select('productId, updated_at'); // Select productId for consistency
+          
         const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
 
         if (error) {
@@ -1666,9 +1666,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- NEW: Fetch Initial Data on Mount ---
   useEffect(() => {
-    // Solo ejecutar si Dexie está vacío (no hay configuraciones ni sesiones)
     const checkDexieEmptyAndFetch = async () => {
       console.log("InventoryContext useEffect: checkDexieEmptyAndFetch triggered.");
+      // Evitar la ejecución si ya se hizo la carga inicial o si ya hay una operación de carga en curso
+      if (initialFetchDoneRef.current || state.loading) {
+        console.log("Skipping initial fetch: already done or loading is true.");
+        return;
+      }
+
       if (!db.isOpen()) await db.open();
       const productRulesCount = await db.productRules.count();
       const sessionsCount = await db.sessions.count();
@@ -1678,14 +1683,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         console.log("Dexie is empty, fetching initial data from Supabase...");
         await fetchInitialData();
       } else {
-        console.log("Dexie already has data, skipping initial fetch.");
-        // Aún así, cargamos las configuraciones en el estado
+        console.log("Dexie already has data, loading master configs...");
         await loadMasterProductConfigs();
       }
+      initialFetchDoneRef.current = true; // Marcar como completado después de la ejecución
     };
 
     checkDexieEmptyAndFetch();
-  }, [fetchInitialData, loadMasterProductConfigs]);
+  }, [fetchInitialData, loadMasterProductConfigs, state.loading]); // state.loading es una dependencia para reaccionar a su cambio, pero la guarda interna evita la ejecución.
 
   // --- Debounced Save Setup ---
   useEffect(() => {

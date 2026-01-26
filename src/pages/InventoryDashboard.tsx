@@ -34,25 +34,44 @@ const InventoryDashboard = () => {
 
   console.log("InventoryDashboard Render:", { loading, sessionId, dbBuffer: !!dbBuffer, inventoryType, showFileUploader, sessionHistory: sessionHistory?.length });
 
-  // 1. Cargar historial de sesiones al inicio y cuando el estado de carga cambia
+  // Efecto para cargar el historial de sesiones y decidir qué vista mostrar inicialmente
   useEffect(() => {
-    const checkHistory = async () => {
-      console.log("InventoryDashboard useEffect: checkHistory triggered.");
-      const history = await getSessionHistory();
-      setSessionHistory(history);
+    const checkHistoryAndDecideView = async () => {
+      console.log("InventoryDashboard useEffect: checkHistoryAndDecideView triggered.");
       
-      // Si no hay sesión activa ni dbBuffer, y hay historial, mostramos el SessionManager por defecto.
-      if (history.length > 0 && !dbBuffer && !sessionId) {
-        console.log("InventoryDashboard: Showing SessionManager by default.");
-        setShowFileUploader(false);
-      } else if (history.length === 0 && !dbBuffer && !sessionId) {
-        // Si no hay historial, forzamos el FileUploader
-        console.log("InventoryDashboard: No history, forcing FileUploader.");
-        setShowFileUploader(true);
+      // No necesitamos verificar `loading` aquí para decidir la vista,
+      // ya que la lógica de renderizado principal del componente ya lo maneja.
+      // Este efecto se centra en decidir qué componente *inicial* mostrar.
+
+      const history = await getSessionHistory();
+      setSessionHistory(history); // Actualizar el estado local para la lógica de renderizado
+
+      // Si hay una sesión activa, ya estamos mostrando InventoryTable, no necesitamos cambiar la vista.
+      if (sessionId) {
+        console.log("InventoryDashboard: Session active, keeping current view (InventoryTable).");
+        setShowFileUploader(false); // Asegurarse de que FileUploader esté oculto si hay una sesión activa
+        return;
+      }
+
+      // Si dbBuffer está presente, estamos esperando la selección del tipo de inventario,
+      // así que mostramos InventoryTypeSelector.
+      if (dbBuffer) {
+        console.log("InventoryDashboard: DB Buffer present, waiting for inventory type selection (InventoryTypeSelector).");
+        setShowFileUploader(false); // Asegurarse de que FileUploader esté oculto
+        return;
+      }
+      
+      // Si no hay sesión activa y no hay dbBuffer, decidimos basándonos en el historial
+      if (history.length > 0) {
+        console.log("InventoryDashboard: No active session/dbBuffer, but history exists. Showing SessionManager.");
+        setShowFileUploader(false); // Mostrar SessionManager
+      } else {
+        console.log("InventoryDashboard: No active session/dbBuffer and no history. Showing FileUploader.");
+        setShowFileUploader(true); // Mostrar FileUploader
       }
     };
-    checkHistory();
-  }, [getSessionHistory, dbBuffer, sessionId, loading]); // Dependencia 'loading' para reaccionar a la sincronización inicial
+    checkHistoryAndDecideView();
+  }, [getSessionHistory, dbBuffer, sessionId]); // Dependencias estabilizadas: reacciona a cambios en la función de historial, buffer DB o ID de sesión.
 
   // 2. Disparar processInventoryData cuando dbBuffer e inventoryType están presentes
   useEffect(() => {
