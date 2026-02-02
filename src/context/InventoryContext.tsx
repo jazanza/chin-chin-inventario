@@ -302,15 +302,35 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     state.rawInventoryItemsFromDb.forEach(item => {
       const masterConfig = masterConfigsMap.get(item.productId);
       if (!masterConfig || masterConfig.isHidden) {
+        return; // Filter out hidden products
+      }
+
+      // New filtering logic based on inventory_type
+      const productInventoryType = masterConfig.inventory_type || 'monthly'; // Default to 'monthly' if not set
+
+      if (productInventoryType === 'ignored') {
+        return; // Filter out ignored products
+      }
+
+      if (state.inventoryType === 'weekly' && productInventoryType !== 'weekly') {
+        return; // In weekly view, only show 'weekly' products
+      }
+
+      // In monthly view, show 'weekly' and 'monthly' products
+      // No need for an explicit check for 'monthly' here, as 'ignored' is already filtered out
+      // and 'weekly' products are included by default if not filtered by the above 'weekly' condition.
+      // So, if state.inventoryType is 'monthly', and productInventoryType is 'weekly' or 'monthly', it will pass.
+
+      // Existing supplier filter
+      if (item.supplier === "KYR S.A.S" || item.supplier === "Desconocido") {
         return;
       }
 
-      // Usar las propiedades physicalQuantity y hasBeenEdited directamente del 'item'
-      // ya que 'item' proviene de state.rawInventoryItemsFromDb que ya está actualizado.
       newFilteredData.push({
-        ...item, // Esto ya incluye physicalQuantity y hasBeenEdited actualizadas
+        ...item,
         rules: masterConfig.rules,
         supplier: masterConfig.supplier,
+        isHidden: masterConfig.isHidden,
       });
     });
 
@@ -327,7 +347,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     previousFilteredInventoryDataRef.current = newFilteredData; // Mantener para futuras referencias si es necesario
     return newFilteredData;
-  }, [state.rawInventoryItemsFromDb, state.masterProductConfigs]);
+  }, [state.rawInventoryItemsFromDb, state.masterProductConfigs, state.inventoryType]);
 
   // --- Core Persistence Functions (Sessions) ---
   const saveCurrentSession = useCallback(async (
@@ -496,6 +516,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                            newConfig.productName !== currentConfigs[index]?.productName ||
                            newConfig.supplier !== currentConfigs[index]?.supplier ||
                            newConfig.isHidden !== currentConfigs[index]?.isHidden ||
+                           newConfig.inventory_type !== currentConfigs[index]?.inventory_type || // Compare new field
                            JSON.stringify(newConfig.rules) !== JSON.stringify(currentConfigs[index]?.rules)
                          );
 
@@ -535,6 +556,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         rules: configToSave.rules,
         supplier: configToSave.supplier,
         isHidden: configToSave.isHidden || false,
+        inventory_type: configToSave.inventory_type || 'monthly', // Default to 'monthly' for Supabase
       };
       const { data, error } = await supabase
         .from('product_rules')
@@ -656,13 +678,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     FROM Stock S
     JOIN Product P ON P.Id = S.ProductId
     JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE PG.Id IN (13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 40, 43, 52, 53)
-    AND PG.Name IN (
-      'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
-      'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
-      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes', 'Tabacos', 'Comida', 'Personales'
-    )
-    AND P.IsEnabled = 1
+    WHERE P.IsEnabled = 1
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
@@ -687,15 +703,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     FROM Stock S
     JOIN Product P ON P.Id = S.ProductId
     JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE PG.Id IN (
-      4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 43
-    )
-    AND PG.Name IN (
-      'Vinos', 'Espumantes', 'Whisky', 'Vodka', 'Ron', 'Gin', 'Aguardientes', 'Tequilas',
-      'Aperitivos', 'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Personales',
-      'Six Packs', 'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas', 'Vapes', 'Tabacos', 'Comida'
-    )
-    AND P.IsEnabled = 1
+    WHERE P.IsEnabled = 1
     ORDER BY PG.Name ASC, P.Name ASC;
   `;
 
@@ -740,11 +748,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           const dbInstance = loadDb(buffer);
           let inventoryQuery: string;
 
-          if (type === "weekly") {
-            inventoryQuery = WEEKLY_INVENTORY_QUERY;
-          } else {
-            inventoryQuery = MONTHLY_INVENTORY_QUERY;
-          }
+          // Now both weekly and monthly queries fetch all enabled products
+          inventoryQuery = ALL_PRODUCTS_QUERY;
 
           console.log("InventoryContext: processInventoryData - Querying raw inventory items.");
           const rawInventoryItems: InventoryItemFromDB[] = queryData(
@@ -806,6 +811,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
                 rules: [],
                 supplier: supplierNameFromDb,
                 isHidden: false,
+                inventory_type: 'monthly', // Default to 'monthly' for new products
                 sync_pending: true,
                 updated_at: nowIso, // Use local timestamp for Dexie
               };
@@ -816,6 +822,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               if (updatedConfig.productName !== dbItem.Producto) {
                 updatedConfig.productName = dbItem.Producto;
                 updatedProductNamesCount++;
+                configChanged = true;
+              }
+              // Ensure inventory_type is set for existing products if it's missing
+              if (updatedConfig.inventory_type === undefined || updatedConfig.inventory_type === null) {
+                updatedConfig.inventory_type = 'monthly';
                 configChanged = true;
               }
               masterConfig = updatedConfig;
@@ -845,6 +856,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               rules: c.rules,
               supplier: c.supplier,
               isHidden: c.isHidden || false,
+              inventory_type: c.inventory_type || 'monthly', // Default to 'monthly' for Supabase
             }));
             const { data: fetchedData, error: supabaseUpsertError } = await supabase
               .from('product_rules')
@@ -1058,6 +1070,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             rules: [],
             supplier: supplierNameFromDb,
             isHidden: false,
+            inventory_type: 'monthly', // Default to 'monthly' for new products
             sync_pending: true,
             updated_at: nowIso, // Use local timestamp for Dexie
           };
@@ -1068,6 +1081,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           if (updatedConfig.productName !== dbItem.Producto) {
             updatedConfig.productName = dbItem.Producto;
             updatedProductNamesCount++;
+            configChangedForSync = true;
+          }
+          // Ensure inventory_type is set for existing products if it's missing
+          if (updatedConfig.inventory_type === undefined || updatedConfig.inventory_type === null) {
+            updatedConfig.inventory_type = 'monthly';
             configChangedForSync = true;
           }
           masterConfig = updatedConfig;
@@ -1095,6 +1113,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: c.rules,
           supplier: c.supplier,
           isHidden: c.isHidden || false,
+          inventory_type: c.inventory_type || 'monthly', // Default to 'monthly' for Supabase
         }));
         const { data: fetchedData, error: supabaseUpsertError } = await supabase
           .from('product_rules')
@@ -1216,6 +1235,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
+          inventory_type: config.inventory_type || 'monthly', // Default to 'monthly' for Supabase
         };
         const { data, error } = await supabase
           .from('product_rules')
@@ -1305,6 +1325,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: config.rules,
           supplier: config.supplier,
           isHidden: config.isHidden || false,
+          inventory_type: config.inventory_type || 'monthly', // Default to 'monthly' for Supabase
         };
         const { data, error } = await supabase
           .from('product_rules')
@@ -1395,6 +1416,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             rules: c.rules,
             supplier: c.supplier,
             isHidden: c.isHidden || false,
+            inventory_type: c.inventory_type || 'monthly', // Default to 'monthly' if not set
             sync_pending: false,
             updated_at: c.updated_at,
           };
@@ -1606,6 +1628,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           rules: rule.rules,
           supplier: rule.supplier,
           isHidden: rule.isHidden || false,
+          inventory_type: rule.inventory_type || 'monthly', // Default to 'monthly' if not set
           sync_pending: false,
           updated_at: rule.updated_at,
         }));

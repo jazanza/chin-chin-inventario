@@ -28,6 +28,7 @@ export interface MasterProductConfig {
   rules: ProductRule[]; // Lista de reglas de stock/pedido
   supplier: string; // Proveedor asociado
   isHidden?: boolean; // Nuevo campo para el borrado suave
+  inventory_type?: 'weekly' | 'monthly' | 'ignored'; // Nuevo campo para el tipo de inventario
   sync_pending?: boolean; // Nuevo campo para indicar si la configuración está pendiente de sincronizar con Supabase
   updated_at: string; // Nuevo campo para timestamp de última actualización
 }
@@ -113,6 +114,19 @@ export class SessionDatabase extends Dexie {
       await tx.table('productRules').toCollection().modify((config) => {
         if (!config.updated_at) {
           config.updated_at = new Date().toISOString(); // Usar timestamp de creación si no existe
+        }
+      });
+    });
+    // Versión 14: Añade inventory_type a productRules
+    this.version(14).stores({
+      sessions: 'dateKey, timestamp, sync_pending, updated_at',
+      productRules: 'productId, sync_pending, updated_at, inventory_type', // Añadir inventory_type al índice
+      supplierConfigs: 'supplierName',
+    }).upgrade(async (tx) => {
+      // Migrar configuraciones de producto existentes para añadir inventory_type: 'monthly'
+      await tx.table('productRules').toCollection().modify((config) => {
+        if (config.inventory_type === undefined || config.inventory_type === null) {
+          config.inventory_type = 'monthly'; // Por defecto a 'monthly'
         }
       });
     });

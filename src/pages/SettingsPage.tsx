@@ -156,6 +156,29 @@ const SettingsPage = () => {
     }
   }, [editableProductConfigs, saveMasterProductConfig, filteredInventoryData, saveCurrentSession, sessionId, inventoryType]);
 
+  const handleProductInventoryTypeChange = useCallback(async (productId: number, newType: 'weekly' | 'monthly' | 'ignored') => {
+    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
+    try {
+      setEditableProductConfigs(prev => ({
+        ...prev,
+        [productId]: { ...prev[productId], inventory_type: newType }
+      }));
+
+      const configToSave = { ...editableProductConfigs[productId], inventory_type: newType };
+      await saveMasterProductConfig(configToSave);
+
+      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
+      showSuccess(`Tipo de inventario de ${configToSave.productName} actualizado.`);
+
+    } catch (e) {
+      console.error("Error changing product inventory type:", e);
+      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
+      showError('Error al cambiar el tipo de inventario del producto.');
+    }
+  }, [editableProductConfigs, saveMasterProductConfig]);
+
   const handleHideProductConfig = async (productId: number) => {
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
@@ -373,6 +396,7 @@ const SettingsPage = () => {
                           <TableRow className="border-b border-gray-200">
                             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
+                            <TableHead className="text-xs sm:text-sm text-gray-700">Tipo Inventario</TableHead> {/* New Header */}
                             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                           </TableRow>
@@ -402,6 +426,22 @@ const SettingsPage = () => {
                                             {sup}
                                           </SelectItem>
                                         ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell className="py-2 px-2"> {/* New Cell for Inventory Type */}
+                                    <Select
+                                      value={editableProductConfigs[config.productId]?.inventory_type ?? 'monthly'}
+                                      onValueChange={(value) => handleProductInventoryTypeChange(config.productId, value as 'weekly' | 'monthly' | 'ignored')}
+                                      disabled={isHidden}
+                                    >
+                                      <SelectTrigger className="w-[120px] text-xs sm:text-sm">
+                                        <SelectValue placeholder="Tipo Inventario" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="weekly">Semanal</SelectItem>
+                                        <SelectItem value="monthly">Mensual</SelectItem>
+                                        <SelectItem value="ignored">Ignorado</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </TableCell>
@@ -441,7 +481,7 @@ const SettingsPage = () => {
                                       <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
                                       {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => (
                                         <div key={ruleIndex} className="flex items-center gap-2 text-xs">
-                                          <span>Si Stock es &lt;=</span>
+                                          <span>Si Stock es <=</span>
                                           <Input
                                             type="number"
                                             value={rule.minStock}
