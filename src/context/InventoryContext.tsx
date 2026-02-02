@@ -569,13 +569,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (error) {
         console.error("Error saving master product config to Supabase:", error);
         showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
-      } else if (fetchedConfig) { // Error 7, 8, 9, 11, 13, 15: Asegurar que fetchedConfig no es null
+      } else if (fetchedConfig) {
           await db.productRules.update(configToSave.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
         console.log("Master product config saved to Supabase successfully.");
         warnedItems.current.delete(`product-${config.productId}`);
       } else {
           // Fallback if fetchedConfig is null but no error
-          await db.productRules.update(configToSave.productId, { sync_pending: false });
+          await db.productRules.update(config.productId, { sync_pending: false });
       }
       await loadMasterProductConfigs();
     } catch (e) {
