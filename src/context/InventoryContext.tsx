@@ -656,11 +656,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     FROM Stock S
     JOIN Product P ON P.Id = S.ProductId
     JOIN ProductGroup PG ON PG.Id = P.ProductGroupId
-    WHERE PG.Id IN (13, 14, 16, 20, 23, 27, 34, 36, 37, 38, 43, 40, 52, 53)
+    WHERE PG.Id IN (13, 14, 16, 20, 22, 23, 27, 34, 36, 37, 38, 40, 43, 52, 53)
     AND PG.Name IN (
       'Cervezas', 'Mixers', 'Cigarrillos y Vapes', 'Snacks', 'Six Packs',
       'Conservas y Embutidos', 'Cervezas Belgas', 'Cervezas Alemanas',
-      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes', 'Tabacos', 'Comida'
+      'Cervezas Españolas', 'Cervezas Del Mundo', 'Cervezas 750ml', 'Vapes', 'Tabacos', 'Comida', 'Personales'
     )
     AND P.IsEnabled = 1
     ORDER BY PG.Name ASC, P.Name ASC;
