@@ -17,8 +17,8 @@ export interface Database {
     Tables: {
       inventory_sessions: {
         Row: InventorySession;
-        Insert: Omit<InventorySession, 'updated_at' | 'sync_pending'> & { timestamp: string }; // Omit updated_at and sync_pending, timestamp as string for insert
-        Update: Partial<Omit<InventorySession, 'updated_at' | 'sync_pending'>> & { timestamp?: string }; // Omit updated_at and sync_pending, timestamp as string for update
+        Insert: Omit<InventorySession, 'updated_at' | 'sync_pending'> & { timestamp: Date }; // timestamp como Date
+        Update: Partial<Omit<InventorySession, 'updated_at' | 'sync_pending'>> & { timestamp?: Date }; // timestamp como Date
       };
       product_rules: { // Nueva tabla para reglas de producto
         Row: MasterProductConfig;

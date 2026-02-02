@@ -391,13 +391,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp.toISOString(), // Convert Date to string for Supabase
+          timestamp: sessionToSave.timestamp, // Enviando como Date
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
         };
-        const { data, error } = await supabase
-          .from('inventory_sessions')
-          .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
+        const { data, error } = await (supabase
+          .from('inventory_sessions') as any) // Casteo a any
+          .upsert(supabaseSession, { onConflict: 'dateKey' })
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -459,8 +459,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await db.sessions.delete(dateKey); // Eliminar de Dexie primero
 
       if (supabase && state.isOnline) {
-        const { error } = await supabase
-          .from('inventory_sessions')
+        const { error } = await (supabase
+          .from('inventory_sessions') as any) // Casteo a any
           .delete()
           .eq('dateKey', dateKey);
 
@@ -558,9 +558,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         isHidden: configToSave.isHidden || false,
         inventory_type: configToSave.inventory_type || 'monthly', // Default to 'monthly' for Supabase
       };
-      const { data, error } = await supabase
-        .from('product_rules')
-        .upsert(supabaseConfig as any, { onConflict: 'productId' }) // Cast to any
+      const { data, error } = await (supabase
+        .from('product_rules') as any) // Casteo a any
+        .upsert(supabaseConfig, { onConflict: 'productId' })
         .select('productId, updated_at') // Select productId for consistency
         .single();
 
@@ -619,9 +619,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       // Explicitly cast the update payload
       const updatePayload: Database['public']['Tables']['product_rules']['Update'] = { isHidden: newIsHidden };
-      const { data, error } = await supabase
-        .from('product_rules')
-        .update(updatePayload as any) // Cast to any
+      const { data, error } = await (supabase
+        .from('product_rules') as any) // Casteo a any
+        .update(updatePayload)
         .eq('productId', numericProductId)
         .select('productId, updated_at') // Select productId for consistency
         .single();
@@ -859,9 +859,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               isHidden: c.isHidden || false,
               inventory_type: c.inventory_type || 'monthly', // Default to 'monthly' for Supabase
             }));
-            const { data: fetchedData, error: supabaseUpsertError } = await supabase
-              .from('product_rules')
-              .upsert(supabaseConfigs as any, { onConflict: 'productId' }) // Cast to any
+            const { data: fetchedData, error: supabaseUpsertError } = await (supabase
+              .from('product_rules') as any) // Casteo a any
+              .upsert(supabaseConfigs, { onConflict: 'productId' })
               .select('productId, updated_at'); // Select productId for finding
 
             if (supabaseUpsertError) {
@@ -964,13 +964,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               dateKey: newSession.dateKey,
               inventoryType: newSession.inventoryType,
               inventoryData: newSession.inventoryData,
-              timestamp: newSession.timestamp.toISOString(),
+              timestamp: newSession.timestamp, // Enviando como Date
               effectiveness: newSession.effectiveness,
               ordersBySupplier: newSession.ordersBySupplier,
             };
-            const { data, error } = await supabase
-              .from('inventory_sessions')
-              .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
+            const { data, error } = await (supabase
+              .from('inventory_sessions') as any) // Casteo a any
+              .upsert(supabaseSession, { onConflict: 'dateKey' })
               .select('dateKey, updated_at') // Select dateKey for consistency
               .single();
 
@@ -1117,9 +1117,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: c.isHidden || false,
           inventory_type: c.inventory_type || 'monthly', // Default to 'monthly' for Supabase
         }));
-        const { data: fetchedData, error: supabaseUpsertError } = await supabase
-          .from('product_rules')
-          .upsert(supabaseConfigs as any, { onConflict: 'productId' }) // Cast to any
+        const { data: fetchedData, error: supabaseUpsertError } = await (supabase
+          .from('product_rules') as any) // Casteo a any
+          .upsert(supabaseConfigs, { onConflict: 'productId' })
           .select('productId, updated_at'); // Select productId for finding
 
         if (supabaseUpsertError) {
@@ -1202,13 +1202,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp.toISOString(),
+          timestamp: session.timestamp, // Enviando como Date
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
-        const { data, error } = await supabase
-          .from('inventory_sessions')
-          .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
+        const { data, error } = await (supabase
+          .from('inventory_sessions') as any) // Casteo a any
+          .upsert(supabaseSession, { onConflict: 'dateKey' })
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -1240,9 +1240,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: config.isHidden || false,
           inventory_type: config.inventory_type || 'monthly', // Default to 'monthly' for Supabase
         };
-        const { data, error } = await supabase
-          .from('product_rules')
-          .upsert(supabaseConfig as any, { onConflict: 'productId' }) // Cast to any
+        const { data, error } = await (supabase
+          .from('product_rules') as any) // Casteo a any
+          .upsert(supabaseConfig, { onConflict: 'productId' })
           .select('productId, updated_at');
           
         const fetchedConfig = (data && data.length > 0) ? data[0] as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> : null;
@@ -1266,7 +1266,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
       showError('Error en la sincronización automática.');
     } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
@@ -1296,13 +1295,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData,
-          timestamp: session.timestamp.toISOString(),
+          timestamp: session.timestamp, // Enviando como Date
           effectiveness: session.effectiveness,
           ordersBySupplier: session.ordersBySupplier,
         };
-        const { data, error } = await supabase
-          .from('inventory_sessions')
-          .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
+        const { data, error } = await (supabase
+          .from('inventory_sessions') as any) // Casteo a any
+          .upsert(supabaseSession, { onConflict: 'dateKey' })
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -1331,9 +1330,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: config.isHidden || false,
           inventory_type: config.inventory_type || 'monthly', // Default to 'monthly' for Supabase
         };
-        const { data, error } = await supabase
-          .from('product_rules')
-          .upsert(supabaseConfig as any, { onConflict: 'productId' }) // Cast to any
+        const { data, error } = await (supabase
+          .from('product_rules') as any) // Casteo a any
+          .upsert(supabaseConfig, { onConflict: 'productId' })
           .select('productId, updated_at');
           
         const fetchedConfig = (data && data.length > 0) ? data[0] as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> : null;
@@ -1498,8 +1497,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       await db.productRules.clear();
 
-      const { error: deleteError } = await supabase
-        .from('product_rules')
+      const { error: deleteError } = await (supabase
+        .from('product_rules') as any) // Casteo a any
         .delete()
         .neq('productId', 0);
 
