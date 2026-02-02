@@ -17,13 +17,13 @@ export interface Database {
     Tables: {
       inventory_sessions: {
         Row: InventorySession;
-        Insert: Omit<InventorySession, 'timestamp' | 'updated_at'> & { timestamp: string }; // Omit updated_at here
-        Update: Partial<Omit<InventorySession, 'timestamp' | 'updated_at'>> & { timestamp?: string }; // Omit updated_at here
+        Insert: Omit<InventorySession, 'updated_at'> & { timestamp: string }; // Omit updated_at, timestamp as string for insert
+        Update: Partial<Omit<InventorySession, 'updated_at'>> & { timestamp?: string }; // Omit updated_at, timestamp as string for update
       };
       product_rules: { // Nueva tabla para reglas de producto
         Row: MasterProductConfig;
-        Insert: Omit<MasterProductConfig, 'updated_at'>; // Omit updated_at here
-        Update: Partial<Omit<MasterProductConfig, 'updated_at'>>; // Omit updated_at here
+        Insert: Omit<MasterProductConfig, 'updated_at'>; // Omit updated_at
+        Update: Partial<Omit<MasterProductConfig, 'updated_at'>>; // Omit updated_at
       };
       supplier_configs: { // Nueva tabla para configuraciones de proveedor
         Row: SupplierConfig;

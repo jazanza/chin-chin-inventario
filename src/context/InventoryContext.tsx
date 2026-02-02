@@ -391,7 +391,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp.toISOString(),
+          timestamp: sessionToSave.timestamp.toISOString(), // Convert Date to string for Supabase
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
         };
@@ -621,7 +621,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const updatePayload: Database['public']['Tables']['product_rules']['Update'] = { isHidden: newIsHidden };
       const { data, error } = await supabase
         .from('product_rules')
-        .update(updatePayload)
+        .update(updatePayload as Database['public']['Tables']['product_rules']['Update'])
         .eq('productId', numericProductId)
         .select('productId, updated_at') // Select productId for consistency
         .single();
@@ -989,7 +989,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             }
           } else {
             console.log("Supabase client not available or offline, skipping save to Supabase. Marked as sync_pending.");
-            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
+            showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total).');
           }
         } catch (innerError: any) { // Inner catch block
           console.error("Inner Error processing database for inventory:", innerError);
@@ -1266,7 +1266,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
       showError('Error en la sincronización automática.');
     } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
