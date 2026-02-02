@@ -397,7 +397,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
-          .upsert(supabaseSession, { onConflict: 'dateKey' })
+          .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -560,7 +560,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       };
       const { data, error } = await supabase
         .from('product_rules')
-        .upsert(supabaseConfig, { onConflict: 'productId' })
+        .upsert(supabaseConfig as Database['public']['Tables']['product_rules']['Insert'], { onConflict: 'productId' })
         .select('productId, updated_at') // Select productId for consistency
         .single();
 
@@ -618,9 +618,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       // Explicitly cast the update payload
+      const updatePayload: Database['public']['Tables']['product_rules']['Update'] = { isHidden: newIsHidden };
       const { data, error } = await supabase
         .from('product_rules')
-        .update({ isHidden: newIsHidden } as Database['public']['Tables']['product_rules']['Update'])
+        .update(updatePayload)
         .eq('productId', numericProductId)
         .select('productId, updated_at') // Select productId for consistency
         .single();
@@ -860,14 +861,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             }));
             const { data: fetchedData, error: supabaseUpsertError } = await supabase
               .from('product_rules')
-              .upsert(supabaseConfigs, { onConflict: 'productId' })
+              .upsert(supabaseConfigs as Database['public']['Tables']['product_rules']['Insert'][], { onConflict: 'productId' })
               .select('productId, updated_at'); // Select productId for finding
 
             if (supabaseUpsertError) {
               console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
               showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
             } else if (fetchedData && fetchedData.length > 0) {
-              const fetchedConfigsMap = new Map(fetchedData.map(item => [item.productId, item])); // Use a map for efficient lookup
+              const fetchedDataTyped = fetchedData as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'>[];
+              const fetchedConfigsMap = new Map(fetchedDataTyped.map(item => [item.productId, item])); // Use a map for efficient lookup
               for (const config of pendingForSupabase) {
                 const fetchedConfig = fetchedConfigsMap.get(config.productId); // Use map for lookup
                 if (fetchedConfig) {
@@ -968,7 +970,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             };
             const { data, error } = await supabase
               .from('inventory_sessions')
-              .upsert(supabaseSession, { onConflict: 'dateKey' })
+              .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
               .select('dateKey, updated_at') // Select dateKey for consistency
               .single();
 
@@ -1117,14 +1119,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }));
         const { data: fetchedData, error: supabaseUpsertError } = await supabase
           .from('product_rules')
-          .upsert(supabaseConfigs, { onConflict: 'productId' })
+          .upsert(supabaseConfigs as Database['public']['Tables']['product_rules']['Insert'][], { onConflict: 'productId' })
           .select('productId, updated_at'); // Select productId for finding
 
         if (supabaseUpsertError) {
           console.error("Error bulk upserting master product configs to Supabase:", supabaseUpsertError);
           showError('Sincronización demorada. Los cambios se guardarán localmente hasta que se restablezca la conexión total.');
         } else if (fetchedData && fetchedData.length > 0) {
-          const fetchedConfigsMap = new Map(fetchedData.map(item => [item.productId, item])); // Use a map for efficient lookup
+          const fetchedDataTyped = fetchedData as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'>[];
+          const fetchedConfigsMap = new Map(fetchedDataTyped.map(item => [item.productId, item])); // Use a map for efficient lookup
           for (const config of pendingForSupabase) {
             const fetchedConfig = fetchedConfigsMap.get(config.productId); // Use map for lookup
             if (fetchedConfig) {
@@ -1205,7 +1208,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
-          .upsert(supabaseSession, { onConflict: 'dateKey' })
+          .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -1239,10 +1242,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('product_rules')
-          .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('productId, updated_at'); // Select productId for consistency
+          .upsert(supabaseConfig as Database['public']['Tables']['product_rules']['Insert'], { onConflict: 'productId' })
+          .select('productId, updated_at');
           
-        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
+        const fetchedConfig = (data && data.length > 0) ? data[0] as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> : null;
 
         if (error) {
           console.error(`Failed to retry product config ${config.productId}:`, error);
@@ -1263,6 +1266,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
       showError('Error en la sincronización automática.');
     } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
@@ -1298,7 +1302,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
-          .upsert(supabaseSession, { onConflict: 'dateKey' })
+          .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -1329,10 +1333,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('product_rules')
-          .upsert(supabaseConfig, { onConflict: 'productId' })
-          .select('productId, updated_at'); // Select productId for consistency
+          .upsert(supabaseConfig as Database['public']['Tables']['product_rules']['Insert'], { onConflict: 'productId' })
+          .select('productId, updated_at');
           
-        const fetchedConfig = data as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> | null;
+        const fetchedConfig = (data && data.length > 0) ? data[0] as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> : null;
 
         if (error) {
           console.error(`[Sync] Error uploading pending product config ${config.productId} to Supabase:`, error);
