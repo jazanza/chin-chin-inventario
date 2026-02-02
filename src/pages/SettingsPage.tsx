@@ -481,7 +481,7 @@ const SettingsPage = () => {
                                       <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
                                       {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => (
                                         <div key={ruleIndex} className="flex items-center gap-2 text-xs">
-                                          <span>Si Stock es <=</span>
+                                          <span>{'Si Stock es <='}</span>
                                           <Input
                                             type="number"
                                             value={rule.minStock}
