@@ -397,7 +397,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
-          .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
+          .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -560,7 +560,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       };
       const { data, error } = await supabase
         .from('product_rules')
-        .upsert(supabaseConfig as Database['public']['Tables']['product_rules']['Insert'], { onConflict: 'productId' })
+        .upsert(supabaseConfig as any, { onConflict: 'productId' }) // Cast to any
         .select('productId, updated_at') // Select productId for consistency
         .single();
 
@@ -575,7 +575,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         warnedItems.current.delete(`product-${config.productId}`);
       } else {
           // Fallback if fetchedConfig is null but no error
-          await db.productRules.update(config.productId, { sync_pending: false });
+          await db.productRules.update(configToSave.productId, { sync_pending: false });
       }
       await loadMasterProductConfigs();
     } catch (e) {
@@ -621,7 +621,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const updatePayload: Database['public']['Tables']['product_rules']['Update'] = { isHidden: newIsHidden };
       const { data, error } = await supabase
         .from('product_rules')
-        .update(updatePayload as Database['public']['Tables']['product_rules']['Update'])
+        .update(updatePayload as any) // Cast to any
         .eq('productId', numericProductId)
         .select('productId, updated_at') // Select productId for consistency
         .single();
@@ -861,7 +861,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             }));
             const { data: fetchedData, error: supabaseUpsertError } = await supabase
               .from('product_rules')
-              .upsert(supabaseConfigs as Database['public']['Tables']['product_rules']['Insert'][], { onConflict: 'productId' })
+              .upsert(supabaseConfigs as any, { onConflict: 'productId' }) // Cast to any
               .select('productId, updated_at'); // Select productId for finding
 
             if (supabaseUpsertError) {
@@ -970,7 +970,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             };
             const { data, error } = await supabase
               .from('inventory_sessions')
-              .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
+              .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
               .select('dateKey, updated_at') // Select dateKey for consistency
               .single();
 
@@ -1119,7 +1119,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         }));
         const { data: fetchedData, error: supabaseUpsertError } = await supabase
           .from('product_rules')
-          .upsert(supabaseConfigs as Database['public']['Tables']['product_rules']['Insert'][], { onConflict: 'productId' })
+          .upsert(supabaseConfigs as any, { onConflict: 'productId' }) // Cast to any
           .select('productId, updated_at'); // Select productId for finding
 
         if (supabaseUpsertError) {
@@ -1208,7 +1208,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
-          .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
+          .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -1242,7 +1242,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('product_rules')
-          .upsert(supabaseConfig as Database['public']['Tables']['product_rules']['Insert'], { onConflict: 'productId' })
+          .upsert(supabaseConfig as any, { onConflict: 'productId' }) // Cast to any
           .select('productId, updated_at');
           
         const fetchedConfig = (data && data.length > 0) ? data[0] as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> : null;
@@ -1301,7 +1301,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('inventory_sessions')
-          .upsert(supabaseSession as Database['public']['Tables']['inventory_sessions']['Insert'], { onConflict: 'dateKey' })
+          .upsert(supabaseSession as any, { onConflict: 'dateKey' }) // Cast to any
           .select('dateKey, updated_at') // Select dateKey for consistency
           .single();
 
@@ -1332,7 +1332,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         };
         const { data, error } = await supabase
           .from('product_rules')
-          .upsert(supabaseConfig as Database['public']['Tables']['product_rules']['Insert'], { onConflict: 'productId' })
+          .upsert(supabaseConfig as any, { onConflict: 'productId' }) // Cast to any
           .select('productId, updated_at');
           
         const fetchedConfig = (data && data.length > 0) ? data[0] as Pick<Database['public']['Tables']['product_rules']['Row'], 'productId' | 'updated_at'> : null;
