@@ -29,13 +29,13 @@ const SettingsPage = () => {
     saveCurrentSession,
     sessionId,
     inventoryType,
-    loading,
+    loading, // Global loading for major operations
     processDbForMasterConfigs,
     loadMasterProductConfigs,
     clearLocalDatabase,
     syncToSupabase,
     isOnline,
-    isSupabaseSyncInProgress,
+    isSupabaseSyncInProgress, // For background syncs
   } = useInventoryContext();
 
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
