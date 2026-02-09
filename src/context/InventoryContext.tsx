@@ -1,15 +1,13 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global simplificado para la gestión de inventarios, sesiones y sincronización con Supabase.
- * @version v1.5.5
+ * @version v1.5.6
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.5.5:
- * Solucionar el problema de sesiones duplicadas al editar sesiones antiguas.
- * - saveCurrentSession ahora acepta un `forcedSessionId` opcional.
- * - La lógica de `dateKey` prioriza `forcedSessionId` > `state.sessionId` > `new Date()`.
- * - Las llamadas a saveCurrentSession desde `updateAndDebounceSaveInventoryItem` y `debouncedSaveCurrentSessionRef`
- *   pasan el `state.sessionId` actual.
+ * PROPÓSITO DE LA VERSIÓN v1.5.6:
+ * Corregir el error conceptual de sobrescribir la fecha de la sesión (timestamp) al guardar.
+ * - saveCurrentSession ahora preserva el `timestamp` original de la sesión si ya existe.
+ * - El campo `updated_at` es el único que se actualiza con `new Date().toISOString()` para reflejar la última modificación.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -342,46 +340,49 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const saveCurrentSession = useCallback(async (
     data: InventoryItem[],
     type: "weekly" | "monthly",
-    timestamp: Date,
+    initialTimestamp: Date, // Renombrado para mayor claridad
     orders?: { [supplier: string]: OrderItem[] },
-    forcedSessionId?: string // NEW PARAMETER
+    forcedSessionId?: string
   ) => {
     if (!data || data.length === 0) return;
 
     // Determine dateKey based on priority: forcedSessionId > state.sessionId > current date
-    const dateKey = forcedSessionId || state.sessionId || format(timestamp, 'yyyy-MM-dd'); // MODIFIED LOGIC
+    const dateKey = forcedSessionId || state.sessionId || format(initialTimestamp, 'yyyy-MM-dd');
     const effectiveness = calculateEffectiveness(data);
-    const nowIso = new Date().toISOString(); // Local timestamp for Dexie
+    const nowIso = new Date().toISOString(); // Local timestamp for Dexie (for updated_at)
 
     try {
       if (!db.isOpen()) await db.open();
       const existingSession = await db.sessions.get(dateKey); // Use the determined dateKey
+
+      // Preserve original timestamp if session exists, otherwise use the provided initialTimestamp
+      const sessionTimestamp = existingSession ? existingSession.timestamp : initialTimestamp;
       const ordersToSave = orders !== undefined ? orders : existingSession?.ordersBySupplier;
 
       const sessionToSave: InventorySession = {
-        dateKey, // Use the determined dateKey
+        dateKey,
         inventoryType: type,
         inventoryData: data,
-        timestamp,
+        timestamp: sessionTimestamp, // Use the preserved or initial timestamp
         effectiveness,
         ordersBySupplier: ordersToSave,
         sync_pending: true,
-        updated_at: nowIso, // Use local timestamp for Dexie
+        updated_at: nowIso, // Only updated_at reflects the last modification time
       };
 
       await db.sessions.put(sessionToSave); // Persistir en Dexie primero
 
       // Always set the session ID in context to the one just saved/updated
-      dispatch({ type: 'SET_SESSION_ID', payload: dateKey }); // MODIFIED: Always set to the actual dateKey used
+      dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null });
 
       // If there is connection, try to sync immediately (but don't block)
       if (supabase && state.isOnline) {
         const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
-          dateKey: sessionToSave.dateKey, // Use the determined dateKey
+          dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
-          timestamp: sessionToSave.timestamp, // Sending as Date
+          timestamp: sessionToSave.timestamp, // Sending as Date (original creation date)
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
         };
@@ -928,7 +929,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             dateKey,
             inventoryType: type,
             inventoryData: finalProcessedInventory,
-            timestamp: new Date(),
+            timestamp: new Date(), // This is correct for a truly new session
             effectiveness,
             ordersBySupplier: undefined, // Initialize as undefined
             sync_pending: true,
@@ -1205,7 +1206,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log(`Session ${session.dateKey} synced successfully.`);
           warnedItems.current.delete(`session-${session.dateKey}`);
         } else {
-            // Fallback if fetchedSession is null but no error
             await db.sessions.update(session.dateKey, { sync_pending: false });
         }
       }
