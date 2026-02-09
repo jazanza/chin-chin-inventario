@@ -1,16 +1,15 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global simplificado para la gestión de inventarios, sesiones y sincronización con Supabase.
- * @version v1.5.4
+ * @version v1.5.5
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.5.4:
- * Asegurar la interactividad de los botones de cantidad real eliminando el estado local de InventoryTable
- * y centralizando las actualizaciones a través de updateAndDebounceSaveInventoryItem en el contexto.
- *
- * CAMBIOS PARA LA RECUPERACIÓN DE PEDIDOS:
- * - Añadido `currentSessionOrders` al estado global para almacenar los pedidos de la sesión activa.
- * - Modificadas `loadSession`, `saveCurrentSession` y `resetInventoryState` para gestionar `currentSessionOrders`.
+ * PROPÓSITO DE LA VERSIÓN v1.5.5:
+ * Solucionar el problema de sesiones duplicadas al editar sesiones antiguas.
+ * - saveCurrentSession ahora acepta un `forcedSessionId` opcional.
+ * - La lógica de `dateKey` prioriza `forcedSessionId` > `state.sessionId` > `new Date()`.
+ * - Las llamadas a saveCurrentSession desde `updateAndDebounceSaveInventoryItem` y `debouncedSaveCurrentSessionRef`
+ *   pasan el `state.sessionId` actual.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -46,8 +45,8 @@ export interface InventoryItem {
 
 export interface OrderItem {
   product: string;
-  quantityToOrder: number;
-  finalOrderQuantity: number;
+  quantityToOrder: number; // Cantidad sugerida (después de aplicar reglas)
+  finalOrderQuantity: number; // Cantidad final que el usuario puede editar
 }
 
 // --- Reducer Setup ---
@@ -170,7 +169,7 @@ interface InventoryContextType extends InventoryState {
   setSyncStatus: (status: SyncStatus) => void;
   processInventoryData: (buffer: Uint8Array, type: "weekly" | "monthly") => Promise<void>;
   processDbForMasterConfigs: (buffer: Uint8Array) => Promise<void>;
-  saveCurrentSession: (data: InventoryItem[], type: "weekly" | "monthly", timestamp: Date, orders?: { [supplier: string]: OrderItem[] }) => Promise<void>;
+  saveCurrentSession: (data: InventoryItem[], type: "weekly" | "monthly", timestamp: Date, orders?: { [supplier: string]: OrderItem[] }, forcedSessionId?: string) => Promise<void>; // MODIFIED
   loadSession: (dateKey: string) => Promise<void>;
   deleteSession: (dateKey: string) => Promise<void>;
   getSessionHistory: () => Promise<InventorySession[]>;
@@ -205,7 +204,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const initialFetchDoneRef = useRef(false); // Nueva bandera para la carga inicial
 
   // Ref para la función debounced de guardado de sesión
-  const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[]) => void) & { flush: () => void; cancel: () => void } | null>(null);
+  const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[], forcedSessionId?: string) => void) & { flush: () => void; cancel: () => void } | null>(null); // MODIFIED
 
   console.log("InventoryContext Render:", { loading: state.loading, sessionId: state.sessionId, dbBuffer: !!state.dbBuffer, inventoryType: state.inventoryType });
 
@@ -344,21 +343,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     data: InventoryItem[],
     type: "weekly" | "monthly",
     timestamp: Date,
-    orders?: { [supplier: string]: OrderItem[] }
+    orders?: { [supplier: string]: OrderItem[] },
+    forcedSessionId?: string // NEW PARAMETER
   ) => {
     if (!data || data.length === 0) return;
 
-    const dateKey = format(timestamp, 'yyyy-MM-dd'); // ISO 8601
+    // Determine dateKey based on priority: forcedSessionId > state.sessionId > current date
+    const dateKey = forcedSessionId || state.sessionId || format(timestamp, 'yyyy-MM-dd'); // MODIFIED LOGIC
     const effectiveness = calculateEffectiveness(data);
     const nowIso = new Date().toISOString(); // Local timestamp for Dexie
 
     try {
       if (!db.isOpen()) await db.open();
-      const existingSession = await db.sessions.get(dateKey);
+      const existingSession = await db.sessions.get(dateKey); // Use the determined dateKey
       const ordersToSave = orders !== undefined ? orders : existingSession?.ordersBySupplier;
 
       const sessionToSave: InventorySession = {
-        dateKey,
+        dateKey, // Use the determined dateKey
         inventoryType: type,
         inventoryData: data,
         timestamp,
@@ -370,15 +371,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       await db.sessions.put(sessionToSave); // Persistir en Dexie primero
 
-      if (!state.sessionId) {
-        dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
-      }
-      dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null }); // NEW: Actualizar pedidos en el contexto
+      // Always set the session ID in context to the one just saved/updated
+      dispatch({ type: 'SET_SESSION_ID', payload: dateKey }); // MODIFIED: Always set to the actual dateKey used
+      dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null });
 
       // If there is connection, try to sync immediately (but don't block)
       if (supabase && state.isOnline) {
         const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
-          dateKey: sessionToSave.dateKey,
+          dateKey: sessionToSave.dateKey, // Use the determined dateKey
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
           timestamp: sessionToSave.timestamp, // Sending as Date
@@ -401,7 +401,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log("Session saved to Supabase successfully.");
           warnedItems.current.delete(`session-${dateKey}`);
         } else {
-            // Fallback if fetchedSession is null but no error
             await db.sessions.update(dateKey, { sync_pending: false });
         }
       } else {
@@ -412,10 +411,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showError('Error al guardar la sesión localmente.');
       throw e;
     } finally {
-      // No global loading here, only sync status
       updateSyncStatus();
     }
-  }, [state.sessionId, state.isOnline, updateSyncStatus]);
+  }, [state.sessionId, state.isOnline, updateSyncStatus]); // state.sessionId is now a dependency
 
   const loadSession = useCallback(async (dateKey: string) => {
     dispatch({ type: 'SET_LOADING', payload: true }); // Keep global loading for this blocking operation
@@ -563,7 +561,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           // Fallback if fetchedConfig is null but no error
           await db.productRules.update(config.productId, { sync_pending: false });
       }
-      await loadMasterProductConfigs(); // Refresh the list to reflect server-generated updated_at and sync_pending status
+      await loadMasterProductConfigs(); // Reload configs to reflect any server-generated updated_at and sync_pending status
     } catch (e) {
       console.error("Error saving master product config:", e);
       showError('Error al guardar la configuración del producto localmente.');
@@ -598,7 +596,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         updateSyncStatus();
         await loadMasterProductConfigs(); // Refresh the list to reflect local changes
         if (state.sessionId && state.inventoryType && state.rawInventoryItemsFromDb.length > 0) { // Use rawInventoryItemsFromDb
-          await saveCurrentSession(state.rawInventoryItemsFromDb, state.inventoryType, new Date());
+          await saveCurrentSession(state.rawInventoryItemsFromDb, state.inventoryType, new Date(), undefined, state.sessionId); // MODIFIED
         }
         return;
       }
@@ -629,7 +627,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await loadMasterProductConfigs(); // Refresh the list to reflect server-generated updated_at and sync_pending status
 
       if (state.sessionId && state.inventoryType && state.rawInventoryItemsFromDb.length > 0) { // Use rawInventoryItemsFromDb
-        await saveCurrentSession(state.rawInventoryItemsFromDb, state.inventoryType, new Date());
+        await saveCurrentSession(state.rawInventoryItemsFromDb, state.inventoryType, new Date(), undefined, state.sessionId); // MODIFIED
       }
     } catch (e) {
       console.error("Error toggling master product config:", e);
@@ -923,7 +921,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: finalProcessedInventory });
           dispatch({ type: 'SET_INVENTORY_TYPE', payload: type });
 
-          const dateKey = format(new Date(), 'yyyy-MM-dd');
+          const dateKey = format(new Date(), 'yyyy-MM-dd'); // For new sessions, always use current date
           const effectiveness = calculateEffectiveness(finalProcessedInventory);
 
           const newSession: InventorySession = {
@@ -1296,7 +1294,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             await db.sessions.update(session.dateKey, { sync_pending: false, updated_at: fetchedSession.updated_at });
           warnedItems.current.delete(`session-${session.dateKey}`);
         } else {
-            // Fallback if fetchedSession is null but no error
             await db.sessions.update(session.dateKey, { sync_pending: false });
         }
       }
@@ -1325,7 +1322,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedConfig.updated_at });
           warnedItems.current.delete(`product-${config.productId}`);
         } else {
-            // Fallback if fetchedConfig is null but no error
             await db.productRules.update(config.productId, { sync_pending: false });
         }
       }
@@ -1703,11 +1699,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   // --- Debounced Save Setup ---
   useEffect(() => {
-    debouncedSaveCurrentSessionRef.current = debounce(async (data: InventoryItem[]) => {
+    // MODIFIED: debounced function now accepts forcedSessionId
+    debouncedSaveCurrentSessionRef.current = debounce(async (data: InventoryItem[], forcedSessionId?: string) => {
       if (state.sessionId && state.inventoryType) {
         console.log('[Debounced Save] Executing debounced save for current session.');
         // Usamos la data pasada como argumento, que es la última versión del estado
-        await saveCurrentSession(data, state.inventoryType, new Date(), state.currentSessionOrders || undefined); // NEW: Pasar currentSessionOrders
+        // MODIFIED: Pass forcedSessionId to saveCurrentSession
+        await saveCurrentSession(data, state.inventoryType, new Date(), state.currentSessionOrders || undefined, forcedSessionId);
       }
     }, 1000); // Guardar 1 segundo después de la última edición
 
@@ -1715,7 +1713,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     return () => {
       debouncedSaveCurrentSessionRef.current?.cancel();
     };
-  }, [state.sessionId, state.inventoryType, saveCurrentSession, state.currentSessionOrders]); // NEW: currentSessionOrders como dependencia
+  }, [state.sessionId, state.inventoryType, saveCurrentSession, state.currentSessionOrders]); // state.sessionId is now a dependency
 
   // Función para actualizar el estado y disparar el guardado debounced
   const updateAndDebounceSaveInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {
@@ -1747,9 +1745,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
     // Disparar el guardado debounced con la data actualizada
     if (debouncedSaveCurrentSessionRef.current && state.sessionId && state.inventoryType) {
-      debouncedSaveCurrentSessionRef.current(updatedData);
+      // MODIFIED: Pass state.sessionId as forcedSessionId
+      debouncedSaveCurrentSessionRef.current(updatedData, state.sessionId);
     }
-  }, [setSyncStatus, state.rawInventoryItemsFromDb, state.sessionId, state.inventoryType]);
+  }, [setSyncStatus, state.rawInventoryItemsFromDb, state.sessionId, state.inventoryType]); // state.sessionId is now a dependency
 
   // Función para forzar la ejecución del guardado debounced
   const flushPendingSessionSave = useCallback(() => {

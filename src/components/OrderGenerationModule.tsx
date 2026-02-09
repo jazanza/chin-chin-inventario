@@ -130,7 +130,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       // Este es el auto-guardado, que utiliza el debouncedSaveCurrentSessionRef en el contexto.
       // Para el guardado manual, lo llamaremos directamente.
       if (sessionId && inventoryType && filteredInventoryData) {
-        saveCurrentSession(filteredInventoryData, inventoryType, new Date(), newOrders);
+        saveCurrentSession(filteredInventoryData, inventoryType, new Date(), newOrders, sessionId); // MODIFIED
       }
       return newOrders;
     });
@@ -147,7 +147,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     setIsSavingManual(true);
     try {
       // Pasar el estado actual de finalOrders directamente a saveCurrentSession
-      await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders);
+      await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders, sessionId); // MODIFIED
       const now = new Date();
       setLastManualSaveTime(prev => ({ ...prev, [currentSupplier]: now }));
       showSuccess(`Sincronizado con la Nube ✅ para ${currentSupplier} (${format(now, 'HH:mm:ss')})`);
@@ -199,7 +199,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
       // Guardar los pedidos en la sesión actual
       if (sessionId && inventoryType && filteredInventoryData) { // Usar filteredInventoryData
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders);
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders, sessionId); // MODIFIED
         showSuccess('Pedidos guardados en la sesión.');
       }
     } catch (err) {

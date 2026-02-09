@@ -120,7 +120,7 @@ const SettingsPage = () => {
 
       // Actualizar la sesión actual con los datos de inventario filtrados más recientes
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), undefined, sessionId); // MODIFIED
       }
     } catch (e) {
       console.error("Error saving product config on blur:", e);
@@ -146,7 +146,7 @@ const SettingsPage = () => {
       showSuccess(`Proveedor de ${configToSave.productName} actualizado.`);
 
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), undefined, sessionId); // MODIFIED
       }
     } catch (e) {
       console.error("Error changing product supplier:", e);
@@ -191,7 +191,7 @@ const SettingsPage = () => {
 
       // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), undefined, sessionId); // MODIFIED
       }
     } catch (e) {
       console.error("Error hiding product config:", e);
@@ -229,7 +229,7 @@ const SettingsPage = () => {
 
       // Also update the current inventoryData if a session is active
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), undefined, sessionId); // MODIFIED
       }
 
     } catch (e) {
@@ -274,7 +274,7 @@ const SettingsPage = () => {
 
       // Actualizar el inventoryData de la sesión actual si está activa
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), undefined, sessionId); // MODIFIED
       }
     } catch (e) {
       console.error("Error saving rule on blur:", e);
