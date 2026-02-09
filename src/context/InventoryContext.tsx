@@ -7,6 +7,10 @@
  * PROPÓSITO DE LA VERSIÓN v1.5.4:
  * Asegurar la interactividad de los botones de cantidad real eliminando el estado local de InventoryTable
  * y centralizando las actualizaciones a través de updateAndDebounceSaveInventoryItem en el contexto.
+ *
+ * CAMBIOS PARA LA RECUPERACIÓN DE PEDIDOS:
+ * - Añadido `currentSessionOrders` al estado global para almacenar los pedidos de la sesión activa.
+ * - Modificadas `loadSession`, `saveCurrentSession` y `resetInventoryState` para gestionar `currentSessionOrders`.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -60,6 +64,7 @@ interface InventoryState {
   syncStatus: SyncStatus;
   isOnline: boolean;
   isSupabaseSyncInProgress: boolean; // For background syncs
+  currentSessionOrders: { [supplier: string]: OrderItem[] } | null; // NEW: Pedidos de la sesión actual
 }
 
 const initialState: InventoryState = {
@@ -73,6 +78,7 @@ const initialState: InventoryState = {
   syncStatus: 'idle',
   isOnline: navigator.onLine,
   isSupabaseSyncInProgress: false,
+  currentSessionOrders: null, // NEW: Inicializar como null
 };
 
 type InventoryAction =
@@ -86,8 +92,7 @@ type InventoryAction =
   | { type: 'SET_SYNC_STATUS'; payload: SyncStatus }
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean }
-  // Removed UPDATE_SINGLE_PRODUCT_RULE as loadMasterProductConfigs will be called
-  // Removed DELETE_PRODUCT_RULE as it's a soft delete handled by loadMasterProductConfigs
+  | { type: 'SET_CURRENT_SESSION_ORDERS'; payload: { [supplier: string]: OrderItem[] } | null } // NEW ACTION
   | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } }
   | { type: 'DELETE_SESSION'; payload: string }
   | { type: 'RESET_STATE' };
@@ -119,7 +124,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, isOnline: action.payload };
     case 'SET_SUPABASE_SYNC_IN_PROGRESS':
       return { ...state, isSupabaseSyncInProgress: action.payload };
-    // Removed UPDATE_SINGLE_PRODUCT_RULE case
+    case 'SET_CURRENT_SESSION_ORDERS': // NEW REDUCER CASE
+      return { ...state, currentSessionOrders: action.payload };
     case 'UPDATE_CURRENT_SESSION_DATA': {
       if (state.sessionId === action.payload.dateKey) {
         return {
@@ -136,6 +142,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
           sessionId: null,
           rawInventoryItemsFromDb: [],
           inventoryType: null,
+          currentSessionOrders: null, // NEW: Limpiar pedidos al eliminar sesión activa
         };
       }
       return state;
@@ -147,6 +154,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
         masterProductConfigs: state.masterProductConfigs,
         isOnline: state.isOnline,
         isSupabaseSyncInProgress: false,
+        currentSessionOrders: null, // NEW: Limpiar pedidos al resetear estado
       };
     default:
       return state;
@@ -224,6 +232,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const resetInventoryState = useCallback(() => {
     dispatch({ type: 'RESET_STATE' });
+    dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: null }); // NEW: Limpiar pedidos al resetear estado
   }, []);
 
   // --- Network Status Handling ---
@@ -364,6 +373,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (!state.sessionId) {
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       }
+      dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null }); // NEW: Actualizar pedidos en el contexto
 
       // If there is connection, try to sync immediately (but don't block)
       if (supabase && state.isOnline) {
@@ -418,6 +428,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_INVENTORY_TYPE', payload: session.inventoryType });
         dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: session.inventoryData });
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+        dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: session.ordersBySupplier || null }); // NEW: Cargar pedidos de la sesión
         showSuccess(`Sesión del ${dateKey} cargada.`);
       } else {
         showError('No se encontró la sesión.');
@@ -461,6 +472,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (state.sessionId === dateKey) {
         dispatch({ type: 'RESET_STATE' });
         dispatch({ type: 'SET_SESSION_ID', payload: null });
+        dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: null }); // NEW: Limpiar pedidos al eliminar sesión activa
       }
     } catch (e) {
       console.error("Error deleting session:", e);
@@ -927,6 +939,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           console.log("InventoryContext: processInventoryData - Putting new session to Dexie.");
           await db.sessions.put(newSession); // Persistir en Dexie primero
           dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
+          dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: null }); // NEW: Limpiar pedidos al iniciar nueva sesión
           console.log("InventoryContext: processInventoryData - New session put to Dexie.");
 
           if (supabase && state.isOnline) {
@@ -1510,6 +1523,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       dispatch({ type: 'RESET_STATE' });
       dispatch({ type: 'SET_MASTER_PRODUCT_CONFIGS', payload: [] });
+      dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: null }); // NEW: Limpiar pedidos al limpiar DB
       showSuccess('Base de datos local limpiada con éxito.');
       console.log("Local database cleared successfully.");
     } catch (e: any) {
@@ -1645,6 +1659,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
               inventoryData: currentSession.inventoryData,
               effectiveness: currentSession.effectiveness
             }});
+            dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: currentSession.ordersBySupplier || null }); // NEW: Cargar pedidos de la sesión
           }
         }
       }
@@ -1692,7 +1707,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (state.sessionId && state.inventoryType) {
         console.log('[Debounced Save] Executing debounced save for current session.');
         // Usamos la data pasada como argumento, que es la última versión del estado
-        await saveCurrentSession(data, state.inventoryType, new Date());
+        await saveCurrentSession(data, state.inventoryType, new Date(), state.currentSessionOrders || undefined); // NEW: Pasar currentSessionOrders
       }
     }, 1000); // Guardar 1 segundo después de la última edición
 
@@ -1700,7 +1715,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     return () => {
       debouncedSaveCurrentSessionRef.current?.cancel();
     };
-  }, [state.sessionId, state.inventoryType, saveCurrentSession]);
+  }, [state.sessionId, state.inventoryType, saveCurrentSession, state.currentSessionOrders]); // NEW: currentSessionOrders como dependencia
 
   // Función para actualizar el estado y disparar el guardado debounced
   const updateAndDebounceSaveInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: number | boolean) => {

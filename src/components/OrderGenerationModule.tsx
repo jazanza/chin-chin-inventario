@@ -20,7 +20,7 @@ export interface OrderItem {
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, filteredInventoryData } = useInventoryContext(); // Obtener filteredInventoryData
+  const { saveCurrentSession, inventoryType, sessionId, filteredInventoryData, currentSessionOrders } = useInventoryContext(); // Obtener filteredInventoryData y currentSessionOrders
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
 
@@ -67,7 +67,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       orders[item.supplier].push({
         product: item.productName,
         quantityToOrder: Math.round(quantityToOrder),
-        finalOrderQuantity: Math.round(quantityToOrder), // Inicializar con la cantidad sugerida
+        finalOrderQuantity: Math.round(quantityToOrder), // Inicializar con la cantidad sugerida (se sobrescribirá si hay guardados)
       });
     });
 
@@ -78,17 +78,22 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     return orders;
   }, [inventoryData]); // Depende de inventoryData (filteredInventoryData)
 
-  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData cambia
+  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData o currentSessionOrders cambian
   useEffect(() => {
     const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
     for (const supplier in ordersBySupplier) {
-      initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => ({
-        ...item,
-        finalOrderQuantity: item.quantityToOrder,
-      }));
+      initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => {
+        // NEW LOGIC: Intentar recuperar la cantidad final guardada de la sesión actual
+        const savedQty = currentSessionOrders?.[supplier]?.find(p => p.product === item.product)?.finalOrderQuantity;
+        
+        return {
+          ...item,
+          finalOrderQuantity: savedQty !== undefined ? savedQty : item.quantityToOrder,
+        };
+      });
     }
     setFinalOrders(initialFinalOrders);
-  }, [ordersBySupplier]);
+  }, [ordersBySupplier, currentSessionOrders]); // NEW: currentSessionOrders como dependencia
 
   // Manejar cambios en la cantidad final de pedido
   const handleFinalOrderQuantityChange = (
