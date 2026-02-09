@@ -2,12 +2,12 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Copy, Minus, Plus, CloudUpload, Loader2 } from "lucide-react"; // Import CloudUpload and Loader2
+import { Copy, Minus, Plus, CloudUpload, Loader2 } from "lucide-react";
 import { InventoryItem, useInventoryContext } from "@/context/InventoryContext";
 import { showSuccess, showError } from "@/utils/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns"; // Import format for date display
+import { format } from "date-fns";
 
 interface OrderGenerationModuleProps {
   inventoryData: InventoryItem[]; // Ahora recibe la lista filtrada
@@ -33,8 +33,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
-  const [isSavingManual, setIsSavingManual] = useState(false); // New state for manual save loading
-  const [lastManualSaveTime, setLastManualSaveTime] = useState<Date | null>(null); // New state for last save time
+  const [isSavingManual, setIsSavingManual] = useState(false); // State for manual save loading
+  const [lastManualSaveTime, setLastManualSaveTime] = useState<{ [supplier: string]: Date | null }>({}); // Per-supplier last save time
 
   // Calcula las órdenes sugeridas (quantityToOrder) y las inicializa en finalOrders
   const ordersBySupplier = useMemo(() => {
@@ -137,7 +137,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   };
 
   // NEW: Manual Save Handler
-  const handleManualSave = async () => {
+  const handleManualSave = async (currentSupplier: string) => {
     if (!sessionId || !inventoryType || !filteredInventoryData || !isOnline || isSavingManual || isSupabaseSyncInProgress) {
       if (!isOnline) showError("No hay conexión a internet para sincronizar.");
       else if (isSupabaseSyncInProgress) showError("Ya hay una sincronización en curso. Por favor, espera.");
@@ -149,8 +149,8 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
       // Pasar el estado actual de finalOrders directamente a saveCurrentSession
       await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders);
       const now = new Date();
-      setLastManualSaveTime(now);
-      showSuccess(`Sincronizado con la Nube ✅ (${format(now, 'HH:mm:ss')})`);
+      setLastManualSaveTime(prev => ({ ...prev, [currentSupplier]: now }));
+      showSuccess(`Sincronizado con la Nube ✅ para ${currentSupplier} (${format(now, 'HH:mm:ss')})`);
     } catch (error) {
       console.error("Error during manual save:", error);
       showError("Error al guardar y sincronizar manualmente.");
@@ -210,26 +210,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
   const suppliers = Object.keys(ordersBySupplier).sort();
 
-  const SaveButton = () => (
-    <Button
-      onClick={handleManualSave}
-      disabled={!isOnline || isSavingManual || isSupabaseSyncInProgress || !sessionId}
-      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-base py-3 flex items-center justify-center"
-    >
-      {isSavingManual || isSupabaseSyncInProgress ? (
-        <>
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Guardando y Sincronizando...
-        </>
-      ) : (
-        <>
-          <CloudUpload className="mr-2 h-5 w-5" />
-          Guardar y Sincronizar Ahora
-        </>
-      )}
-    </Button>
-  );
-
   return (
     <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
       <h2 className="text-lg sm:text-xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
@@ -238,16 +218,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
         <p className="text-gray-500 text-sm sm:text-base">No hay pedidos generados para ningún proveedor.</p>
       ) : (
         <>
-          {/* Top Save Button */}
-          <div className="mb-6">
-            <SaveButton />
-            {lastManualSaveTime && (
-              <p className="text-center text-sm text-gray-600 mt-2">
-                Último guardado manual: {format(lastManualSaveTime, 'dd/MM/yyyy HH:mm:ss')}
-              </p>
-            )}
-          </div>
-
           {/* Módulo "Seleccionar Proveedor" */}
           <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-sm">
             <CardHeader>
@@ -280,16 +250,37 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
               <CardContent>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
                   <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex-1 min-w-0 break-words">{`Pedido para ${selectedSupplier}`}</h3>
-                  <Button
-                    onClick={() => copyOrderToClipboard(selectedSupplier)}
-                    variant="outline"
-                    size="sm"
-                    className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm flex-shrink-0"
-                  >
-                    <Copy className="h-4 w-4 mr-1" />
-                    Copiar Pedido
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => handleManualSave(selectedSupplier)}
+                      disabled={!isOnline || isSavingManual || isSupabaseSyncInProgress || !sessionId}
+                      variant="outline"
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs sm:text-sm flex-shrink-0"
+                    >
+                      {isSavingManual || isSupabaseSyncInProgress ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CloudUpload className="h-4 w-4" />
+                      )}
+                      <span className="ml-1 hidden sm:inline">Guardar</span>
+                    </Button>
+                    <Button
+                      onClick={() => copyOrderToClipboard(selectedSupplier)}
+                      variant="outline"
+                      size="sm"
+                      className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-sm flex-shrink-0"
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copiar Pedido
+                    </Button>
+                  </div>
                 </div>
+                {lastManualSaveTime[selectedSupplier] && (
+                  <p className="text-right text-xs text-gray-600 mb-4">
+                    Último guardado manual: {format(lastManualSaveTime[selectedSupplier]!, 'dd/MM/yyyy HH:mm:ss')}
+                  </p>
+                )}
 
                 <div className="overflow-x-auto custom-scrollbar">
                   <Table className="min-w-full bg-gray-50 text-gray-900 border-collapse">
@@ -358,16 +349,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
               </CardContent>
             </Card>
           )}
-
-          {/* Bottom Save Button */}
-          <div className="mt-6">
-            <SaveButton />
-            {lastManualSaveTime && (
-              <p className="text-center text-sm text-gray-600 mt-2">
-                Último guardado manual: {format(lastManualSaveTime, 'dd/MM/yyyy HH:mm:ss')}
-              </p>
-            )}
-          </div>
         </>
       )}
     </div>
