@@ -1,14 +1,14 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global optimizado para alto rendimiento con listas grandes.
- * @version v1.5.9
+ * @version v1.6.0
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.5.9:
- * Restaurar la lógica completa de la aplicación tras una simplificación errónea.
- * - Restaurada la lógica completa de `processInventoryData` y `processDbForMasterConfigs`.
- * - Restaurada la lógica de sincronización bidireccional en `syncToSupabase`.
- * - Mantenidas las optimizaciones de rendimiento (atomic updates, references preservation).
+ * PROPÓSITO DE LA VERSIÓN v1.6.0:
+ * Asegurar la sincronización obligatoria con Supabase al inicio.
+ * - El useEffect de montaje ahora siempre intenta sincronizar con la nube si hay conexión.
+ * - Se eliminó la restricción de 'solo si Dexie está vacío'.
+ * - Se mantiene la carga local rápida seguida de la actualización desde la nube.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
