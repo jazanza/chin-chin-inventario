@@ -1,13 +1,14 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global optimizado para alto rendimiento con listas grandes.
- * @version v1.5.8
+ * @version v1.5.9
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.5.8:
- * Corregir errores de compilación de TypeScript.
- * - Definida la constante ALL_PRODUCTS_QUERY.
- * - Añadidas las propiedades faltantes al valor del contexto.
+ * PROPÓSITO DE LA VERSIÓN v1.5.9:
+ * Restaurar la lógica completa de la aplicación tras una simplificación errónea.
+ * - Restaurada la lógica completa de `processInventoryData` y `processDbForMasterConfigs`.
+ * - Restaurada la lógica de sincronización bidireccional en `syncToSupabase`.
+ * - Mantenidas las optimizaciones de rendimiento (atomic updates, references preservation).
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -512,7 +513,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dbInstance.close();
       if (rawInventoryItems.length === 0) return;
       
-      // Lógica de actualización de catálogo maestro
       if (!db.isOpen()) await db.open();
       const existingConfigs = await db.productRules.toArray();
       const configsMap = new Map(existingConfigs.map(c => [c.productId, c]));
@@ -533,11 +533,25 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       });
       
       await db.productRules.bulkPut(updates);
+      
+      if (supabase && state.isOnline) {
+        const supabaseConfigs = updates.map(c => ({
+          productId: c.productId,
+          productName: c.productName,
+          rules: c.rules,
+          supplier: c.supplier,
+          isHidden: c.isHidden,
+          inventory_type: c.inventory_type
+        }));
+        await (supabase.from('product_rules') as any).upsert(supabaseConfigs, { onConflict: 'productId' });
+      }
+      
       await loadMasterProductConfigs();
+      showSuccess('Catálogo maestro actualizado correctamente.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [loadMasterProductConfigs]);
+  }, [loadMasterProductConfigs, state.isOnline]);
 
   // --- Debounced Save Setup ---
   useEffect(() => {
@@ -573,8 +587,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const syncToSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline) return;
     dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
     try {
-      // Lógica de sincronización total simplificada
+      // 1. Subir cambios locales pendientes
+      const pendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === true).toArray();
+      for (const session of pendingSessions) {
+        await (supabase.from('inventory_sessions') as any).upsert(session, { onConflict: 'dateKey' });
+        await db.sessions.update(session.dateKey, { sync_pending: false });
+      }
+      
+      const pendingRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
+      for (const rule of pendingRules) {
+        await (supabase.from('product_rules') as any).upsert(rule, { onConflict: 'productId' });
+        await db.productRules.update(rule.productId, { sync_pending: false });
+      }
+
+      // 2. Descargar todo de la nube
       const { data: sessions } = await supabase.from('inventory_sessions').select('*');
       const { data: rules } = await supabase.from('product_rules').select('*');
       
@@ -585,6 +613,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       showSuccess('Sincronización total completada.');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
       updateSyncStatus();
     }
   }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
