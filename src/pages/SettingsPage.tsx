@@ -29,13 +29,13 @@ const SettingsPage = () => {
     saveCurrentSession,
     sessionId,
     inventoryType,
-    loading, // Global loading for major operations
+    loading,
     processDbForMasterConfigs,
     loadMasterProductConfigs,
     clearLocalDatabase,
-    syncToSupabase,
+    forceDownloadConfigFromSupabase, // Usar la nueva función
     isOnline,
-    isSupabaseSyncInProgress, // For background syncs
+    isSupabaseSyncInProgress,
   } = useInventoryContext();
 
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
@@ -64,71 +64,26 @@ const SettingsPage = () => {
   }, [showHiddenProducts, loadMasterProductConfigs]);
 
 
-  // Agrupar productos por proveedor (usando el proveedor de la configuración maestra)
+  // Agrupar productos por proveedor
   const productsGroupedBySupplier = useMemo(() => {
     const grouped: { [supplier: string]: MasterProductConfig[] } = {};
-    Object.values(editableProductConfigs).forEach((config: MasterProductConfig) => { // Explicitly type config
+    Object.values(editableProductConfigs).forEach((config: MasterProductConfig) => {
       if (!grouped[config.supplier]) {
         grouped[config.supplier] = [];
       }
       grouped[config.supplier].push(config);
     });
-    // Ordenar productos alfabéticamente dentro de cada grupo
     for (const supplier in grouped) {
       grouped[supplier].sort((a, b) => a.productName.localeCompare(b.productName));
     }
     return grouped;
   }, [editableProductConfigs]);
 
-  // Obtener todos los proveedores únicos para el selector (de las configuraciones maestras)
   const allSuppliers = useMemo(() => {
     const suppliers = new Set<string>();
     masterProductConfigs.forEach(config => suppliers.add(config.supplier));
     return Array.from(suppliers).sort();
   }, [masterProductConfigs]);
-
-  // --- Handlers para MasterProductConfig ---
-  const handleProductConfigChange = useCallback((
-    productId: number,
-    field: "supplier",
-    value: string | number
-  ) => {
-    setEditableProductConfigs((prev) => {
-      const newConfigs = { ...prev };
-      if (!newConfigs[productId]) {
-        // Esto no debería ocurrir si masterProductConfigs ya está poblado
-        console.warn(`Config for productId ${productId} not found.`);
-        return prev;
-      }
-
-      if (field === "supplier") {
-        newConfigs[productId] = { ...newConfigs[productId], supplier: value as string };
-      }
-      return newConfigs;
-    });
-  }, []);
-
-  const handleProductInputBlur = useCallback(async (productId: number) => {
-    const config = editableProductConfigs[productId];
-    if (!config) return;
-
-    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
-    try {
-      await saveMasterProductConfig(config);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-
-      // Actualizar la sesión actual con los datos de inventario filtrados más recientes
-      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
-      }
-    } catch (e) {
-      console.error("Error saving product config on blur:", e);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al guardar la configuración del producto.');
-    }
-  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
   const handleProductSupplierChange = useCallback(async (productId: number, newSupplier: string) => {
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
@@ -185,11 +140,7 @@ const SettingsPage = () => {
       await deleteMasterProductConfig(productId);
       setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      
-      // Recargar las configuraciones maestras para que el producto oculto desaparezca de la vista
       await loadMasterProductConfigs(showHiddenProducts);
-
-      // Si hay una sesión activa, guardar el estado actual de filteredInventoryData
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
         await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
@@ -201,37 +152,26 @@ const SettingsPage = () => {
     }
   };
 
-  // --- Handlers para Product Rules (reglas múltiples) ---
   const handleAddRule = useCallback(async (productId: number) => {
     setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
       const currentConfig = editableProductConfigs[productId];
-      if (!currentConfig) {
-        throw new Error(`Product config not found for adding rule for productId: ${productId}.`);
-      }
+      if (!currentConfig) throw new Error(`Config not found for productId: ${productId}`);
 
       const newRule: ProductRule = { minStock: 0, orderAmount: 0 };
       const updatedRules = [...(currentConfig.rules || []), newRule];
       const updatedConfig = { ...currentConfig, rules: updatedRules };
 
-      // Update local state first
-      setEditableProductConfigs(prev => ({
-        ...prev,
-        [productId]: updatedConfig,
-      }));
-
-      // Then save to persistence
+      setEditableProductConfigs(prev => ({ ...prev, [productId]: updatedConfig }));
       await saveMasterProductConfig(updatedConfig);
 
       setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      showSuccess('Regla añadida y guardada.');
+      showSuccess('Regla añadida.');
 
-      // Also update the current inventoryData if a session is active
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
         await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
-
     } catch (e) {
       console.error("Error adding rule:", e);
       setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
@@ -270,9 +210,6 @@ const SettingsPage = () => {
       await saveMasterProductConfig(config);
       setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
       setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      showSuccess('Regla actualizada y guardada.');
-
-      // Actualizar el inventoryData de la sesión actual si está activa
       if (sessionId && inventoryType && filteredInventoryData.length > 0) {
         await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       }
@@ -285,16 +222,6 @@ const SettingsPage = () => {
   }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
 
   const handleDeleteRule = useCallback(async (productId: number, ruleIndex: number) => {
-    setEditableProductConfigs(prev => {
-      const newConfigs = { ...prev };
-      const currentConfig = newConfigs[productId];
-      if (currentConfig && currentConfig.rules) {
-        const newRules = currentConfig.rules.filter((_, idx) => idx !== ruleIndex);
-        currentConfig.rules = newRules;
-      }
-      return newConfigs;
-    });
-    // Guardar automáticamente después de eliminar una regla
     const config = editableProductConfigs[productId];
     if (config) {
       setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
@@ -303,7 +230,7 @@ const SettingsPage = () => {
         await saveMasterProductConfig({ ...config, rules: updatedRules });
         setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
         setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-        showSuccess('Regla eliminada y guardada.');
+        showSuccess('Regla eliminada.');
       } catch (e) {
         console.error("Error deleting rule:", e);
         setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
@@ -318,8 +245,8 @@ const SettingsPage = () => {
     try {
       await processDbForMasterConfigs(buffer);
     } catch (error) {
-      console.error("Error uploading DB for master configs:", error);
-      showError("Error al cargar el archivo DB para configuraciones maestras.");
+      console.error("Error uploading DB:", error);
+      showError("Error al cargar el archivo DB.");
     } finally {
       setIsUploadingConfig(false);
     }
@@ -330,7 +257,7 @@ const SettingsPage = () => {
   };
 
   const handleForceTotalSync = async () => {
-    await syncToSupabase();
+    await forceDownloadConfigFromSupabase(); // Llamar a la función de emergencia
   };
 
   if (loading || isUploadingConfig) {
@@ -345,7 +272,6 @@ const SettingsPage = () => {
     <div className="w-full p-4 bg-white text-gray-900">
       <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-6 text-gray-900">Configuración de Pedidos</h1>
 
-      {/* Sección de Carga de Archivo DB */}
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader>
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Actualizar Catálogo de Productos</CardTitle>
@@ -353,13 +279,11 @@ const SettingsPage = () => {
         <CardContent className="flex flex-col items-center gap-4">
           <p className="text-center text-gray-700">
             Sube un nuevo archivo .db de Aronium para detectar nuevos productos o actualizar nombres.
-            Tus configuraciones de proveedores, reglas y productos ocultos se mantendrán.
           </p>
           <FileUploader onFileLoaded={handleDbFileLoadedFromSettings} loading={isUploadingConfig} />
         </CardContent>
       </Card>
 
-      {/* Sección de Reglas de Pedido por Producto */}
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Reglas de Pedido por Producto</CardTitle>
@@ -377,17 +301,13 @@ const SettingsPage = () => {
         </CardHeader>
         <CardContent>
           {masterProductConfigs.length === 0 && !showHiddenProducts ? (
-            <p className="text-center text-gray-500">
-              No hay productos configurados. Por favor, sube un archivo .db para inicializar la lista.
-            </p>
+            <p className="text-center text-gray-500">No hay productos configurados.</p>
           ) : (
             <Accordion type="multiple" className="w-full">
               {Object.entries(productsGroupedBySupplier).map(([supplier, products]) => (
                 <AccordionItem key={supplier} value={supplier} className="border-b border-gray-200">
                   <AccordionTrigger className="flex justify-between items-center py-3 px-4 text-base sm:text-lg font-semibold text-gray-800 hover:bg-gray-50">
-                    <div className="flex items-center gap-2">
-                      {supplier} ({products.length} productos)
-                    </div>
+                    {supplier} ({products.length} productos)
                   </AccordionTrigger>
                   <AccordionContent className="p-4 bg-gray-50">
                     <div className="overflow-x-auto custom-scrollbar">
@@ -396,7 +316,7 @@ const SettingsPage = () => {
                           <TableRow className="border-b border-gray-200">
                             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
-                            <TableHead className="text-xs sm:text-sm text-gray-700">Tipo Inventario</TableHead> {/* New Header */}
+                            <TableHead className="text-xs sm:text-sm text-gray-700">Tipo Inventario</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                           </TableRow>
@@ -418,25 +338,23 @@ const SettingsPage = () => {
                                       disabled={isHidden}
                                     >
                                       <SelectTrigger className="w-[120px] text-xs sm:text-sm">
-                                        <SelectValue placeholder="Seleccionar proveedor" />
+                                        <SelectValue placeholder="Proveedor" />
                                       </SelectTrigger>
                                       <SelectContent>
                                         {allSuppliers.map(sup => (
-                                          <SelectItem key={sup} value={sup}>
-                                            {sup}
-                                          </SelectItem>
+                                          <SelectItem key={sup} value={sup}>{sup}</SelectItem>
                                         ))}
                                       </SelectContent>
                                     </Select>
                                   </TableCell>
-                                  <TableCell className="py-2 px-2"> {/* New Cell for Inventory Type */}
+                                  <TableCell className="py-2 px-2">
                                     <Select
                                       value={editableProductConfigs[config.productId]?.inventory_type ?? 'monthly'}
                                       onValueChange={(value) => handleProductInventoryTypeChange(config.productId, value as 'weekly' | 'monthly' | 'ignored')}
                                       disabled={isHidden}
                                     >
                                       <SelectTrigger className="w-[120px] text-xs sm:text-sm">
-                                        <SelectValue placeholder="Tipo Inventario" />
+                                        <SelectValue placeholder="Tipo" />
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="weekly">Semanal</SelectItem>
@@ -446,49 +364,33 @@ const SettingsPage = () => {
                                     </Select>
                                   </TableCell>
                                   <TableCell className="py-2 px-2 text-center">
-                                    {savingStatus[config.productId] === 'saving' && (
-                                      <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />
-                                    )}
-                                    {savingStatus[config.productId] === 'saved' && (
-                                      <CheckCircle className="h-4 w-4 text-green-500 inline-block" />
-                                    )}
-                                    {savingStatus[config.productId] === 'error' && (
-                                      <XCircle className="h-4 w-4 text-red-500 inline-block" />
-                                    )}
-                                    {isHidden && !savingStatus[config.productId] && (
-                                      <span className="text-xs text-gray-500">Oculto</span>
-                                    )}
+                                    {savingStatus[config.productId] === 'saving' && <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />}
+                                    {savingStatus[config.productId] === 'saved' && <CheckCircle className="h-4 w-4 text-green-500 inline-block" />}
+                                    {savingStatus[config.productId] === 'error' && <XCircle className="h-4 w-4 text-red-500 inline-block" />}
                                   </TableCell>
                                   <TableCell className="py-2 px-2 text-center">
                                     <Button
                                       variant="outline"
                                       size="sm"
                                       onClick={() => handleHideProductConfig(config.productId)}
-                                      className={cn(
-                                        "h-7 w-7 p-0",
-                                        isHidden ? "text-green-600 border-green-600 hover:bg-green-600 hover:text-white" : "text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
-                                      )}
-                                      disabled={savingStatus[config.productId] === 'saving'}
+                                      className={cn("h-7 w-7 p-0", isHidden ? "text-green-600 border-green-600" : "text-red-600 border-red-600")}
                                     >
                                       {isHidden ? <Eye className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
                                     </Button>
                                   </TableCell>
                                 </TableRow>
-                                {/* Fila para las reglas múltiples */}
                                 <TableRow className={cn("bg-gray-50", isHidden && "bg-gray-100")}>
                                   <TableCell colSpan={5} className="py-2 px-2">
                                     <div className="flex flex-col gap-2 pl-4">
-                                      <p className="text-xs font-semibold text-gray-700">Reglas de Pedido:</p>
                                       {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => (
                                         <div key={ruleIndex} className="flex items-center gap-2 text-xs">
-                                          <span>{'Si Stock es <='}</span>
+                                          <span>{'Si Stock <='}</span>
                                           <Input
                                             type="number"
                                             value={rule.minStock}
                                             onChange={(e) => handleRuleChange(config.productId, ruleIndex, "minStock", e.target.value)}
                                             onBlur={() => handleRuleBlur(config.productId)}
                                             className="w-16 text-center"
-                                            min="0"
                                             disabled={isHidden}
                                           />
                                           <span>Pedir</span>
@@ -498,27 +400,14 @@ const SettingsPage = () => {
                                             onChange={(e) => handleRuleChange(config.productId, ruleIndex, "orderAmount", e.target.value)}
                                             onBlur={() => handleRuleBlur(config.productId)}
                                             className="w-16 text-center"
-                                            min="0"
                                             disabled={isHidden}
                                           />
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => handleDeleteRule(config.productId, ruleIndex)}
-                                            className="h-6 w-6 text-red-500 hover:bg-red-100"
-                                            disabled={isHidden}
-                                          >
+                                          <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(config.productId, ruleIndex)} className="h-6 w-6 text-red-500" disabled={isHidden}>
                                             <Trash2 className="h-3 w-3" />
                                           </Button>
                                         </div>
                                       ))}
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleAddRule(config.productId)}
-                                        className="mt-2 w-fit text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs"
-                                        disabled={isHidden}
-                                      >
+                                      <Button variant="outline" size="sm" onClick={() => handleAddRule(config.productId)} className="mt-2 w-fit text-blue-600 border-blue-600 text-xs" disabled={isHidden}>
                                         <PlusCircle className="h-3 w-3 mr-1" /> Añadir Condición
                                       </Button>
                                     </div>
@@ -538,7 +427,6 @@ const SettingsPage = () => {
         </CardContent>
       </Card>
 
-      {/* Sección de Herramientas de Base de Datos */}
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader>
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Herramientas de Base de Datos</CardTitle>
@@ -546,52 +434,37 @@ const SettingsPage = () => {
         <CardContent className="flex flex-col gap-4">
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button 
-                variant="outline" 
-                disabled={loading || !isOnline || isSupabaseSyncInProgress}
-                className="text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white"
-              >
+              <Button variant="outline" disabled={loading || !isOnline || isSupabaseSyncInProgress} className="text-blue-600 border-blue-600">
                 <RefreshCcw className={cn("h-4 w-4 mr-2", isSupabaseSyncInProgress && "animate-spin")} />
                 Forzar Sincronización Total
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>¿Estás seguro de forzar la sincronización?</AlertDialogTitle>
+                <AlertDialogTitle>¿Forzar sincronización de emergencia?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Esta acción intentará subir todos tus cambios locales pendientes a la nube y luego descargará las últimas configuraciones y sesiones de la nube, resolviendo conflictos.
-                  Esto puede tardar unos segundos. Asegúrate de tener una conexión a internet estable.
+                  Esto borrará todos los datos locales y descargará la versión maestra de Supabase. Úsalo si ves datos corruptos o desincronizados.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={handleForceTotalSync} disabled={!isOnline || isSupabaseSyncInProgress}>
-                  Sí, Forzar Sincronización
-                </AlertDialogAction>
+                <AlertDialogAction onClick={handleForceTotalSync}>Sí, Restaurar Datos</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={loading}>
-                Limpiar Base de Datos Local
-              </Button>
+              <Button variant="destructive" disabled={loading}>Limpiar Base de Datos Local</Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Esta acción eliminará *toda* la información guardada localmente en tu navegador (sesiones de inventario, configuraciones de productos).
-                  Una vez eliminados, los datos se recargarán automáticamente desde la nube (Supabase) si hay conexión.
-                  Si no hay conexión a la nube, los datos se perderán permanentemente.
-                </AlertDialogDescription>
+                <AlertDialogTitle>¿Limpiar base de datos local?</AlertDialogTitle>
+                <AlertDialogDescription>Esta acción eliminará todos los datos locales. Se recargarán de la nube si hay conexión.</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearLocalDatabase} className="bg-red-600 hover:bg-red-700">
-                  Sí, limpiar base de datos
-                </AlertDialogAction>
+                <AlertDialogAction onClick={handleClearLocalDatabase} className="bg-red-600">Sí, Limpiar</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

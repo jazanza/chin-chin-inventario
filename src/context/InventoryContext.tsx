@@ -1,14 +1,14 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global optimizado para alto rendimiento con listas grandes.
- * @version v1.6.0
+ * @version v1.6.1
  * @date 2024-07-26
  *
- * PROPÓSITO DE LA VERSIÓN v1.6.0:
- * Asegurar la sincronización obligatoria con Supabase al inicio.
- * - El useEffect de montaje ahora siempre intenta sincronizar con la nube si hay conexión.
- * - Se eliminó la restricción de 'solo si Dexie está vacío'.
- * - Se mantiene la carga local rápida seguida de la actualización desde la nube.
+ * PROPÓSITO DE LA VERSIÓN v1.6.1:
+ * Implementar forceDownloadConfigFromSupabase para recuperación de datos.
+ * - Limpieza total de tablas locales antes de la descarga.
+ * - Mapeo explícito de productId a Number para evitar DataError en Dexie.
+ * - Refresco automático del estado de React tras la persistencia.
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -218,6 +218,7 @@ interface InventoryContextType extends InventoryState {
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
   syncToSupabase: () => Promise<void>;
+  forceDownloadConfigFromSupabase: () => Promise<void>; // Nueva función de emergencia
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
   deleteMasterProductConfig: (productId: number) => Promise<void>;
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>;
@@ -553,6 +554,62 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [loadMasterProductConfigs, state.isOnline]);
 
+  // --- FUNCIÓN DE EMERGENCIA: forceDownloadConfigFromSupabase ---
+  const forceDownloadConfigFromSupabase = useCallback(async () => {
+    if (!supabase || !state.isOnline) {
+      showError("No hay conexión a internet o Supabase no está configurado.");
+      return;
+    }
+
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
+
+    try {
+      if (!db.isOpen()) await db.open();
+
+      // 1. Limpieza Total de tablas locales
+      await db.productRules.clear();
+      await db.sessions.clear();
+      await db.supplierConfigs.clear();
+      console.log("[Emergency Sync] Tablas locales limpiadas.");
+
+      // 2. Descarga Directa desde Supabase
+      const { data: rules, error: rulesError } = await supabase.from('product_rules').select('*');
+      const { data: sessions, error: sessionsError } = await supabase.from('inventory_sessions').select('*');
+
+      if (rulesError) throw rulesError;
+      if (sessionsError) throw sessionsError;
+
+      // 3. Mapeo de Integridad: Convertir productId a Number
+      const mappedRules = (rules || []).map(r => ({
+        ...r,
+        productId: Number(r.productId), // Conversión crítica
+        sync_pending: false,
+      }));
+
+      const mappedSessions = (sessions || []).map(s => ({
+        ...s,
+        sync_pending: false,
+      }));
+
+      // Guardar en Dexie
+      await db.productRules.bulkPut(mappedRules);
+      await db.sessions.bulkPut(mappedSessions);
+      console.log(`[Emergency Sync] Descargadas ${mappedRules.length} reglas y ${mappedSessions.length} sesiones.`);
+
+      // 4. Refresco de Estado inmediato
+      await loadMasterProductConfigs();
+      showSuccess("Sincronización de emergencia completada. Datos restaurados.");
+    } catch (e: any) {
+      console.error("Error en sincronización de emergencia:", e);
+      showError(`Error al restaurar datos: ${e.message}`);
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
+      updateSyncStatus();
+    }
+  }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
+
   // --- Debounced Save Setup ---
   useEffect(() => {
     debouncedSaveCurrentSessionRef.current = debounce(async (data: InventoryItem[], forcedSessionId?: string) => {
@@ -657,6 +714,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     getSessionHistory,
     resetInventoryState,
     syncToSupabase,
+    forceDownloadConfigFromSupabase,
     saveMasterProductConfig,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
@@ -683,6 +741,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     getSessionHistory, 
     resetInventoryState, 
     syncToSupabase, 
+    forceDownloadConfigFromSupabase,
     saveMasterProductConfig, 
     deleteMasterProductConfig, 
     loadMasterProductConfigs, 
