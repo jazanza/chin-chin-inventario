@@ -1,7 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global con rastreo de cambios pendientes (dirty state).
- * @version v1.8.4
+ * @version v1.8.5
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -434,7 +434,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         product_name: configToSave.productName,
         supplier_name: configToSave.supplier,
         rules: configToSave.rules,
-        is_hidden: configToSave.isHidden,
+        isHidden: configToSave.isHidden,
         inventory_type: configToSave.inventory_type
       };
 
@@ -469,7 +469,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         product_name: c.productName,
         supplier_name: c.supplier,
         rules: c.rules,
-        is_hidden: c.isHidden,
+        isHidden: c.isHidden,
         inventory_type: c.inventory_type
       }));
 
@@ -495,7 +495,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const newIsHidden = !currentConfig.isHidden;
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: new Date().toISOString() });
     if (supabase && state.isOnline) {
-      const { error } = await (supabase.from('product_rules') as any).update({ is_hidden: newIsHidden }).eq('product_id', productId);
+      const { error } = await (supabase.from('product_rules') as any).update({ isHidden: newIsHidden }).eq('product_id', productId);
       if (error) throw error;
     }
     await loadMasterProductConfigs();
@@ -577,7 +577,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           product_name: c.productName,
           supplier_name: c.supplier,
           rules: c.rules,
-          is_hidden: c.isHidden,
+          isHidden: c.isHidden,
           inventory_type: c.inventory_type
         }));
         const { error } = await (supabase.from('product_rules') as any).upsert(supabaseConfigs, { 
@@ -672,7 +672,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           product_name: rule.productName,
           supplier_name: rule.supplier,
           rules: rule.rules,
-          is_hidden: rule.isHidden,
+          isHidden: rule.isHidden,
           inventory_type: rule.inventory_type
         };
         const { error } = await (supabase.from('product_rules') as any).upsert(supabaseRule, { onConflict: 'product_id' });
