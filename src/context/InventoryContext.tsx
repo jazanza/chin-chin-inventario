@@ -1,7 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global con rastreo de cambios pendientes (dirty state).
- * @version v1.8.0
+ * @version v1.8.2
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -81,7 +81,7 @@ interface InventoryState {
   isOnline: boolean;
   isSupabaseSyncInProgress: boolean;
   currentSessionOrders: { [supplier: string]: OrderItem[] } | null;
-  hasUnsavedChanges: boolean; // Nueva bandera para cambios pendientes
+  hasUnsavedChanges: boolean;
 }
 
 const initialState: InventoryState = {
@@ -142,7 +142,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { 
         ...state, 
         rawInventoryItemsFromDb: newItems,
-        hasUnsavedChanges: true // Marcar como sucio al editar
+        hasUnsavedChanges: true
       };
     }
 
@@ -339,15 +339,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         updated_at: nowIso,
       };
 
-      // Guardar localmente primero
       await db.sessions.put(sessionToSave);
       dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null });
-      dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false }); // Limpiar bandera de cambios
+      dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false });
 
-      // Intentar guardar en Supabase
       if (supabase && state.isOnline) {
-        const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
+        const supabaseSession = {
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData,
@@ -356,7 +354,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           ordersBySupplier: sessionToSave.ordersBySupplier,
         };
         
-        const { data: fetchedData, error } = await (supabase          .from('inventory_sessions') as any)
+        const { data: fetchedData, error } = await (supabase.from('inventory_sessions') as any)
           .upsert(supabaseSession, { onConflict: 'dateKey' })
           .select('dateKey, updated_at')
           .single();
@@ -385,7 +383,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: session.inventoryData });
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: session.ordersBySupplier || null });
-        dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false }); // Resetear al cargar
+        dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false });
         showSuccess(`Sesión del ${dateKey} cargada.`);
       }
     } finally {
@@ -430,15 +428,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     await db.productRules.put(configToSave);
     
     if (supabase && state.isOnline) {
+      // Mapear a los nombres exactos de las columnas de Supabase
+      const supabasePayload = {
+        product_id: configToSave.productId,
+        product_name: configToSave.productName,
+        supplier_name: configToSave.supplier,
+        rules: configToSave.rules,
+        is_hidden: configToSave.isHidden,
+        inventory_type: configToSave.inventory_type
+      };
+
       const { data: fetchedData, error } = await (supabase.from('product_rules') as any)
-        .upsert(configToSave, { onConflict: 'productId' })
-        .select('productId, updated_at')
+        .upsert(supabasePayload, { onConflict: 'product_id' })
+        .select('product_id, updated_at')
         .single();
       
-      if (error) {
-        console.error('Supabase error (upsert product_rules):', error);
-        throw error;
-      }
+      if (error) throw error;
       if (fetchedData) await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedData.updated_at });
     }
     await loadMasterProductConfigs();
@@ -447,18 +452,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const saveAllMasterProductConfigs = useCallback(async (configs: MasterProductConfig[]) => {
     if (!db.isOpen()) await db.open();
     
-    const validatedConfigs = configs.map(config => {
-      if (!config.productId || !config.productName) {
-        const err = new Error(`Configuración inválida para producto "${config.productName || 'desconocido'}"`);
-        console.error(err);
-        throw err;
-      }
-      return { ...config, productId: Number(config.productId) };
-    });
-
     const nowIso = new Date().toISOString();
-    const configsToSave = validatedConfigs.map(c => ({
+    const configsToSave = configs.map(c => ({
       ...c,
+      productId: Number(c.productId),
       sync_pending: true,
       updated_at: nowIso
     }));
@@ -466,16 +463,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     await db.productRules.bulkPut(configsToSave);
 
     if (supabase && state.isOnline) {
+      // Mapear a los nombres exactos de las columnas de Supabase
+      const supabasePayloads = configsToSave.map(c => ({
+        product_id: c.productId,
+        product_name: c.productName,
+        supplier_name: c.supplier,
+        rules: c.rules,
+        is_hidden: c.isHidden,
+        inventory_type: c.inventory_type
+      }));
+
       const { error } = await (supabase.from('product_rules') as any)
-        .upsert(configsToSave, { 
-          onConflict: 'productId',
-          columns: ['productId', 'productName', 'rules', 'supplier', 'isHidden', 'inventory_type', 'sync_pending', 'updated_at']
+        .upsert(supabasePayloads, { 
+          onConflict: 'product_id'
         });
       
-      if (error) {
-        console.error('Supabase error (bulk upsert product_rules):', error);
-        throw error;
-      }
+      if (error) throw error;
       
       await db.productRules.bulkUpdate(configsToSave.map(c => ({
         key: c.productId,
@@ -492,11 +495,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const newIsHidden = !currentConfig.isHidden;
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: new Date().toISOString() });
     if (supabase && state.isOnline) {
-      const { error } = await (supabase.from('product_rules') as any).update({ isHidden: newIsHidden }).eq('productId', productId);
-      if (error) {
-        console.error('Supabase error (update product_rules):', error);
-        throw error;
-      }
+      const { error } = await (supabase.from('product_rules') as any).update({ is_hidden: newIsHidden }).eq('product_id', productId);
+      if (error) throw error;
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
@@ -573,16 +573,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       
       if (supabase && state.isOnline) {
         const supabaseConfigs = updates.map(c => ({
-          productId: c.productId,
-          productName: c.productName,
+          product_id: c.productId,
+          product_name: c.productName,
+          supplier_name: c.supplier,
           rules: c.rules,
-          supplier: c.supplier,
-          isHidden: c.isHidden,
+          is_hidden: c.isHidden,
           inventory_type: c.inventory_type
         }));
         const { error } = await (supabase.from('product_rules') as any).upsert(supabaseConfigs, { 
-          onConflict: 'productId',
-          columns: ['productId', 'productName', 'rules', 'supplier', 'isHidden', 'inventory_type', 'sync_pending', 'updated_at']
+          onConflict: 'product_id'
         });
         if (error) throw error;
       }
@@ -618,7 +617,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const mappedRules = (rules as any[] || []).map(r => ({
         ...r,
-        productId: Number(r.productId),
+        productId: Number(r.product_id),
         sync_pending: false,
       }));
 
@@ -653,14 +652,30 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     try {
       const pendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === true).toArray();
       for (const session of pendingSessions) {
-        const { error } = await (supabase.from('inventory_sessions') as any).upsert(session, { onConflict: 'dateKey' });
+        const supabaseSession = {
+          dateKey: session.dateKey,
+          inventoryType: session.inventoryType,
+          inventoryData: session.inventoryData,
+          timestamp: session.timestamp,
+          effectiveness: session.effectiveness,
+          ordersBySupplier: session.ordersBySupplier,
+        };
+        const { error } = await (supabase.from('inventory_sessions') as any).upsert(supabaseSession, { onConflict: 'dateKey' });
         if (error) throw error;
         await db.sessions.update(session.dateKey, { sync_pending: false });
       }
       
       const pendingRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const rule of pendingRules) {
-        const { error } = await (supabase.from('product_rules') as any).upsert(rule, { onConflict: 'productId' });
+        const supabaseRule = {
+          product_id: rule.productId,
+          product_name: rule.productName,
+          supplier_name: rule.supplier,
+          rules: rule.rules,
+          is_hidden: rule.isHidden,
+          inventory_type: rule.inventory_type
+        };
+        const { error } = await (supabase.from('product_rules') as any).upsert(supabaseRule, { onConflict: 'product_id' });
         if (error) throw error;
         await db.productRules.update(rule.productId, { sync_pending: false });
       }
