@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Save, RefreshCcw } from "lucide-react";
+import { Loader2, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw, Save } from "lucide-react";
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
@@ -151,7 +151,7 @@ const SettingsPage = () => {
       await saveAllMasterProductConfigs(configsArray);
       showSuccess("✓ Cambios guardados correctamente");
     } catch (err) {
-      console.error('Error al guardar configuraciones:', err);
+      console.error("Error al guardar configuraciones:", err);
       showError("✗ Error al guardar. Intenta nuevamente.");
     } finally {
       setIsSaving(false);
