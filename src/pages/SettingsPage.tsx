@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Trash2, PlusCircle, Eye, EyeOff, Save, RefreshCcw } from "lucide-react";
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
@@ -22,18 +22,14 @@ import { Switch } from "@/components/ui/switch";
 
 const SettingsPage = () => {
   const {
-    filteredInventoryData,
     masterProductConfigs,
-    saveMasterProductConfig,
+    saveAllMasterProductConfigs,
     deleteMasterProductConfig,
-    saveCurrentSession,
-    sessionId,
-    inventoryType,
     loading,
     processDbForMasterConfigs,
     loadMasterProductConfigs,
     clearLocalDatabase,
-    forceDownloadConfigFromSupabase, // Usar la nueva función
+    forceDownloadConfigFromSupabase,
     isOnline,
     isSupabaseSyncInProgress,
   } = useInventoryContext();
@@ -42,11 +38,7 @@ const SettingsPage = () => {
     [productId: number]: MasterProductConfig;
   }>({});
   const [showHiddenProducts, setShowHiddenProducts] = useState(false);
-
-  const [savingStatus, setSavingStatus] = useState<{
-    [key: number]: 'saving' | 'saved' | 'error' | null;
-  }>({});
-
+  const [isSaving, setIsSaving] = useState(false);
   const [isUploadingConfig, setIsUploadingConfig] = useState(false);
 
   // Inicializar editableProductConfigs cuando masterProductConfigs cambian
@@ -85,102 +77,42 @@ const SettingsPage = () => {
     return Array.from(suppliers).sort();
   }, [masterProductConfigs]);
 
-  const handleProductSupplierChange = useCallback(async (productId: number, newSupplier: string) => {
-    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
-    try {
-      setEditableProductConfigs(prev => ({
-        ...prev,
-        [productId]: { ...prev[productId], supplier: newSupplier }
-      }));
+  const handleProductSupplierChange = (productId: number, newSupplier: string) => {
+    setEditableProductConfigs(prev => ({
+      ...prev,
+      [productId]: { ...prev[productId], supplier: newSupplier }
+    }));
+  };
 
-      const configToSave = { ...editableProductConfigs[productId], supplier: newSupplier };
-      await saveMasterProductConfig(configToSave);
-
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      showSuccess(`Proveedor de ${configToSave.productName} actualizado.`);
-
-      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
-      }
-    } catch (e) {
-      console.error("Error changing product supplier:", e);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al cambiar el proveedor del producto.');
-    }
-  }, [editableProductConfigs, saveMasterProductConfig, filteredInventoryData, saveCurrentSession, sessionId, inventoryType]);
-
-  const handleProductInventoryTypeChange = useCallback(async (productId: number, newType: 'weekly' | 'monthly' | 'ignored') => {
-    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
-    try {
-      setEditableProductConfigs(prev => ({
-        ...prev,
-        [productId]: { ...prev[productId], inventory_type: newType }
-      }));
-
-      const configToSave = { ...editableProductConfigs[productId], inventory_type: newType };
-      await saveMasterProductConfig(configToSave);
-
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      showSuccess(`Tipo de inventario de ${configToSave.productName} actualizado.`);
-
-    } catch (e) {
-      console.error("Error changing product inventory type:", e);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al cambiar el tipo de inventario del producto.');
-    }
-  }, [editableProductConfigs, saveMasterProductConfig]);
+  const handleProductInventoryTypeChange = (productId: number, newType: 'weekly' | 'monthly' | 'ignored') => {
+    setEditableProductConfigs(prev => ({
+      ...prev,
+      [productId]: { ...prev[productId], inventory_type: newType }
+    }));
+  };
 
   const handleHideProductConfig = async (productId: number) => {
-    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
     try {
       await deleteMasterProductConfig(productId);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      await loadMasterProductConfigs(showHiddenProducts);
-      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
-      }
+      showSuccess("✓ Visibilidad actualizada");
     } catch (e) {
       console.error("Error hiding product config:", e);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al ocultar la configuración del producto.');
+      showError("✗ Error al actualizar visibilidad.");
     }
   };
 
-  const handleAddRule = useCallback(async (productId: number) => {
-    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
-    try {
-      const currentConfig = editableProductConfigs[productId];
-      if (!currentConfig) throw new Error(`Config not found for productId: ${productId}`);
+  const handleAddRule = (productId: number) => {
+    const currentConfig = editableProductConfigs[productId];
+    if (!currentConfig) return;
 
-      const newRule: ProductRule = { minStock: 0, orderAmount: 0 };
-      const updatedRules = [...(currentConfig.rules || []), newRule];
-      const updatedConfig = { ...currentConfig, rules: updatedRules };
+    const newRule: ProductRule = { minStock: 0, orderAmount: 0 };
+    const updatedRules = [...(currentConfig.rules || []), newRule];
+    const updatedConfig = { ...currentConfig, rules: updatedRules };
 
-      setEditableProductConfigs(prev => ({ ...prev, [productId]: updatedConfig }));
-      await saveMasterProductConfig(updatedConfig);
+    setEditableProductConfigs(prev => ({ ...prev, [productId]: updatedConfig }));
+  };
 
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      showSuccess('Regla añadida.');
-
-      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
-      }
-    } catch (e) {
-      console.error("Error adding rule:", e);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al añadir la regla.');
-    }
-  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
-
-  const handleRuleChange = useCallback((
+  const handleRuleChange = (
     productId: number,
     ruleIndex: number,
     field: keyof ProductRule,
@@ -199,46 +131,32 @@ const SettingsPage = () => {
       }
       return newConfigs;
     });
-  }, []);
+  };
 
-  const handleRuleBlur = useCallback(async (productId: number) => {
-    const config = editableProductConfigs[productId];
-    if (!config) return;
-
-    setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
-    try {
-      await saveMasterProductConfig(config);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-      if (sessionId && inventoryType && filteredInventoryData.length > 0) {
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
-      }
-    } catch (e) {
-      console.error("Error saving rule on blur:", e);
-      setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-      showError('Error al guardar la regla.');
-    }
-  }, [editableProductConfigs, saveMasterProductConfig, sessionId, inventoryType, filteredInventoryData, saveCurrentSession]);
-
-  const handleDeleteRule = useCallback(async (productId: number, ruleIndex: number) => {
+  const handleDeleteRule = (productId: number, ruleIndex: number) => {
     const config = editableProductConfigs[productId];
     if (config) {
-      setSavingStatus(prev => ({ ...prev, [productId]: 'saving' }));
-      try {
-        const updatedRules = config.rules.filter((_, idx) => idx !== ruleIndex);
-        await saveMasterProductConfig({ ...config, rules: updatedRules });
-        setSavingStatus(prev => ({ ...prev, [productId]: 'saved' }));
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 2000);
-        showSuccess('Regla eliminada.');
-      } catch (e) {
-        console.error("Error deleting rule:", e);
-        setSavingStatus(prev => ({ ...prev, [productId]: 'error' }));
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [productId]: null })), 3000);
-        showError('Error al eliminar la regla.');
-      }
+      const updatedRules = config.rules.filter((_, idx) => idx !== ruleIndex);
+      setEditableProductConfigs(prev => ({
+        ...prev,
+        [productId]: { ...config, rules: updatedRules }
+      }));
     }
-  }, [editableProductConfigs, saveMasterProductConfig]);
+  };
+
+  const handleSaveAllChanges = async () => {
+    setIsSaving(true);
+    try {
+      const configsArray = Object.values(editableProductConfigs);
+      await saveAllMasterProductConfigs(configsArray);
+      showSuccess("✓ Cambios guardados correctamente");
+    } catch (err) {
+      console.error('Error al guardar configuraciones:', err);
+      showError("✗ Error al guardar. Intenta nuevamente.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleDbFileLoadedFromSettings = async (buffer: Uint8Array) => {
     setIsUploadingConfig(true);
@@ -257,7 +175,7 @@ const SettingsPage = () => {
   };
 
   const handleForceTotalSync = async () => {
-    await forceDownloadConfigFromSupabase(); // Llamar a la función de emergencia
+    await forceDownloadConfigFromSupabase();
   };
 
   if (loading || isUploadingConfig) {
@@ -270,7 +188,26 @@ const SettingsPage = () => {
 
   return (
     <div className="w-full p-4 bg-white text-gray-900">
-      <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-6 text-gray-900">Configuración de Pedidos</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">Configuración de Pedidos</h1>
+        <Button 
+          onClick={handleSaveAllChanges} 
+          disabled={isSaving || !isOnline} 
+          className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base min-w-[160px]"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Guardando...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              Guardar cambios
+            </>
+          )}
+        </Button>
+      </div>
 
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader>
@@ -317,7 +254,6 @@ const SettingsPage = () => {
                             <TableHead className="text-xs sm:text-sm text-gray-700">Producto</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700">Proveedor</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700">Tipo Inventario</TableHead>
-                            <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Estado</TableHead>
                             <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acciones</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -364,11 +300,6 @@ const SettingsPage = () => {
                                     </Select>
                                   </TableCell>
                                   <TableCell className="py-2 px-2 text-center">
-                                    {savingStatus[config.productId] === 'saving' && <Loader2 className="h-4 w-4 animate-spin text-blue-500 inline-block" />}
-                                    {savingStatus[config.productId] === 'saved' && <CheckCircle className="h-4 w-4 text-green-500 inline-block" />}
-                                    {savingStatus[config.productId] === 'error' && <XCircle className="h-4 w-4 text-red-500 inline-block" />}
-                                  </TableCell>
-                                  <TableCell className="py-2 px-2 text-center">
                                     <Button
                                       variant="outline"
                                       size="sm"
@@ -380,7 +311,7 @@ const SettingsPage = () => {
                                   </TableCell>
                                 </TableRow>
                                 <TableRow className={cn("bg-gray-50", isHidden && "bg-gray-100")}>
-                                  <TableCell colSpan={5} className="py-2 px-2">
+                                  <TableCell colSpan={4} className="py-2 px-2">
                                     <div className="flex flex-col gap-2 pl-4">
                                       {(editableProductConfigs[config.productId]?.rules || []).map((rule, ruleIndex) => (
                                         <div key={ruleIndex} className="flex items-center gap-2 text-xs">
@@ -389,7 +320,6 @@ const SettingsPage = () => {
                                             type="number"
                                             value={rule.minStock}
                                             onChange={(e) => handleRuleChange(config.productId, ruleIndex, "minStock", e.target.value)}
-                                            onBlur={() => handleRuleBlur(config.productId)}
                                             className="w-16 text-center"
                                             disabled={isHidden}
                                           />
@@ -398,7 +328,6 @@ const SettingsPage = () => {
                                             type="number"
                                             value={rule.orderAmount}
                                             onChange={(e) => handleRuleChange(config.productId, ruleIndex, "orderAmount", e.target.value)}
-                                            onBlur={() => handleRuleBlur(config.productId)}
                                             className="w-16 text-center"
                                             disabled={isHidden}
                                           />

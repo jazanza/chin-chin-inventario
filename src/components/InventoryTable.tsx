@@ -17,7 +17,6 @@ interface InventoryRowProps {
 const InventoryRow = React.memo(({ item, index, onUpdate }: InventoryRowProps) => {
   // Estado local para respuesta visual instantánea
   const [localQty, setLocalQty] = useState(item.physicalQuantity);
-  const isFirstRender = useRef(true);
 
   // Sincronizar el estado local si el valor global cambia (ej: por una carga de sesión o sync remoto)
   useEffect(() => {
@@ -105,7 +104,7 @@ interface InventoryTableProps {
 }
 
 export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
-  const { updateAndDebounceSaveInventoryItem } = useInventoryContext();
+  const { updateInventoryItemLocal } = useInventoryContext();
 
   // Resumen calculado solo cuando los datos cambian
   const summary = useMemo(() => {
@@ -153,7 +152,7 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
                 key={item.productId} 
                 item={item} 
                 index={index} 
-                onUpdate={updateAndDebounceSaveInventoryItem} 
+                onUpdate={updateInventoryItemLocal} 
               />
             ))}
           </TableBody>

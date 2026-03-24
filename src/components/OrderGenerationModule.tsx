@@ -2,72 +2,55 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Copy, Minus, Plus } from "lucide-react";
+import { Copy, Minus, Plus, Save, Loader2 } from "lucide-react";
 import { InventoryItem, useInventoryContext } from "@/context/InventoryContext";
 import { showSuccess, showError } from "@/utils/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 interface OrderGenerationModuleProps {
-  inventoryData: InventoryItem[]; // Ahora recibe la lista filtrada
+  inventoryData: InventoryItem[];
 }
 
-// Definir la interfaz para los ítems de pedido con la cantidad final editable
 export interface OrderItem {
   product: string;
-  quantityToOrder: number; // Cantidad sugerida (después de aplicar reglas)
-  finalOrderQuantity: number; // Cantidad final que el usuario puede editar
+  quantityToOrder: number;
+  finalOrderQuantity: number;
 }
 
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
-  const { saveCurrentSession, inventoryType, sessionId, filteredInventoryData } = useInventoryContext(); // Obtener filteredInventoryData
+  const { saveCurrentSession, inventoryType, sessionId, currentSessionOrders, isOnline } = useInventoryContext();
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Calcula las órdenes sugeridas (quantityToOrder) y las inicializa en finalOrders
+  // Calcula las órdenes sugeridas
   const ordersBySupplier = useMemo(() => {
     const orders: { [supplier: string]: OrderItem[] } = {};
-    let loggedFirstItem = false; // Flag para registrar solo el primer elemento
 
-    inventoryData.forEach(item => { // Usar inventoryData (que ya es filteredInventoryData)
+    inventoryData.forEach(item => {
       if (!item.supplier) return;
 
-      // Añadir log para verificar los datos del primer elemento antes del cálculo
-      if (!loggedFirstItem && inventoryData.length > 0) {
-        console.log("OrderGenerationModule: Procesando elemento para cálculo de pedido (primer elemento de muestra):", {
-          productId: item.productId,
-          productName: item.productName,
-          supplier: item.supplier,
-          physicalQuantity: item.physicalQuantity,
-          rules: item.rules,
-        });
-        loggedFirstItem = true;
-      }
-
       let quantityToOrder = 0;
-
-      // Aplicar la lógica de sugerencia basada en reglas múltiples
       if (item.rules && item.rules.length > 0) {
-        // Ordenar reglas de MENOR a MAYOR minStock para aplicar la más específica (stock más bajo)
         const sortedRules = [...item.rules].sort((a, b) => a.minStock - b.minStock);
         for (const rule of sortedRules) {
           if (item.physicalQuantity <= rule.minStock) {
             quantityToOrder = rule.orderAmount;
-            break; // Aplicar la primera regla que coincida (la más específica)
+            break;
           }
         }
       }
       
       if (quantityToOrder < 0) quantityToOrder = 0;
 
-      // Incluir el producto en la lista de pedidos del proveedor, independientemente de la cantidad
       if (!orders[item.supplier]) {
         orders[item.supplier] = [];
       }
       orders[item.supplier].push({
         product: item.productName,
         quantityToOrder: Math.round(quantityToOrder),
-        finalOrderQuantity: Math.round(quantityToOrder), // Inicializar con la cantidad sugerida
+        finalOrderQuantity: Math.round(quantityToOrder),
       });
     });
 
@@ -76,21 +59,25 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     }
 
     return orders;
-  }, [inventoryData]); // Depende de inventoryData (filteredInventoryData)
+  }, [inventoryData]);
 
-  // Sincronizar finalOrders con ordersBySupplier cuando inventoryData cambia
+  // Sincronizar finalOrders con currentSessionOrders (si existe) o con ordersBySupplier
   useEffect(() => {
-    const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
-    for (const supplier in ordersBySupplier) {
-      initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => ({
-        ...item,
-        finalOrderQuantity: item.quantityToOrder,
-      }));
+    if (currentSessionOrders && Object.keys(currentSessionOrders).length > 0) {
+      setFinalOrders(currentSessionOrders);
+    } else {
+      const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
+      for (const supplier in ordersBySupplier) {
+        initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => ({
+          ...item,
+          finalOrderQuantity: item.quantityToOrder,
+        }));
+      }
+      setFinalOrders(initialFinalOrders);
     }
-    setFinalOrders(initialFinalOrders);
-  }, [ordersBySupplier]);
+  }, [ordersBySupplier, currentSessionOrders]);
 
-  // Manejar cambios en la cantidad final de pedido
+  // Manejar cambios en la cantidad final de pedido (solo local)
   const handleFinalOrderQuantityChange = (
     supplier: string,
     productName: string,
@@ -105,19 +92,29 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
         if (productIndex !== -1) {
           newOrders[supplier][productIndex] = {
             ...newOrders[supplier][productIndex],
-            finalOrderQuantity: Math.max(0, value), // Asegurar que no sea negativo
+            finalOrderQuantity: Math.max(0, value),
           };
         }
-      }
-      // Guardar la sesión con los pedidos actualizados
-      if (sessionId && inventoryType && filteredInventoryData) { // Usar filteredInventoryData
-        saveCurrentSession(filteredInventoryData, inventoryType, new Date(), newOrders);
       }
       return newOrders;
     });
   };
 
-  // Lógica para el resumen de cajas de Belbier
+  const handleSaveOrders = async () => {
+    if (!sessionId || !inventoryType || inventoryData.length === 0) return;
+    
+    setIsSaving(true);
+    try {
+      await saveCurrentSession(inventoryData, inventoryType, new Date(), finalOrders);
+      showSuccess("✓ Pedido guardado correctamente");
+    } catch (err) {
+      console.error('Error al guardar pedido:', err);
+      showError("✗ Error al guardar. Intenta nuevamente.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const belbierSummary = useMemo(() => {
     if (selectedSupplier === "Belbier" && finalOrders["Belbier"]) {
       const totalFinalOrderQuantity = finalOrders["Belbier"].reduce((sum, order) => sum + order.finalOrderQuantity, 0);
@@ -137,7 +134,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   }, [selectedSupplier, finalOrders]);
 
   const copyOrderToClipboard = async (supplier: string) => {
-    const supplierOrders = finalOrders[supplier]; // Usar finalOrders para copiar
+    const supplierOrders = finalOrders[supplier];
     if (!supplierOrders || supplierOrders.length === 0) {
       showError(`No hay pedidos para el proveedor ${supplier} para copiar.`);
       return;
@@ -145,7 +142,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
     let orderText = "Buenos días, por favor para que nos ayuden con:\n\n";
     supplierOrders.forEach(order => {
-      if (order.finalOrderQuantity > 0) { // Confirmado: usa finalOrderQuantity
+      if (order.finalOrderQuantity > 0) {
         orderText += `- ${order.product} x ${order.finalOrderQuantity} u.\n`;
       }
     });
@@ -154,12 +151,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
     try {
       await navigator.clipboard.writeText(orderText);
       showSuccess(`Pedido para ${supplier} copiado al portapapeles.`);
-
-      // Guardar los pedidos en la sesión actual
-      if (sessionId && inventoryType && filteredInventoryData) { // Usar filteredInventoryData
-        await saveCurrentSession(filteredInventoryData, inventoryType, new Date(), finalOrders);
-        showSuccess('Pedidos guardados en la sesión.');
-      }
     } catch (err) {
       console.error("Error al copiar el pedido:", err);
       showError("Error al copiar el pedido. Por favor, inténtalo de nuevo.");
@@ -170,13 +161,31 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
   return (
     <div className="w-full mt-8 p-4 bg-white text-gray-900 border border-gray-200 rounded-lg shadow-md">
-      <h2 className="text-lg sm:text-xl font-bold mb-4 text-gray-900">Generación de Pedidos</h2>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h2 className="text-lg sm:text-xl font-bold text-gray-900">Generación de Pedidos</h2>
+        <Button 
+          onClick={handleSaveOrders} 
+          disabled={isSaving || !isOnline} 
+          className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base min-w-[160px]"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Guardando...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              Guardar pedido
+            </>
+          )}
+        </Button>
+      </div>
 
       {suppliers.length === 0 ? (
         <p className="text-gray-500 text-sm sm:text-base">No hay pedidos generados para ningún proveedor.</p>
       ) : (
         <>
-          {/* Módulo "Seleccionar Proveedor" */}
           <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base sm:text-lg font-semibold text-gray-900">Seleccionar Proveedor</CardTitle>
@@ -199,7 +208,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
             </CardContent>
           </Card>
 
-          {/* Módulo "Detalle del Pedido" - Condicionalmente renderizado */}
           {selectedSupplier && finalOrders[selectedSupplier] && (
             <Card className="bg-white text-gray-900 border-gray-200 shadow-sm">
               <CardHeader>
@@ -270,7 +278,6 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                   </Table>
                 </div>
 
-                {/* Leyenda especial para Belbier */}
                 {selectedSupplier === "Belbier" && belbierSummary && (
                   <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800">
                     <p className="font-semibold">Resumen para Belbier:</p>

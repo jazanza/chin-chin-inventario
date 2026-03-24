@@ -1,14 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
- * @description Contexto global optimizado para alto rendimiento con listas grandes.
- * @version v1.6.1
- * @date 2024-07-26
- *
- * PROPÓSITO DE LA VERSIÓN v1.6.1:
- * Implementar forceDownloadConfigFromSupabase para recuperación de datos.
- * - Limpieza total de tablas locales antes de la descarga.
- * - Mapeo explícito de productId a Number para evitar DataError en Dexie.
- * - Refresco automático del estado de React tras la persistencia.
+ * @description Contexto global refactorizado para guardado manual y explícito.
+ * @version v1.7.1
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -16,7 +9,6 @@ import { initDb, loadDb, queryData } from "@/lib/db";
 import { db, InventorySession, MasterProductConfig, ProductRule, SupplierConfig } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
-import debounce from "lodash.debounce";
 import { supabase } from "@/lib/supabase";
 import { Database } from '@/lib/supabase';
 
@@ -150,9 +142,6 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
     }
 
     case 'SET_MASTER_PRODUCT_CONFIGS':
-      if (JSON.stringify(state.masterProductConfigs) === JSON.stringify(action.payload)) {
-        return state;
-      }
       return { ...state, masterProductConfigs: action.payload };
     case 'SET_LOADING':
       return { ...state, loading: action.payload };
@@ -218,15 +207,15 @@ interface InventoryContextType extends InventoryState {
   getSessionHistory: () => Promise<InventorySession[]>;
   resetInventoryState: () => void;
   syncToSupabase: () => Promise<void>;
-  forceDownloadConfigFromSupabase: () => Promise<void>; // Nueva función de emergencia
+  forceDownloadConfigFromSupabase: () => Promise<void>;
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
+  saveAllMasterProductConfigs: (configs: MasterProductConfig[]) => Promise<void>; // Nueva función para guardado masivo
   deleteMasterProductConfig: (productId: number) => Promise<void>;
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>;
   handleVisibilityChangeSync: () => Promise<void>;
   resetAllProductConfigs: (buffer: Uint8Array) => Promise<void>;
   clearLocalDatabase: () => Promise<void>;
-  updateAndDebounceSaveInventoryItem: (index: number, key: keyof InventoryItem, value: number | boolean) => void;
-  flushPendingSessionSave: () => void;
+  updateInventoryItemLocal: (index: number, key: keyof InventoryItem, value: number | boolean) => void;
   fetchInitialData: () => Promise<void>;
   updateSyncStatus: () => Promise<void>;
 }
@@ -241,10 +230,6 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
 
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
-  const warnedItems = useRef(new Set<string>());
-  const initialFetchDoneRef = useRef(false);
-
-  const debouncedSaveCurrentSessionRef = useRef<((data: InventoryItem[], forcedSessionId?: string) => void) & { flush: () => void; cancel: () => void } | null>(null);
 
   // --- Basic Setters ---
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => {
@@ -362,10 +347,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         updated_at: nowIso,
       };
 
+      // Guardar localmente primero
       await db.sessions.put(sessionToSave);
       dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null });
 
+      // Intentar guardar en Supabase
       if (supabase && state.isOnline) {
         const supabaseSession: Database['public']['Tables']['inventory_sessions']['Insert'] = {
           dateKey: sessionToSave.dateKey,
@@ -375,21 +362,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           effectiveness: sessionToSave.effectiveness,
           ordersBySupplier: sessionToSave.ordersBySupplier,
         };
+        
         const { data: fetchedData, error } = await (supabase
           .from('inventory_sessions') as any)
           .upsert(supabaseSession, { onConflict: 'dateKey' })
           .select('dateKey, updated_at')
           .single();
 
-        if (error) {
-          console.error("Error saving to Supabase:", error);
-        } else if (fetchedData) {
+        if (error) throw error;
+        
+        if (fetchedData) {
           await db.sessions.update(dateKey, { sync_pending: false, updated_at: fetchedData.updated_at });
-          warnedItems.current.delete(`session-${dateKey}`);
         }
       }
     } catch (e) {
       console.error("Error saving session:", e);
+      throw e; // Re-lanzar para que la UI lo maneje
     } finally {
       updateSyncStatus();
     }
@@ -445,10 +433,45 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     if (!db.isOpen()) await db.open();
     const nowIso = new Date().toISOString();
     const configToSave = { ...config, productId: Number(config.productId), sync_pending: true, updated_at: nowIso };
+    
     await db.productRules.put(configToSave);
+    
     if (supabase && state.isOnline) {
-      const { data: fetchedData } = await (supabase.from('product_rules') as any).upsert(configToSave, { onConflict: 'productId' }).select('productId, updated_at').single();
+      const { data: fetchedData, error } = await (supabase.from('product_rules') as any)
+        .upsert(configToSave, { onConflict: 'productId' })
+        .select('productId, updated_at')
+        .single();
+      
+      if (error) throw error;
       if (fetchedData) await db.productRules.update(config.productId, { sync_pending: false, updated_at: fetchedData.updated_at });
+    }
+    await loadMasterProductConfigs();
+  }, [state.isOnline, loadMasterProductConfigs]);
+
+  const saveAllMasterProductConfigs = useCallback(async (configs: MasterProductConfig[]) => {
+    if (!db.isOpen()) await db.open();
+    const nowIso = new Date().toISOString();
+    
+    const configsToSave = configs.map(c => ({
+      ...c,
+      productId: Number(c.productId),
+      sync_pending: true,
+      updated_at: nowIso
+    }));
+
+    await db.productRules.bulkPut(configsToSave);
+
+    if (supabase && state.isOnline) {
+      const { error } = await (supabase.from('product_rules') as any)
+        .upsert(configsToSave, { onConflict: 'productId' });
+      
+      if (error) throw error;
+      
+      // Marcar como sincronizados localmente
+      await db.productRules.bulkUpdate(configsToSave.map(c => ({
+        key: c.productId,
+        changes: { sync_pending: false }
+      })));
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
@@ -460,7 +483,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const newIsHidden = !currentConfig.isHidden;
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: new Date().toISOString() });
     if (supabase && state.isOnline) {
-      await (supabase.from('product_rules') as any).update({ isHidden: newIsHidden }).eq('productId', productId);
+      const { error } = await (supabase.from('product_rules') as any).update({ isHidden: newIsHidden }).eq('productId', productId);
+      if (error) throw error;
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
@@ -544,7 +568,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           isHidden: c.isHidden,
           inventory_type: c.inventory_type
         }));
-        await (supabase.from('product_rules') as any).upsert(supabaseConfigs, { onConflict: 'productId' });
+        const { error } = await (supabase.from('product_rules') as any).upsert(supabaseConfigs, { onConflict: 'productId' });
+        if (error) throw error;
       }
       
       await loadMasterProductConfigs();
@@ -554,7 +579,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [loadMasterProductConfigs, state.isOnline]);
 
-  // --- FUNCIÓN DE EMERGENCIA: forceDownloadConfigFromSupabase ---
   const forceDownloadConfigFromSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline) {
       showError("No hay conexión a internet o Supabase no está configurado.");
@@ -567,37 +591,31 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     try {
       if (!db.isOpen()) await db.open();
 
-      // 1. Limpieza Total de tablas locales
       await db.productRules.clear();
       await db.sessions.clear();
       await db.supplierConfigs.clear();
-      console.log("[Emergency Sync] Tablas locales limpiadas.");
 
-      // 2. Descarga Directa desde Supabase
       const { data: rules, error: rulesError } = await supabase.from('product_rules').select('*');
       const { data: sessions, error: sessionsError } = await supabase.from('inventory_sessions').select('*');
 
       if (rulesError) throw rulesError;
       if (sessionsError) throw sessionsError;
 
-      // 3. Mapeo de Integridad: Convertir productId a Number
-      const mappedRules = (rules || []).map(r => ({
+      // Casting explícito a any[] para evitar errores de spread y acceso a propiedades en tipos 'never' o 'unknown'
+      const mappedRules = (rules as any[] || []).map(r => ({
         ...r,
-        productId: Number(r.productId), // Conversión crítica
+        productId: Number(r.productId),
         sync_pending: false,
       }));
 
-      const mappedSessions = (sessions || []).map(s => ({
+      const mappedSessions = (sessions as any[] || []).map(s => ({
         ...s,
         sync_pending: false,
       }));
 
-      // Guardar en Dexie
       await db.productRules.bulkPut(mappedRules);
       await db.sessions.bulkPut(mappedSessions);
-      console.log(`[Emergency Sync] Descargadas ${mappedRules.length} reglas y ${mappedSessions.length} sesiones.`);
 
-      // 4. Refresco de Estado inmediato
       await loadMasterProductConfigs();
       showSuccess("Sincronización de emergencia completada. Datos restaurados.");
     } catch (e: any) {
@@ -610,35 +628,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
 
-  // --- Debounced Save Setup ---
-  useEffect(() => {
-    debouncedSaveCurrentSessionRef.current = debounce(async (data: InventoryItem[], forcedSessionId?: string) => {
-      if (state.sessionId && state.inventoryType) {
-        console.log('[Debounced Save] Executing save...');
-        await saveCurrentSession(data, state.inventoryType, new Date(), state.currentSessionOrders || undefined, forcedSessionId);
-      }
-    }, 2000);
-
-    return () => {
-      debouncedSaveCurrentSessionRef.current?.cancel();
-    };
-  }, [state.sessionId, state.inventoryType, saveCurrentSession, state.currentSessionOrders]);
-
-  // Función para actualizar el estado y disparar el guardado debounced
-  const updateAndDebounceSaveInventoryItem = useCallback((index: number, key: keyof InventoryItem, value: any) => {
+  // Función para actualizar el estado local sin disparar guardado automático
+  const updateInventoryItemLocal = useCallback((index: number, key: keyof InventoryItem, value: any) => {
     dispatch({ type: 'UPDATE_SINGLE_ITEM', payload: { index, key, value } });
-    setSyncStatus('pending');
-  }, []);
-
-  // Efecto para disparar el guardado cuando rawInventoryItemsFromDb cambia (solo si hay sesión)
-  useEffect(() => {
-    if (state.sessionId && state.rawInventoryItemsFromDb.length > 0 && debouncedSaveCurrentSessionRef.current) {
-      debouncedSaveCurrentSessionRef.current(state.rawInventoryItemsFromDb, state.sessionId);
-    }
-  }, [state.rawInventoryItemsFromDb, state.sessionId]);
-
-  const flushPendingSessionSave = useCallback(() => {
-    debouncedSaveCurrentSessionRef.current?.flush();
   }, []);
 
   const syncToSupabase = useCallback(async () => {
@@ -646,20 +638,20 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
     try {
-      // 1. Subir cambios locales pendientes
       const pendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === true).toArray();
       for (const session of pendingSessions) {
-        await (supabase.from('inventory_sessions') as any).upsert(session, { onConflict: 'dateKey' });
+        const { error } = await (supabase.from('inventory_sessions') as any).upsert(session, { onConflict: 'dateKey' });
+        if (error) throw error;
         await db.sessions.update(session.dateKey, { sync_pending: false });
       }
       
       const pendingRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const rule of pendingRules) {
-        await (supabase.from('product_rules') as any).upsert(rule, { onConflict: 'productId' });
+        const { error } = await (supabase.from('product_rules') as any).upsert(rule, { onConflict: 'productId' });
+        if (error) throw error;
         await db.productRules.update(rule.productId, { sync_pending: false });
       }
 
-      // 2. Descargar todo de la nube
       const { data: sessions } = await supabase.from('inventory_sessions').select('*');
       const { data: rules } = await supabase.from('product_rules').select('*');
       
@@ -668,6 +660,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       
       await loadMasterProductConfigs();
       showSuccess('Sincronización total completada.');
+    } catch (e) {
+      console.error("Error during sync:", e);
+      showError("Error durante la sincronización.");
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
@@ -716,13 +711,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     syncToSupabase,
     forceDownloadConfigFromSupabase,
     saveMasterProductConfig,
+    saveAllMasterProductConfigs,
     deleteMasterProductConfig,
     loadMasterProductConfigs,
     handleVisibilityChangeSync,
     resetAllProductConfigs,
     clearLocalDatabase,
-    updateAndDebounceSaveInventoryItem,
-    flushPendingSessionSave,
+    updateInventoryItemLocal,
     fetchInitialData,
     updateSyncStatus,
   }), [
@@ -743,13 +738,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     syncToSupabase, 
     forceDownloadConfigFromSupabase,
     saveMasterProductConfig, 
+    saveAllMasterProductConfigs,
     deleteMasterProductConfig, 
     loadMasterProductConfigs, 
     handleVisibilityChangeSync,
     resetAllProductConfigs,
     clearLocalDatabase, 
-    updateAndDebounceSaveInventoryItem, 
-    flushPendingSessionSave, 
+    updateInventoryItemLocal, 
     fetchInitialData, 
     updateSyncStatus
   ]);

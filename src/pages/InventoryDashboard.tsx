@@ -5,8 +5,9 @@ import { InventoryTable } from "@/components/InventoryTable";
 import { useInventoryContext } from "@/context/InventoryContext";
 import { SessionManager } from "@/components/SessionManager";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, RefreshCcw } from "lucide-react";
+import { PlusCircle, RefreshCcw, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { showSuccess, showError } from "@/utils/toast";
 
 const InventoryDashboard = () => {
   const { 
@@ -20,16 +21,14 @@ const InventoryDashboard = () => {
     setInventoryType, 
     resetInventoryState,
     getSessionHistory,
-    syncToSupabase,
+    saveCurrentSession,
     isOnline,
-    isSupabaseSyncInProgress,
-    flushPendingSessionSave,
-    updateSyncStatus,
     processInventoryData,
   } = useInventoryContext();
   
   const [showFileUploader, setShowFileUploader] = useState(false);
   const [sessionHistory, setSessionHistory] = useState<any[] | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Efecto para cargar el historial de sesiones
   useEffect(() => {
@@ -71,11 +70,20 @@ const InventoryDashboard = () => {
     setShowFileUploader(true);
   }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
-  const handleManualSync = async () => {
-    flushPendingSessionSave();
-    await new Promise(resolve => setTimeout(resolve, 50)); 
-    await syncToSupabase();
-    updateSyncStatus();
+  const handleManualSave = async () => {
+    if (!sessionId || !inventoryType || filteredInventoryData.length === 0) return;
+    
+    setIsSaving(true);
+    try {
+      // Guardar explícitamente en Supabase
+      await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+      showSuccess("✓ Cambios guardados correctamente");
+    } catch (err) {
+      console.error('Error al guardar inventario:', err);
+      showError("✗ Error al guardar. Intenta nuevamente.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // --- LÓGICA DE RENDERIZADO PRIORIZADA ---
@@ -100,12 +108,21 @@ const InventoryDashboard = () => {
           </h1>
           <div className="flex gap-2">
             <Button 
-              onClick={handleManualSync} 
-              disabled={loading || !isOnline || isSupabaseSyncInProgress} 
-              className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base"
+              onClick={handleManualSave} 
+              disabled={isSaving || !isOnline} 
+              className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base min-w-[160px]"
             >
-              <RefreshCcw className={cn("mr-2 h-4 w-4", isSupabaseSyncInProgress && "animate-spin")} />
-              Guardar y Sincronizar Ahora
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  Guardar cambios
+                </>
+              )}
             </Button>
             <Button onClick={handleStartNewSession} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base">
               <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión
