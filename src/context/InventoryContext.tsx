@@ -1,7 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global con rastreo de cambios pendientes (dirty state).
- * @version v1.8.5
+ * @version v1.8.6
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -428,19 +428,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     await db.productRules.put(configToSave);
     
     if (supabase && state.isOnline) {
-      // Mapear a los nombres exactos de las columnas de Supabase
+      // Mapear a los nombres exactos de las columnas de Supabase (camelCase)
       const supabasePayload = {
-        product_id: configToSave.productId,
-        product_name: configToSave.productName,
-        supplier_name: configToSave.supplier,
+        productId: configToSave.productId,
+        productName: configToSave.productName,
+        supplierName: configToSave.supplier,
         rules: configToSave.rules,
         isHidden: configToSave.isHidden,
         inventory_type: configToSave.inventory_type
       };
 
       const { data: fetchedData, error } = await (supabase.from('product_rules') as any)
-        .upsert(supabasePayload, { onConflict: 'product_id' })
-        .select('product_id, updated_at')
+        .upsert(supabasePayload, { onConflict: 'productId' })
+        .select('productId, updated_at')
         .single();
       
       if (error) throw error;
@@ -463,11 +463,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     await db.productRules.bulkPut(configsToSave);
 
     if (supabase && state.isOnline) {
-      // Mapear a los nombres exactos de las columnas de Supabase
+      // Mapear a los nombres exactos de las columnas de Supabase (camelCase)
       const supabasePayloads = configsToSave.map(c => ({
-        product_id: c.productId,
-        product_name: c.productName,
-        supplier_name: c.supplier,
+        productId: c.productId,
+        productName: c.productName,
+        supplierName: c.supplier,
         rules: c.rules,
         isHidden: c.isHidden,
         inventory_type: c.inventory_type
@@ -475,7 +475,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const { error } = await (supabase.from('product_rules') as any)
         .upsert(supabasePayloads, { 
-          onConflict: 'product_id'
+          onConflict: 'productId'
         });
       
       if (error) throw error;
@@ -495,7 +495,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const newIsHidden = !currentConfig.isHidden;
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: new Date().toISOString() });
     if (supabase && state.isOnline) {
-      const { error } = await (supabase.from('product_rules') as any).update({ isHidden: newIsHidden }).eq('product_id', productId);
+      const { error } = await (supabase.from('product_rules') as any).update({ isHidden: newIsHidden }).eq('productId', productId);
       if (error) throw error;
     }
     await loadMasterProductConfigs();
@@ -573,15 +573,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       
       if (supabase && state.isOnline) {
         const supabaseConfigs = updates.map(c => ({
-          product_id: c.productId,
-          product_name: c.productName,
-          supplier_name: c.supplier,
+          productId: c.productId,
+          productName: c.productName,
+          supplierName: c.supplier,
           rules: c.rules,
           isHidden: c.isHidden,
           inventory_type: c.inventory_type
         }));
         const { error } = await (supabase.from('product_rules') as any).upsert(supabaseConfigs, { 
-          onConflict: 'product_id'
+          onConflict: 'productId'
         });
         if (error) throw error;
       }
@@ -617,7 +617,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const mappedRules = (rules as any[] || []).map(r => ({
         ...r,
-        productId: Number(r.product_id),
+        productId: Number(r.productId),
         sync_pending: false,
       }));
 
@@ -668,14 +668,14 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const pendingRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const rule of pendingRules) {
         const supabaseRule = {
-          product_id: rule.productId,
-          product_name: rule.productName,
-          supplier_name: rule.supplier,
+          productId: rule.productId,
+          productName: rule.productName,
+          supplierName: rule.supplier,
           rules: rule.rules,
           isHidden: rule.isHidden,
           inventory_type: rule.inventory_type
         };
-        const { error } = await (supabase.from('product_rules') as any).upsert(supabaseRule, { onConflict: 'product_id' });
+        const { error } = await (supabase.from('product_rules') as any).upsert(supabaseRule, { onConflict: 'productId' });
         if (error) throw error;
         await db.productRules.update(rule.productId, { sync_pending: false });
       }
