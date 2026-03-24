@@ -1,6 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
-import { SyncStatusIndicator } from "./SyncStatusIndicator";
 import { useInventoryContext } from "@/context/InventoryContext";
 import { useState } from "react";
 import {
@@ -84,7 +83,6 @@ export const Layout = () => {
             Configuración
           </NavLink>
         </nav>
-        <SyncStatusIndicator />
       </header>
       <main className="flex-1 flex flex-col p-4 sm:px-6 sm:py-0">
         <Outlet />
