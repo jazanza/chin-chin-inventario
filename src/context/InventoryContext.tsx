@@ -1,7 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
  * @description Contexto global con rastreo de cambios pendientes (dirty state).
- * @version v1.8.2
+ * @version v1.8.3
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
