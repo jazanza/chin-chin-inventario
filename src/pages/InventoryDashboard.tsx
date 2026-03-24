@@ -5,9 +5,19 @@ import { InventoryTable } from "@/components/InventoryTable";
 import { useInventoryContext } from "@/context/InventoryContext";
 import { SessionManager } from "@/components/SessionManager";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, RefreshCcw, Loader2 } from "lucide-react";
+import { PlusCircle, RefreshCcw, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { showSuccess, showError } from "@/utils/toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const InventoryDashboard = () => {
   const { 
@@ -24,11 +34,14 @@ const InventoryDashboard = () => {
     saveCurrentSession,
     isOnline,
     processInventoryData,
+    hasUnsavedChanges,
+    setHasUnsavedChanges
   } = useInventoryContext();
   
   const [showFileUploader, setShowFileUploader] = useState(false);
   const [sessionHistory, setSessionHistory] = useState<any[] | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Efecto para cargar el historial de sesiones
   useEffect(() => {
@@ -60,22 +73,14 @@ const InventoryDashboard = () => {
   };
 
   const handleInventoryTypeSelect = (type: "weekly" | "monthly") => {
-    setInventoryType(type);
+    handleInventoryTypeSelect(type);
   };
-
-  const handleStartNewSession = useCallback(() => {
-    resetInventoryState();
-    setDbBuffer(null);
-    setInventoryType(null);
-    setShowFileUploader(true);
-  }, [resetInventoryState, setDbBuffer, setInventoryType]);
 
   const handleManualSave = async () => {
     if (!sessionId || !inventoryType || filteredInventoryData.length === 0) return;
     
     setIsSaving(true);
     try {
-      // Guardar explícitamente en Supabase
       await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
       showSuccess("✓ Cambios guardados correctamente");
     } catch (err) {
@@ -86,31 +91,69 @@ const InventoryDashboard = () => {
     }
   };
 
+  const handleStartNewSession = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setShowExitDialog(true);
+      return;
+    }
+    resetInventoryState();
+    setDbBuffer(null);
+    setInventoryType(null);
+    setShowFileUploader(true);
+  }, [hasUnsavedChanges, resetInventoryState, setDbBuffer, setInventoryType]);
+
+  const confirmExitAndSave = async () => {
+    await handleManualSave();
+    setShowExitDialog(false);
+    resetInventoryState();
+    setDbBuffer(null);
+    setInventoryType(null);
+    setShowFileUploader(true);
+  };
+
+  const confirmExitWithoutSaving = () => {
+    setHasUnsavedChanges(false);
+    setShowExitDialog(false);
+    resetInventoryState();
+    setDbBuffer(null);
+    setInventoryType(null);
+    setShowFileUploader(true);
+  };
+
   // --- LÓGICA DE RENDERIZADO PRIORIZADA ---
 
-  // 1. Estado de carga global (solo si no hay sesión activa)
   if (loading && !sessionId) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
-        <p className="text-base sm:text-lg text-center text-gray-700">Cargando o procesando datos...</p>
-        {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
+        <p className="text-base sm:text-lg text-center text-gray-700">Procesando datos...</p>
       </div>
     );
   }
 
-  // 2. SI HAY SESIÓN ACTIVA: Mostrar la tabla (Prioridad Máxima)
   if (sessionId && inventoryType) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col p-4">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">
-            Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">
+              Inventario {inventoryType === "weekly" ? "Semanal" : "Mensual"}
+            </h1>
+            {hasUnsavedChanges && (
+              <span className="flex items-center gap-1 text-xs font-medium text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full border border-yellow-200">
+                <AlertTriangle className="h-3 w-3" />
+                Cambios sin guardar
+              </span>
+            )}
+          </div>
           <div className="flex gap-2">
             <Button 
               onClick={handleManualSave} 
-              disabled={isSaving || !isOnline} 
-              className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base min-w-[160px]"
+              disabled={isSaving || !isOnline || !hasUnsavedChanges} 
+              className={cn(
+                "font-bold text-sm sm:text-base min-w-[160px] transition-all",
+                hasUnsavedChanges ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-100 text-gray-400"
+              )}
             >
               {isSaving ? (
                 <>
@@ -124,26 +167,33 @@ const InventoryDashboard = () => {
                 </>
               )}
             </Button>
-            <Button onClick={handleStartNewSession} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base">
+            <Button onClick={handleStartNewSession} disabled={loading} variant="outline" className="text-blue-600 border-blue-600 hover:bg-blue-50 font-bold text-sm sm:text-base">
               <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión
             </Button>
           </div>
         </div>
-        {error ? (
-          <p className="text-base sm:text-lg text-red-500 text-center">Error: {error}</p>
-        ) : filteredInventoryData.length === 0 && !loading ? (
-          <div className="text-center p-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-            <p className="text-gray-600">No hay productos configurados para este tipo de inventario.</p>
-            <p className="text-sm text-gray-500 mt-2">Verifica la configuración de productos o sincroniza con la nube.</p>
-          </div>
-        ) : (
-          <InventoryTable inventoryData={filteredInventoryData} />
-        )}
+        
+        <InventoryTable inventoryData={filteredInventoryData} />
+
+        <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Tienes cambios sin guardar</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Deseas guardar los cambios antes de iniciar una nueva sesión? Si no los guardas, se perderán.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+              <AlertDialogCancel onClick={() => setShowExitDialog(false)}>Cancelar</AlertDialogCancel>
+              <Button variant="destructive" onClick={confirmExitWithoutSaving}>No guardar</Button>
+              <Button className="bg-green-600 hover:bg-green-700" onClick={confirmExitAndSave}>Guardar y Continuar</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
 
-  // 3. SI HAY BUFFER PERO NO TIPO: Mostrar selector de tipo
   if (dbBuffer && !inventoryType) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
@@ -152,7 +202,6 @@ const InventoryDashboard = () => {
     );
   }
 
-  // 4. SI SE FORZÓ EL UPLOADER (Botón Nueva Sesión)
   if (showFileUploader) {
     return (
       <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
@@ -173,18 +222,15 @@ const InventoryDashboard = () => {
     );
   }
 
-  // 5. SI HAY HISTORIAL: Mostrar el gestor de sesiones (Vista por defecto)
   if (sessionHistory && sessionHistory.length > 0) {
     return <SessionManager onStartNewSession={handleStartNewSession} />;
   }
 
-  // 6. POR DEFECTO: Mostrar cargador de archivos
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col items-center justify-center p-4">
       <div className="text-center">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-4 text-gray-900">Chin Chin Inventarios y Pedidos</h1>
         <FileUploader onFileLoaded={handleFileLoaded} loading={loading} />
-        {error && <p className="text-base sm:text-lg mt-4 text-red-500">Error: {error}</p>}
       </div>
     </div>
   );

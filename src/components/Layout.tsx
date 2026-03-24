@@ -1,16 +1,48 @@
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { MobileSidebar } from "./MobileSidebar";
 import { SyncStatusIndicator } from "./SyncStatusIndicator";
-import { Button } from "@/components/ui/button";
-import { RefreshCcw } from "lucide-react";
 import { useInventoryContext } from "@/context/InventoryContext";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils"; // Importar cn
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 export const Layout = () => {
-  // Eliminado performTotalSync ya que la sincronización es automática
-  // const { performTotalSync, loading, isOnline, syncStatus } = useInventoryContext(); 
-  const { loading, isOnline, syncStatus } = useInventoryContext(); // Solo necesitamos estos para el indicador
+  const { hasUnsavedChanges, saveCurrentSession, filteredInventoryData, inventoryType, setHasUnsavedChanges } = useInventoryContext();
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      setPendingPath(path);
+      setShowExitDialog(true);
+    }
+  };
+
+  const confirmExitAndSave = async () => {
+    if (inventoryType && filteredInventoryData.length > 0) {
+      await saveCurrentSession(filteredInventoryData, inventoryType, new Date());
+    }
+    setShowExitDialog(false);
+    if (pendingPath) navigate(pendingPath);
+  };
+
+  const confirmExitWithoutSaving = () => {
+    setHasUnsavedChanges(false);
+    setShowExitDialog(false);
+    if (pendingPath) navigate(pendingPath);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -25,6 +57,7 @@ export const Layout = () => {
                 isActive ? "text-blue-600 font-semibold" : "text-gray-500"
               }`
             }
+            onClick={(e) => handleNavigation(e, "/inventario")}
           >
             Inventario
           </NavLink>
@@ -35,6 +68,7 @@ export const Layout = () => {
                 isActive ? "text-blue-600 font-semibold" : "text-gray-500"
               }`
             }
+            onClick={(e) => handleNavigation(e, "/pedidos")}
           >
             Pedidos
           </NavLink>
@@ -45,35 +79,35 @@ export const Layout = () => {
                 isActive ? "text-blue-600 font-semibold" : "text-gray-500"
               }`
             }
+            onClick={(e) => handleNavigation(e, "/configuracion")}
           >
             Configuración
           </NavLink>
         </nav>
-        {/* Eliminado el botón de Sincronización Total */}
-        {/* <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={performTotalSync}
-                disabled={loading || !isOnline || syncStatus === 'syncing'}
-                className="ml-4 text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white text-xs sm:text-sm"
-              >
-                <RefreshCcw className={cn("h-4 w-4 mr-1", syncStatus === 'syncing' && "animate-spin")} />
-                Sincronización Total
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Sincroniza todos los cambios locales con la nube y descarga las últimas configuraciones.</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider> */}
         <SyncStatusIndicator />
       </header>
       <main className="flex-1 flex flex-col p-4 sm:px-6 sm:py-0">
         <Outlet />
       </main>
+
+      <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              Cambios sin guardar
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Deseas guardar los cambios antes de salir? Si no los guardas, se perderán.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => setShowExitDialog(false)}>Cancelar</AlertDialogCancel>
+            <Button variant="destructive" onClick={confirmExitWithoutSaving}>No guardar</Button>
+            <Button className="bg-green-600 hover:bg-green-700" onClick={confirmExitAndSave}>Guardar y Salir</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

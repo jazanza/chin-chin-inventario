@@ -1,7 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
- * @description Contexto global refactorizado para guardado manual y explícito.
- * @version v1.7.2
+ * @description Contexto global con rastreo de cambios pendientes (dirty state).
+ * @version v1.8.0
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
@@ -81,6 +81,7 @@ interface InventoryState {
   isOnline: boolean;
   isSupabaseSyncInProgress: boolean;
   currentSessionOrders: { [supplier: string]: OrderItem[] } | null;
+  hasUnsavedChanges: boolean; // Nueva bandera para cambios pendientes
 }
 
 const initialState: InventoryState = {
@@ -95,6 +96,7 @@ const initialState: InventoryState = {
   isOnline: navigator.onLine,
   isSupabaseSyncInProgress: false,
   currentSessionOrders: null,
+  hasUnsavedChanges: false,
 };
 
 type InventoryAction =
@@ -110,8 +112,7 @@ type InventoryAction =
   | { type: 'SET_IS_ONLINE'; payload: boolean }
   | { type: 'SET_SUPABASE_SYNC_IN_PROGRESS'; payload: boolean }
   | { type: 'SET_CURRENT_SESSION_ORDERS'; payload: { [supplier: string]: OrderItem[] } | null }
-  | { type: 'UPDATE_CURRENT_SESSION_DATA'; payload: { dateKey: string, inventoryData: InventoryItem[], effectiveness: number } }
-  | { type: 'DELETE_SESSION'; payload: string }
+  | { type: 'SET_HAS_UNSAVED_CHANGES'; payload: boolean }
   | { type: 'RESET_STATE' };
 
 const inventoryReducer = (state: InventoryState, action: InventoryAction): InventoryState => {
@@ -138,7 +139,11 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       const newItems = [...currentItems];
       newItems[index] = updatedItem;
 
-      return { ...state, rawInventoryItemsFromDb: newItems };
+      return { 
+        ...state, 
+        rawInventoryItemsFromDb: newItems,
+        hasUnsavedChanges: true // Marcar como sucio al editar
+      };
     }
 
     case 'SET_MASTER_PRODUCT_CONFIGS':
@@ -157,27 +162,8 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
       return { ...state, isSupabaseSyncInProgress: action.payload };
     case 'SET_CURRENT_SESSION_ORDERS':
       return { ...state, currentSessionOrders: action.payload };
-    case 'UPDATE_CURRENT_SESSION_DATA': {
-      if (state.sessionId === action.payload.dateKey) {
-        return {
-          ...state,
-          rawInventoryItemsFromDb: action.payload.inventoryData,
-        };
-      }
-      return state;
-    }
-    case 'DELETE_SESSION': {
-      if (state.sessionId === action.payload) {
-        return {
-          ...state,
-          sessionId: null,
-          rawInventoryItemsFromDb: [],
-          inventoryType: null,
-          currentSessionOrders: null,
-        };
-      }
-      return state;
-    }
+    case 'SET_HAS_UNSAVED_CHANGES':
+      return { ...state, hasUnsavedChanges: action.payload };
     case 'RESET_STATE':
       return {
         ...initialState,
@@ -186,6 +172,7 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
         isOnline: state.isOnline,
         isSupabaseSyncInProgress: false,
         currentSessionOrders: null,
+        hasUnsavedChanges: false,
       };
     default:
       return state;
@@ -199,6 +186,7 @@ interface InventoryContextType extends InventoryState {
   setRawInventoryItemsFromDb: (data: InventoryItem[]) => void;
   setMasterProductConfigs: (configs: MasterProductConfig[]) => void;
   setSyncStatus: (status: SyncStatus) => void;
+  setHasUnsavedChanges: (value: boolean) => void;
   processInventoryData: (buffer: Uint8Array, type: "weekly" | "monthly") => Promise<void>;
   processDbForMasterConfigs: (buffer: Uint8Array) => Promise<void>;
   saveCurrentSession: (data: InventoryItem[], type: "weekly" | "monthly", timestamp: Date, orders?: { [supplier: string]: OrderItem[] }, forcedSessionId?: string) => Promise<void>;
@@ -209,7 +197,7 @@ interface InventoryContextType extends InventoryState {
   syncToSupabase: () => Promise<void>;
   forceDownloadConfigFromSupabase: () => Promise<void>;
   saveMasterProductConfig: (config: MasterProductConfig) => Promise<void>;
-  saveAllMasterProductConfigs: (configs: MasterProductConfig[]) => Promise<void>; // Nueva función para guardado masivo
+  saveAllMasterProductConfigs: (configs: MasterProductConfig[]) => Promise<void>;
   deleteMasterProductConfig: (productId: number) => Promise<void>;
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>;
   handleVisibilityChangeSync: () => Promise<void>;
@@ -250,6 +238,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const setSyncStatus = useCallback((status: SyncStatus) => {
     dispatch({ type: 'SET_SYNC_STATUS', payload: status });
+  }, []);
+
+  const setHasUnsavedChanges = useCallback((value: boolean) => {
+    dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: value });
   }, []);
 
   const resetInventoryState = useCallback(() => {
@@ -351,6 +343,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       await db.sessions.put(sessionToSave);
       dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
       dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: ordersToSave || null });
+      dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false }); // Limpiar bandera de cambios
 
       // Intentar guardar en Supabase
       if (supabase && state.isOnline) {
@@ -376,7 +369,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       }
     } catch (e) {
       console.error("Error saving session:", e);
-      throw e; // Re-lanzar para que la UI lo maneje
+      throw e;
     } finally {
       updateSyncStatus();
     }
@@ -392,6 +385,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         dispatch({ type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB', payload: session.inventoryData });
         dispatch({ type: 'SET_SESSION_ID', payload: dateKey });
         dispatch({ type: 'SET_CURRENT_SESSION_ORDERS', payload: session.ordersBySupplier || null });
+        dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false }); // Resetear al cargar
         showSuccess(`Sesión del ${dateKey} cargada.`);
       }
     } finally {
@@ -453,7 +447,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const saveAllMasterProductConfigs = useCallback(async (configs: MasterProductConfig[]) => {
     if (!db.isOpen()) await db.open();
     
-    // Validar que todos los configs tengan los campos mínimos requeridos
     const validatedConfigs = configs.map(config => {
       if (!config.productId || !config.productName) {
         const err = new Error(`Configuración inválida para producto "${config.productName || 'desconocido'}"`);
@@ -473,7 +466,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     await db.productRules.bulkPut(configsToSave);
 
     if (supabase && state.isOnline) {
-      // Usar upsert con columnas explícitas para evitar errores 400
       const { error } = await (supabase.from('product_rules') as any)
         .upsert(configsToSave, { 
           onConflict: 'productId',
@@ -485,7 +477,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         throw error;
       }
       
-      // Marcar como sincronizados localmente
       await db.productRules.bulkUpdate(configsToSave.map(c => ({
         key: c.productId,
         changes: { sync_pending: false }
@@ -625,7 +616,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (rulesError) throw rulesError;
       if (sessionsError) throw sessionsError;
 
-      // Casting explícito a any[] para evitar errores de spread y acceso a propiedades en tipos 'never' o 'unknown'
       const mappedRules = (rules as any[] || []).map(r => ({
         ...r,
         productId: Number(r.productId),
@@ -652,7 +642,6 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
 
-  // Función para actualizar el estado local sin disparar guardado automático
   const updateInventoryItemLocal = useCallback((index: number, key: keyof InventoryItem, value: any) => {
     dispatch({ type: 'UPDATE_SINGLE_ITEM', payload: { index, key, value } });
   }, []);
@@ -678,7 +667,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const { data: sessions } = await supabase.from('inventory_sessions').select('*');
       const { data: rules } = await supabase.from('product_rules').select('*');
-            if (sessions) await db.sessions.bulkPut(sessions as any);
+      if (sessions) await db.sessions.bulkPut(sessions as any);
       if (rules) await db.productRules.bulkPut(rules as any);
       
       await loadMasterProductConfigs();
@@ -724,6 +713,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setRawInventoryItemsFromDb,
     setMasterProductConfigs,
     setSyncStatus,
+    setHasUnsavedChanges,
     processInventoryData,
     processDbForMasterConfigs,
     saveCurrentSession,
@@ -750,7 +740,9 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     setInventoryType, 
     setRawInventoryItemsFromDb, 
     setMasterProductConfigs, 
-    setSyncStatus,     processInventoryData, 
+    setSyncStatus,
+    setHasUnsavedChanges,
+    processInventoryData, 
     processDbForMasterConfigs, 
     saveCurrentSession, 
     loadSession, 
@@ -767,7 +759,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     resetAllProductConfigs,
     clearLocalDatabase, 
     updateInventoryItemLocal, 
-    fetchInitialData,     updateSyncStatus
+    fetchInitialData,
+    updateSyncStatus
   ]);
 
   return (
