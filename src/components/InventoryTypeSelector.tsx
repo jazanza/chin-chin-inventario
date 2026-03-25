@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlusCircle } from "lucide-react";
 
 interface InventoryTypeSelectorProps {
   onSelect: (type: "weekly" | "monthly") => void;
@@ -18,6 +19,7 @@ export const InventoryTypeSelector = ({ onSelect, loading }: InventoryTypeSelect
           disabled={loading}
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-base"
         >
+          <PlusCircle className="mr-2 h-4 w-4" />
           Inventario Semanal
         </Button>
         <Button
@@ -25,6 +27,7 @@ export const InventoryTypeSelector = ({ onSelect, loading }: InventoryTypeSelect
           disabled={loading}
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-base"
         >
+          <PlusCircle className="mr-2 h-4 w-4" />
           Inventario Mensual
         </Button>
       </CardContent>
