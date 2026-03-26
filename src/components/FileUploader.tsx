@@ -1,4 +1,4 @@
-/// <reference path="../electron.d.ts" />
+/// <reference path="../electron.d.ts" /> // eslint-disable-line
 
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";

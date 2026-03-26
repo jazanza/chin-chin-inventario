@@ -4,7 +4,6 @@ import { useInventoryContext } from "@/context/InventoryContext";
 import { useState } from "react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -19,7 +18,7 @@ export const Layout = () => {
   const { hasUnsavedChanges, saveCurrentSession, filteredInventoryData, inventoryType, setHasUnsavedChanges } = useInventoryContext();
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
-  const navigate = useNavigate();
+  navigate = useNavigate();
 
   const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
     if (hasUnsavedChanges) {
