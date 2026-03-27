@@ -280,7 +280,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false });
 
       if (supabase && state.isOnline) {
-        const { error } = await supabase.from('inventory_sessions').upsert({
+        const { error } = await (supabase as any).from('inventory_sessions').upsert({
           dateKey: sessionToSave.dateKey,
           inventoryType: sessionToSave.inventoryType,
           inventoryData: sessionToSave.inventoryData as any,
@@ -308,8 +308,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     try {
       if (!db.isOpen()) await db.open();
 
-      const { data: remoteSessions } = await supabase.from('inventory_sessions').select('*');
-      const { data: remoteRules } = await supabase.from('product_rules').select('*');
+      const { data: remoteSessions } = await (supabase as any).from('inventory_sessions').select('*');
+      const { data: remoteRules } = await (supabase as any).from('product_rules').select('*');
 
       if (remoteSessions) {
         for (const remote of remoteSessions) {
@@ -325,7 +325,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const pendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === true).toArray();
       for (const session of pendingSessions) {
-        const { error } = await supabase.from('inventory_sessions').upsert({
+        const { error } = await (supabase as any).from('inventory_sessions').upsert({
           dateKey: session.dateKey,
           inventoryType: session.inventoryType,
           inventoryData: session.inventoryData as any,
@@ -348,7 +348,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const pendingRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const rule of pendingRules) {
-        const { error } = await supabase.from('product_rules').upsert({
+        const { error } = await (supabase as any).from('product_rules').upsert({
           productId: rule.productId,
           productName: rule.productName,
           supplierName: rule.supplier,
@@ -383,7 +383,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const configsToSave = configs.map(c => ({ ...c, sync_pending: true, updated_at: nowIso }));
     await db.productRules.bulkPut(configsToSave);
     if (supabase && state.isOnline) {
-      const { error } = await supabase.from('product_rules').upsert(configsToSave.map(c => ({
+      const { error } = await (supabase as any).from('product_rules').upsert(configsToSave.map(c => ({
         productId: c.productId,
         productName: c.productName,
         supplierName: c.supplier,
@@ -466,7 +466,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       
       await db.productRules.bulkPut(updates);
       if (supabase && state.isOnline) {
-        await supabase.from('product_rules').upsert(updates.map(c => ({
+        await (supabase as any).from('product_rules').upsert(updates.map(c => ({
           productId: c.productId,
           productName: c.productName,
           supplierName: c.supplier,
@@ -490,10 +490,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (!db.isOpen()) await db.open();
       await db.productRules.clear();
       await db.sessions.clear();
-      const { data: rules } = await supabase.from('product_rules').select('*');
-      const { data: sessions } = await supabase.from('inventory_sessions').select('*');
-      if (rules) await db.productRules.bulkPut(rules.map(r => ({ ...r, sync_pending: false })));
-      if (sessions) await db.sessions.bulkPut(sessions.map(s => ({ ...s, sync_pending: false })));
+      const { data: rules } = await (supabase as any).from('product_rules').select('*');
+      const { data: sessions } = await (supabase as any).from('inventory_sessions').select('*');
+      if (rules) await db.productRules.bulkPut(rules.map((r: any) => ({ ...r, sync_pending: false })));
+      if (sessions) await db.sessions.bulkPut(sessions.map((s: any) => ({ ...s, sync_pending: false })));
       await loadMasterProductConfigs();
       showSuccess("Datos restaurados desde la nube.");
     } finally {
@@ -526,7 +526,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const deleteSession = useCallback(async (dateKey: string) => {
     if (!db.isOpen()) await db.open();
     await db.sessions.delete(dateKey);
-    if (supabase && state.isOnline) await supabase.from('inventory_sessions').delete().eq('dateKey', dateKey);
+    if (supabase && state.isOnline) await (supabase as any).from('inventory_sessions').delete().eq('dateKey', dateKey);
     if (state.sessionId === dateKey) resetInventoryState();
     updateSyncStatus();
   }, [state.sessionId, state.isOnline, updateSyncStatus, resetInventoryState]);
@@ -544,7 +544,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const nowIso = new Date().toISOString();
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: nowIso });
     if (supabase && state.isOnline) {
-      await supabase.from('product_rules').update({ isHidden: newIsHidden, updated_at: nowIso }).eq('productId', productId);
+      await (supabase as any).from('product_rules').update({ isHidden: newIsHidden, updated_at: nowIso }).eq('productId', productId);
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
