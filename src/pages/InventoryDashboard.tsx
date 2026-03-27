@@ -148,9 +148,7 @@ const InventoryDashboard = () => {
             )}
           </div>
           <div className="flex gap-2">
-            <Button 
-              onClick={handleManualSave} 
-              disabled={isSaving || !isOnline || !hasUnsavedChanges} 
+            <Button               onClick={handleManualSave}               disabled={isSaving || !isOnline || !hasUnsavedChanges} 
               className={cn(
                 "font-bold text-sm sm:text-base min-w-[160px] transition-all",
                 hasUnsavedChanges ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-100 text-gray-400"
@@ -169,8 +167,7 @@ const InventoryDashboard = () => {
               )}
             </Button>
             <Button onClick={handleStartNewSession} disabled={loading} variant="outline" className="text-blue-600 border-blue-600 hover:bg-blue-50 font-bold text-sm sm:text-base">
-              <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión
-            </Button>
+              <PlusCircle className="mr-2 h-4 w-4" /> Nueva Sesión            </Button>
           </div>
         </div>
         
