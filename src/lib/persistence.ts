@@ -1,18 +1,18 @@
 import Dexie, { Table } from 'dexie';
 import { InventoryItem } from '@/context/InventoryContext';
 import { OrderItem } from '@/components/OrderGenerationModule';
-import { showError } from '@/utils/toast'; // Importar showError para notificaciones
+import { showError } from '@/utils/toast';
 
 // Define la estructura de una Sesión
 export interface InventorySession {
   dateKey: string; // Formato 'YYYY-MM-DD' (clave principal)
   inventoryType: 'weekly' | 'monthly';
-  inventoryData: InventoryItem[]; // Datos de inventario editados por el usuario
-  timestamp: Date;
-  effectiveness: number; // Porcentaje de efectividad del inventario
-  ordersBySupplier?: { [supplier: string]: OrderItem[] }; // Historial de pedidos
-  sync_pending?: boolean; // Nuevo campo para indicar si la sesión está pendiente de sincronizar con Supabase
-  updated_at: string; // Nuevo campo para timestamp de última actualización
+  inventoryData: InventoryItem[]; 
+  timestamp: string; // Cambiado a string (ISO UTC) para consistencia
+  effectiveness: number; 
+  ordersBySupplier?: { [supplier: string]: OrderItem[] }; 
+  sync_pending?: boolean; 
+  updated_at: string; // ISO UTC
 }
 
 // Define la estructura de una Regla de Pedido individual
@@ -21,123 +21,51 @@ export interface ProductRule {
   orderAmount: number;
 }
 
-// Define la estructura de una Regla de Producto configurable por el usuario (MasterProductConfig)
+// Define la estructura de una Regla de Producto
 export interface MasterProductConfig {
-  productId: number; // Nueva clave principal: ID único del producto de Aronium
-  productName: string; // Nombre del producto (para visualización)
-  rules: ProductRule[]; // Lista de reglas de stock/pedido
-  supplier: string; // Proveedor asociado
-  isHidden?: boolean; // Nuevo campo para el borrado suave
-  inventory_type?: 'weekly' | 'monthly' | 'ignored'; // Nuevo campo para el tipo de inventario
-  sync_pending?: boolean; // Nuevo campo para indicar si la configuración está pendiente de sincronizar con Supabase
-  updated_at: string; // Nuevo campo para timestamp de última actualización
+  productId: number; 
+  productName: string; 
+  rules: ProductRule[]; 
+  supplier: string; 
+  isHidden?: boolean; 
+  inventory_type?: 'weekly' | 'monthly' | 'ignored'; 
+  sync_pending?: boolean; 
+  updated_at: string; // ISO UTC
 }
 
-// Define la estructura de la configuración por proveedor (sin cambios por ahora)
 export interface SupplierConfig {
-  supplierName: string; // Clave principal para el proveedor
+  supplierName: string;
 }
 
 export class SessionDatabase extends Dexie {
-  // Define la tabla principal para sesiones
   sessions!: Table<InventorySession, string>;
-  // Define la tabla para reglas de producto (ahora MasterProductConfig)
-  productRules!: Table<MasterProductConfig, number>; // Clave principal por productId (número)
-  // Define la tabla para configuraciones de proveedor
+  productRules!: Table<MasterProductConfig, number>;
   supplierConfigs!: Table<SupplierConfig, string>;
 
   constructor() {
     super('ChinChinDB');
-    // Versión 10: Esquema anterior sin sync_pending ni isHidden
-    this.version(10).stores({
-      sessions: 'dateKey, timestamp',
-      productRules: 'productId',
-      supplierConfigs: 'supplierName',
-    });
-    // Versión 11: Añade sync_pending a sessions y productRules, y isHidden a productRules
-    this.version(11).stores({
-      sessions: 'dateKey, timestamp, sync_pending', // Añadir sync_pending al índice
-      productRules: 'productId, sync_pending', // Añadir sync_pending al índice
-      supplierConfigs: 'supplierName',
-    }).upgrade(async (tx) => {
-      // Migrar sesiones existentes para añadir sync_pending: false
-      await tx.table('sessions').toCollection().modify((session) => {
-        // Asegurarse de que sync_pending sea siempre un booleano
-        if (session.sync_pending === undefined || session.sync_pending === null) {
-          session.sync_pending = false; // Asumir que las sesiones antiguas están sincronizadas
-        }
-      });
-      // Migrar configuraciones de producto existentes para añadir sync_pending: false y isHidden: false
-      await tx.table('productRules').toCollection().modify((config) => {
-        // Asegurarse de que sync_pending y isHidden sean siempre booleanos
-        if (config.sync_pending === undefined || config.sync_pending === null) {
-          config.sync_pending = false; // Asumir que las configuraciones antiguas están sincronizadas
-        }
-        if (config.isHidden === undefined || config.isHidden === null) {
-          config.isHidden = false; // Asumir que los productos antiguos no están ocultos
-        }
-      });
-    });
-    // Versión 12: Forzar una nueva migración para asegurar la consistencia de los índices
-    this.version(12).stores({
-      sessions: 'dateKey, timestamp, sync_pending',
-      productRules: 'productId, sync_pending',
-      supplierConfigs: 'supplierName',
-    }).upgrade(async (tx) => {
-      await tx.table('sessions').toCollection().modify((session) => {
-        if (session.sync_pending === undefined || session.sync_pending === null) {
-          session.sync_pending = false;
-        }
-      });
-      await tx.table('productRules').toCollection().modify((config) => {
-        if (config.sync_pending === undefined || config.sync_pending === null) {
-          config.sync_pending = false;
-        }
-        if (config.isHidden === undefined || config.isHidden === null) {
-          config.isHidden = false;
-        }
-      });
-    });
-    // Versión 13: Añade updated_at a sessions y productRules
-    this.version(13).stores({
-      sessions: 'dateKey, timestamp, sync_pending, updated_at', // Añadir updated_at al índice
-      productRules: 'productId, sync_pending, updated_at', // Añadir updated_at al índice
-      supplierConfigs: 'supplierName',
-    }).upgrade(async (tx) => {
-      // Migrar sesiones existentes para añadir updated_at
-      await tx.table('sessions').toCollection().modify((session) => {
-        if (!session.updated_at) {
-          session.updated_at = new Date().toISOString(); // Usar timestamp de creación si no existe
-        }
-      });
-      // Migrar configuraciones de producto existentes para añadir updated_at
-      await tx.table('productRules').toCollection().modify((config) => {
-        if (!config.updated_at) {
-          config.updated_at = new Date().toISOString(); // Usar timestamp de creación si no existe
-        }
-      });
-    });
-    // Versión 14: Añade inventory_type a productRules
-    this.version(14).stores({
+    
+    // Versión 15: Asegurando que los índices incluyan updated_at para la resolución de conflictos
+    this.version(15).stores({
       sessions: 'dateKey, timestamp, sync_pending, updated_at',
-      productRules: 'productId, sync_pending, updated_at, inventory_type', // Añadir inventory_type al índice
+      productRules: 'productId, sync_pending, updated_at, inventory_type',
       supplierConfigs: 'supplierName',
     }).upgrade(async (tx) => {
-      // Migrar configuraciones de producto existentes para añadir inventory_type: 'monthly'
-      await tx.table('productRules').toCollection().modify((config) => {
-        if (config.inventory_type === undefined || config.inventory_type === null) {
-          config.inventory_type = 'monthly'; // Por defecto a 'monthly'
+      // Migración para asegurar que todas las fechas sean ISO strings
+      await tx.table('sessions').toCollection().modify((session) => {
+        if (session.timestamp instanceof Date) {
+          session.timestamp = session.timestamp.toISOString();
+        }
+        if (!session.updated_at) {
+          session.updated_at = new Date().toISOString();
         }
       });
     });
 
-
-    // Manejar el evento de cambio de versión para forzar el cierre de conexiones antiguas
     this.on('versionchange', (event) => {
       if (event.newVersion > event.oldVersion) {
-        // Una nueva versión de la base de datos está disponible
-        showError('Una nueva versión de la aplicación está disponible. Por favor, cierra todas las pestañas/ventanas de la aplicación y vuelve a abrirla para aplicar las actualizaciones.');
-        this.close(); // Cierra la conexión actual para permitir la actualización
+        showError('Actualización de base de datos detectada. Por favor, reinicia la app.');
+        this.close();
       }
     });
   }
