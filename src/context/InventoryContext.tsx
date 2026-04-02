@@ -100,7 +100,7 @@ type InventoryAction =
   | { type: 'SET_DB_BUFFER'; payload: Uint8Array | null }
   | { type: 'SET_INVENTORY_TYPE'; payload: "weekly" | "monthly" | null }
   | { type: 'SET_RAW_INVENTORY_ITEMS_FROM_DB'; payload: InventoryItem[] }
-  | { type: 'UPDATE_SINGLE_ITEM'; payload: { index: number, key: keyof InventoryItem, value: any } }
+  | { type: 'UPDATE_SINGLE_ITEM'; payload: { productId: number; key: keyof InventoryItem; value: any } }
   | { type: 'SET_MASTER_PRODUCT_CONFIGS'; payload: MasterProductConfig[] }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -118,9 +118,10 @@ const inventoryReducer = (state: InventoryState, action: InventoryAction): Inven
     case 'SET_INVENTORY_TYPE': return { ...state, inventoryType: action.payload, error: null };
     case 'SET_RAW_INVENTORY_ITEMS_FROM_DB': return { ...state, rawInventoryItemsFromDb: action.payload, error: null };
     case 'UPDATE_SINGLE_ITEM': {
-      const { index, key, value } = action.payload;
+      const { productId, key, value } = action.payload;
       const currentItems = state.rawInventoryItemsFromDb;
-      if (!currentItems[index]) return state;
+      const index = currentItems.findIndex(item => item.productId === productId);
+      if (index === -1) return state;
       const updatedItem = { ...currentItems[index], [key]: value, ...(key === 'physicalQuantity' ? { hasBeenEdited: true } : {}) };
       const newItems = [...currentItems];
       newItems[index] = updatedItem;
@@ -158,7 +159,7 @@ interface InventoryContextType extends InventoryState {
   deleteMasterProductConfig: (productId: number) => Promise<void>;
   loadMasterProductConfigs: (includeHidden?: boolean) => Promise<MasterProductConfig[]>;
   clearLocalDatabase: () => Promise<void>;
-  updateInventoryItemLocal: (index: number, key: keyof InventoryItem, value: number | boolean) => void;
+  updateInventoryItemLocal: (productId: number, key: keyof InventoryItem, value: number | boolean) => void;
   updateSyncStatus: () => Promise<void>;
   setHasUnsavedChanges: (value: boolean) => void;
 }
@@ -212,7 +213,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const filteredInventoryData = useMemo(() => {
     if (!state.rawInventoryItemsFromDb || state.rawInventoryItemsFromDb.length === 0) return [];
     const masterConfigsMap = new Map<number, MasterProductConfig>(state.masterProductConfigs.map(config => [config.productId, config]));
-    
+
     return state.rawInventoryItemsFromDb.filter(item => {
       const masterConfig = masterConfigsMap.get(item.productId);
       if (!masterConfig || masterConfig.isHidden) return false;
@@ -236,7 +237,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     if (remoteDate > localDate) {
       return { ...remote, sync_pending: false };
     }
-    
+
     // Si el local es más reciente o igual, pero el remoto tiene mejor efectividad (y son del mismo día)
     if (remote.dateKey === local.dateKey && remote.effectiveness > local.effectiveness && Math.abs(remoteDate - localDate) < 60000) {
       return { ...remote, sync_pending: false };
@@ -304,7 +305,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const syncToSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline) return;
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
-    
+
     try {
       if (!db.isOpen()) await db.open();
 
@@ -444,12 +445,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       const rawInventoryItems: InventoryItemFromDB[] = queryData(dbInstance, ALL_PRODUCTS_QUERY);
       dbInstance.close();
       if (rawInventoryItems.length === 0) return;
-      
+
       if (!db.isOpen()) await db.open();
       const existingConfigs = await db.productRules.toArray();
       const configsMap = new Map<number, MasterProductConfig>(existingConfigs.map(c => [c.productId, c]));
       const nowIso = new Date().toISOString();
-      
+
       const updates = rawInventoryItems.map(item => {
         const existing = configsMap.get(item.ProductId);
         return {
@@ -463,7 +464,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           updated_at: nowIso
         };
       });
-      
+
       await db.productRules.bulkPut(updates);
       if (supabase && state.isOnline) {
         await (supabase as any).from('product_rules').upsert(updates.map(c => ({
@@ -502,8 +503,8 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
 
-  const updateInventoryItemLocal = useCallback((index: number, key: keyof InventoryItem, value: any) => {
-    dispatch({ type: 'UPDATE_SINGLE_ITEM', payload: { index, key, value } });
+  const updateInventoryItemLocal = useCallback((productId: number, key: keyof InventoryItem, value: any) => {
+    dispatch({ type: 'UPDATE_SINGLE_ITEM', payload: { productId, key, value } });
   }, []);
 
   const loadSession = useCallback(async (dateKey: string) => {

@@ -9,12 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface InventoryRowProps {
   item: InventoryItem;
-  index: number;
-  onUpdate: (index: number, key: keyof InventoryItem, value: number | boolean) => void;
+  onUpdate: (productId: number, key: keyof InventoryItem, value: number | boolean) => void;
 }
 
 // Componente de fila memoizado para evitar re-renders innecesarios
-const InventoryRow = React.memo(({ item, index, onUpdate }: InventoryRowProps) => {
+const InventoryRow = React.memo(({ item, onUpdate }: InventoryRowProps) => {
   // Estado local para respuesta visual instantánea
   const [localQty, setLocalQty] = useState(item.physicalQuantity);
 
@@ -29,14 +28,14 @@ const InventoryRow = React.memo(({ item, index, onUpdate }: InventoryRowProps) =
   const handleAdjust = (delta: number) => {
     const newValue = Math.max(0, localQty + delta);
     setLocalQty(newValue);
-    onUpdate(index, 'physicalQuantity', newValue);
+    onUpdate(item.productId, 'physicalQuantity', newValue);
   };
 
   const handleInputChange = (value: string) => {
     const newValue = parseInt(value, 10);
     const finalValue = isNaN(newValue) ? 0 : Math.max(0, newValue);
     setLocalQty(finalValue);
-    onUpdate(index, 'physicalQuantity', finalValue);
+    onUpdate(item.productId, 'physicalQuantity', finalValue);
   };
 
   const isMatch = item.systemQuantity === localQty;
@@ -147,12 +146,11 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {inventoryData.map((item, index) => (
-              <InventoryRow 
-                key={item.productId} 
-                item={item} 
-                index={index} 
-                onUpdate={updateInventoryItemLocal} 
+            {inventoryData.map((item) => (
+              <InventoryRow
+                key={`${item.productId}_${item.productName}`} // Composite key para garantizar unicidad
+                item={item}
+                onUpdate={updateInventoryItemLocal}
               />
             ))}
           </TableBody>
