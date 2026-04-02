@@ -1,7 +1,7 @@
 /**
  * @file src/context/InventoryContext.tsx
- * @description Contexto con resolución de conflictos y manejo de fechas ISO UTC.
- * @version v1.9.2
+ * @description Contexto con resolución de conflictos, manejo de fechas ISO UTC y sincronización mejorada.
+ * @version v1.9.3
  */
 
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
@@ -293,9 +293,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
         if (error) throw error;
         await db.sessions.update(dateKey, { sync_pending: false });
+        showSuccess("✓ Sesión guardada en la nube correctamente");
+      } else {
+        showSuccess("✓ Sesión guardada localmente (sin conexión)");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error saving session:", e);
+      showError(`✗ Error al guardar la sesión: ${e.message || 'Error desconocido'}`);
       throw e;
     } finally {
       updateSyncStatus();
@@ -486,22 +490,49 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const forceDownloadConfigFromSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline) return;
+
+    // Validación de cambios pendientes
+    if (state.hasUnsavedChanges) {
+      showError("Por favor, guarda tus cambios localmente antes de sincronizar con la nube");
+      return;
+    }
+
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       if (!db.isOpen()) await db.open();
-      await db.productRules.clear();
-      await db.sessions.clear();
+      
+      // Ya no borramos la base de datos local para evitar pérdida de datos
       const { data: rules } = await (supabase as any).from('product_rules').select('*');
       const { data: sessions } = await (supabase as any).from('inventory_sessions').select('*');
-      if (rules) await db.productRules.bulkPut((rules as any[]).map(r => ({ ...r, sync_pending: false })));
-      if (sessions) await db.sessions.bulkPut((sessions as any[]).map(s => ({ ...s, sync_pending: false })));
+      
+      if (rules) {
+        // Usamos bulkPut para actualizar sin borrar cambios locales no sincronizados
+        await db.productRules.bulkPut((rules as any[]).map(r => ({ 
+          productId: r.productId,
+          productName: r.productName,
+          supplier: r.supplierName, // Mapeo de nombre de columna
+          rules: r.rules,
+          isHidden: r.isHidden,
+          inventory_type: r.inventory_type,
+          updated_at: r.updated_at,
+          sync_pending: false 
+        })));
+      }
+      
+      if (sessions) {
+        await db.sessions.bulkPut((sessions as any[]).map(s => ({ ...s, sync_pending: false })));
+      }
+      
       await loadMasterProductConfigs();
-      showSuccess("Datos restaurados desde la nube.");
+      showSuccess("Datos actualizados desde la nube correctamente.");
+    } catch (e: any) {
+      console.error("Error en sincronización forzada:", e);
+      showError(`Error al descargar datos: ${e.message || 'Error desconocido'}`);
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
       updateSyncStatus();
     }
-  }, [state.isOnline, loadMasterProductConfigs, updateSyncStatus]);
+  }, [state.isOnline, state.hasUnsavedChanges, loadMasterProductConfigs, updateSyncStatus]);
 
   const updateInventoryItemLocal = useCallback((productId: number, key: keyof InventoryItem, value: any) => {
     dispatch({ type: 'UPDATE_SINGLE_ITEM', payload: { productId, key, value } });
