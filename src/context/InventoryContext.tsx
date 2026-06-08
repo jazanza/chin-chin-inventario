@@ -171,6 +171,24 @@ interface InventoryContextType extends InventoryState {
   updateInventoryItemLocal: (productId: number, key: keyof InventoryItem, value: number | boolean) => void;
   updateSyncStatus: () => Promise<void>;
   setHasUnsavedChanges: (value: boolean) => void;
+  getSyncDiagnostics: () => Promise<SyncDiagnostics>;
+}
+
+export interface SyncDiagnostics {
+  appProjectRef: string | null;
+  expectedProjectRef: string;
+  hasPublishableKey: boolean;
+  isSupabaseReady: boolean;
+  isConnectedToExpectedProject: boolean;
+  isOnline: boolean;
+  syncStatus: SyncStatus;
+  pendingSessions: number;
+  pendingProductRules: number;
+  totalSessions: number;
+  totalProductRules: number;
+  latestLocalSession: { dateKey: string; updatedAt: string } | null;
+  latestLocalProductRule: { productId: number; updatedAt: string } | null;
+  sourceOfTruth: string;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -637,6 +655,24 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     void syncToSupabase();
   }, [state.isOnline, syncToSupabase]);
 
+  useEffect(() => {
+    if (!supabase || !state.isOnline) return;
+
+    const channel = supabase
+      .channel('inventory-sync-listener')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_sessions' }, () => {
+        void syncToSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_rules' }, () => {
+        void syncToSupabase();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [state.isOnline, syncToSupabase]);
+
   const clearLocalDatabase = useCallback(async () => {
     await db.delete();
     await db.open();
@@ -644,16 +680,47 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     showSuccess('Base de datos local limpiada.');
   }, [resetInventoryState]);
 
+  const getSyncDiagnostics = useCallback(async (): Promise<SyncDiagnostics> => {
+    if (!db.isOpen()) await db.open();
+    const [pendingSessions, pendingProductRules, totalSessions, totalProductRules, latestSession, latestRule] = await Promise.all([
+      db.sessions.toCollection().filter(item => item.sync_pending === true).count(),
+      db.productRules.toCollection().filter(item => item.sync_pending === true).count(),
+      db.sessions.count(),
+      db.productRules.count(),
+      db.sessions.orderBy('updated_at').last(),
+      db.productRules.orderBy('updated_at').last(),
+    ]);
+
+    return {
+      appProjectRef: supabaseConfig.projectRef,
+      expectedProjectRef: 'rnzymlgmrcvwruxdnjkc',
+      hasPublishableKey: supabaseConfig.hasPublishableKey,
+      isSupabaseReady: supabaseConfig.isReady,
+      isConnectedToExpectedProject: supabaseConfig.projectRef === 'rnzymlgmrcvwruxdnjkc',
+      isOnline: state.isOnline,
+      syncStatus: state.syncStatus,
+      pendingSessions,
+      pendingProductRules,
+      totalSessions,
+      totalProductRules,
+      latestLocalSession: latestSession ? { dateKey: latestSession.dateKey, updatedAt: latestSession.updated_at } : null,
+      latestLocalProductRule: latestRule ? { productId: latestRule.productId, updatedAt: latestRule.updated_at } : null,
+      sourceOfTruth: state.isOnline
+        ? 'Supabase + local cache; cloud wins conflicts by updated_at'
+        : 'Local cache first; pending changes sync when online',
+    };
+  }, [state.isOnline, state.syncStatus]);
+
   const value = useMemo(() => ({
     ...state, filteredInventoryData, setDbBuffer, setInventoryType, processInventoryData, processDbForMasterConfigs,
     saveCurrentSession, loadSession, deleteSession, getSessionHistory, resetInventoryState, syncToSupabase,
     forceDownloadConfigFromSupabase, saveMasterProductConfig: async (c: MasterProductConfig) => saveAllMasterProductConfigs([c]),
     saveAllMasterProductConfigs, deleteMasterProductConfig, loadMasterProductConfigs, clearLocalDatabase,
-    updateInventoryItemLocal, updateSyncStatus, setHasUnsavedChanges
+    updateInventoryItemLocal, updateSyncStatus, setHasUnsavedChanges, getSyncDiagnostics
   }), [state, filteredInventoryData, setDbBuffer, setInventoryType, processInventoryData, processDbForMasterConfigs,
     saveCurrentSession, loadSession, deleteSession, getSessionHistory, resetInventoryState, syncToSupabase,
     forceDownloadConfigFromSupabase, saveAllMasterProductConfigs, deleteMasterProductConfig, loadMasterProductConfigs,
-    clearLocalDatabase, updateInventoryItemLocal, updateSyncStatus, setHasUnsavedChanges]);
+    clearLocalDatabase, updateInventoryItemLocal, updateSyncStatus, setHasUnsavedChanges, getSyncDiagnostics]);
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>;
 };

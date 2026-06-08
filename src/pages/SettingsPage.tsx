@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
+import { useInventoryContext, InventoryItem, SyncDiagnostics } from "@/context/InventoryContext";
 import {
   Accordion,
   AccordionItem,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw, Save } from "lucide-react";
+import { Loader2, Trash2, PlusCircle, Eye, EyeOff, Upload, RefreshCcw, Save, Database } from "lucide-react";
 import { showSuccess, showError } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { MasterProductConfig, ProductRule } from "@/lib/persistence";
@@ -32,6 +32,7 @@ const SettingsPage = () => {
     forceDownloadConfigFromSupabase,
     isOnline,
     isSupabaseSyncInProgress,
+    getSyncDiagnostics,
   } = useInventoryContext();
 
   const [editableProductConfigs, setEditableProductConfigs] = useState<{
@@ -40,6 +41,7 @@ const SettingsPage = () => {
   const [showHiddenProducts, setShowHiddenProducts] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingConfig, setIsUploadingConfig] = useState(false);
+  const [syncDiagnostics, setSyncDiagnostics] = useState<SyncDiagnostics | null>(null);
 
   // Inicializar editableProductConfigs cuando masterProductConfigs cambian
   useEffect(() => {
@@ -54,6 +56,15 @@ const SettingsPage = () => {
   useEffect(() => {
     loadMasterProductConfigs(showHiddenProducts);
   }, [showHiddenProducts, loadMasterProductConfigs]);
+
+  const refreshDiagnostics = useCallback(async () => {
+    const diagnostics = await getSyncDiagnostics();
+    setSyncDiagnostics(diagnostics);
+  }, [getSyncDiagnostics]);
+
+  useEffect(() => {
+    void refreshDiagnostics();
+  }, [refreshDiagnostics, masterProductConfigs.length, isOnline, isSupabaseSyncInProgress]);
 
 
   // Agrupar productos por proveedor
@@ -176,6 +187,7 @@ const SettingsPage = () => {
 
   const handleForceTotalSync = async () => {
     await forceDownloadConfigFromSupabase();
+    await refreshDiagnostics();
   };
 
   if (loading || isUploadingConfig) {
@@ -192,7 +204,7 @@ const SettingsPage = () => {
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">Configuración de Pedidos</h1>
         <Button 
           onClick={handleSaveAllChanges} 
-          disabled={isSaving || !isOnline} 
+          disabled={isSaving} 
           className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base min-w-[160px]"
         >
           {isSaving ? (
@@ -203,11 +215,32 @@ const SettingsPage = () => {
           ) : (
             <>
               <Save className="mr-2 h-4 w-4" />
-              Guardar cambios
+              {isOnline ? "Guardar cambios" : "Guardar localmente"}
             </>
           )}
         </Button>
       </div>
+
+      <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Diagnóstico de Sincronización</CardTitle>
+          <Button variant="outline" onClick={refreshDiagnostics} className="text-blue-600 border-blue-600">
+            <Database className="h-4 w-4 mr-2" />
+            Refrescar
+          </Button>
+        </CardHeader>
+        <CardContent className="grid gap-2 text-sm text-gray-700">
+          <p><strong>Estado:</strong> {syncDiagnostics?.syncStatus ?? "desconocido"}</p>
+          <p><strong>En línea:</strong> {syncDiagnostics?.isOnline ? "Sí" : "No"}</p>
+          <p><strong>Proyecto Supabase:</strong> {syncDiagnostics?.appProjectRef ?? "sin detectar"}</p>
+          <p><strong>Coincide con el esperado:</strong> {syncDiagnostics?.isConnectedToExpectedProject ? "Sí" : "No"}</p>
+          <p><strong>Pendientes local:</strong> sesiones {syncDiagnostics?.pendingSessions ?? 0}, reglas {syncDiagnostics?.pendingProductRules ?? 0}</p>
+          <p><strong>Totales locales:</strong> sesiones {syncDiagnostics?.totalSessions ?? 0}, reglas {syncDiagnostics?.totalProductRules ?? 0}</p>
+          <p><strong>Fuente de verdad:</strong> {syncDiagnostics?.sourceOfTruth ?? "cargando..."}</p>
+          <p><strong>Última sesión:</strong> {syncDiagnostics?.latestLocalSession ? `${syncDiagnostics.latestLocalSession.dateKey} / ${syncDiagnostics.latestLocalSession.updatedAt}` : "sin datos"}</p>
+          <p><strong>Última regla:</strong> {syncDiagnostics?.latestLocalProductRule ? `${syncDiagnostics.latestLocalProductRule.productId} / ${syncDiagnostics.latestLocalProductRule.updatedAt}` : "sin datos"}</p>
+        </CardContent>
+      </Card>
 
       <Card className="mb-8 bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader>
@@ -372,7 +405,7 @@ const SettingsPage = () => {
               <AlertDialogHeader>
                 <AlertDialogTitle>¿Forzar sincronización de emergencia?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Esto borrará todos los datos locales y descargará la versión maestra de Supabase. Úsalo si ves datos corruptos o desincronizados.
+                  Esto descargará la versión remota de Supabase y la consolidará localmente sin borrar tu trabajo pendiente. Úsalo si quieres reconciliar esta instalación con la nube.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

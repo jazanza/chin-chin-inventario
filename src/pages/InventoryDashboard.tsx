@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PlusCircle, RefreshCcw, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { showSuccess, showError } from "@/utils/toast";
+import { InventorySession } from "@/lib/persistence";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,7 +40,7 @@ const InventoryDashboard = () => {
   } = useInventoryContext();
   
   const [showFileUploader, setShowFileUploader] = useState(false);
-  const [sessionHistory, setSessionHistory] = useState<any[] | null>(null);
+  const [sessionHistory, setSessionHistory] = useState<InventorySession[] | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
@@ -148,7 +149,7 @@ const InventoryDashboard = () => {
             )}
           </div>
           <div className="flex gap-2">
-            <Button               onClick={handleManualSave}               disabled={isSaving || !isOnline || !hasUnsavedChanges} 
+            <Button onClick={handleManualSave} disabled={isSaving || !hasUnsavedChanges}
               className={cn(
                 "font-bold text-sm sm:text-base min-w-[160px] transition-all",
                 hasUnsavedChanges ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-100 text-gray-400"
@@ -162,7 +163,7 @@ const InventoryDashboard = () => {
               ) : (
                 <>
                   <RefreshCcw className="mr-2 h-4 w-4" />
-                  Guardar cambios
+                  {isOnline ? "Guardar cambios" : "Guardar localmente"}
                 </>
               )}
             </Button>

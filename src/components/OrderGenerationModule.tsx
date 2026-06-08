@@ -165,7 +165,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
         <h2 className="text-lg sm:text-xl font-bold text-gray-900">Generación de Pedidos</h2>
         <Button 
           onClick={handleSaveOrders} 
-          disabled={isSaving || !isOnline} 
+          disabled={isSaving} 
           className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm sm:text-base min-w-[160px]"
         >
           {isSaving ? (
@@ -176,7 +176,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
           ) : (
             <>
               <Save className="mr-2 h-4 w-4" />
-              Guardar pedido
+              {isOnline ? "Guardar pedido" : "Guardar localmente"}
             </>
           )}
         </Button>
