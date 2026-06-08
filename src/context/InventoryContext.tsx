@@ -10,6 +10,15 @@ import { db, InventorySession, MasterProductConfig, ProductRule } from "@/lib/pe
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
 import { supabase, supabaseConfig } from "@/lib/supabase";
+import {
+  isRemoteNewer,
+  mapRemoteRuleToLocal,
+  mapRemoteSessionToLocal,
+  RemoteInventorySession,
+  RemoteProductRule,
+  toRemoteRulePayload,
+  toRemoteSessionPayload,
+} from "@/lib/supabase-sync";
 
 // Interfaces
 export interface InventoryItemFromDB {
@@ -65,48 +74,6 @@ const ALL_PRODUCTS_QUERY = `
 `;
 
 type SyncStatus = 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
-
-type RemoteInventorySession = Omit<InventorySession, 'sync_pending'> & { sync_pending?: boolean };
-type RemoteProductRule = Omit<MasterProductConfig, 'sync_pending' | 'supplier'> & { supplierName: string; sync_pending?: boolean };
-
-const mapRemoteSessionToLocal = (session: RemoteInventorySession): InventorySession => ({
-  ...session,
-  sync_pending: false,
-});
-
-const mapRemoteRuleToLocal = (rule: RemoteProductRule): MasterProductConfig => ({
-  productId: rule.productId,
-  productName: rule.productName,
-  rules: rule.rules,
-  supplier: rule.supplierName,
-  isHidden: rule.isHidden,
-  inventory_type: rule.inventory_type,
-  updated_at: rule.updated_at,
-  sync_pending: false,
-});
-
-const toRemoteSessionPayload = (session: InventorySession) => ({
-  dateKey: session.dateKey,
-  inventoryType: session.inventoryType,
-  inventoryData: session.inventoryData,
-  timestamp: session.timestamp,
-  effectiveness: session.effectiveness,
-  ordersBySupplier: session.ordersBySupplier,
-});
-
-const toRemoteRulePayload = (rule: MasterProductConfig) => ({
-  productId: rule.productId,
-  productName: rule.productName,
-  supplierName: rule.supplier,
-  rules: rule.rules,
-  isHidden: rule.isHidden,
-  inventory_type: rule.inventory_type,
-});
-
-const isRemoteNewer = (remoteUpdatedAt: string | undefined, localUpdatedAt: string) => {
-  if (!remoteUpdatedAt) return false;
-  return new Date(remoteUpdatedAt).getTime() > new Date(localUpdatedAt).getTime();
-};
 
 interface InventoryState {
   dbBuffer: Uint8Array | null;

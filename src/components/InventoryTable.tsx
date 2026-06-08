@@ -22,7 +22,7 @@ const InventoryRow = React.memo(({ item, onUpdate }: InventoryRowProps) => {
     if (item.physicalQuantity !== localQty) {
       setLocalQty(item.physicalQuantity);
     }
-  }, [item.physicalQuantity]);
+  }, [item.physicalQuantity, localQty]);
 
   // Función para manejar el cambio de cantidad con respuesta inmediata
   const handleAdjust = (delta: number) => {
@@ -104,6 +104,7 @@ interface InventoryTableProps {
 
 export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
   const { updateInventoryItemLocal } = useInventoryContext();
+  const [visibleCount, setVisibleCount] = useState(150);
 
   // Resumen calculado solo cuando los datos cambian
   const summary = useMemo(() => {
@@ -133,6 +134,12 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
     };
   }, [inventoryData]);
 
+  useEffect(() => {
+    setVisibleCount(150);
+  }, [inventoryData]);
+
+  const visibleItems = useMemo(() => inventoryData.slice(0, visibleCount), [inventoryData, visibleCount]);
+
   return (
     <div className="w-full">
       <div className="overflow-x-auto w-full max-h-[70vh] custom-scrollbar mb-6">
@@ -146,7 +153,7 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {inventoryData.map((item) => (
+            {visibleItems.map((item) => (
               <InventoryRow
                 key={`${item.productId}_${item.productName}`} // Composite key para garantizar unicidad
                 item={item}
@@ -156,6 +163,18 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
           </TableBody>
         </Table>
       </div>
+
+      {visibleCount < inventoryData.length && (
+        <div className="flex justify-center mb-6">
+          <Button
+            variant="outline"
+            onClick={() => setVisibleCount((current) => Math.min(current + 150, inventoryData.length))}
+            className="border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Mostrar 150 más
+          </Button>
+        </div>
+      )}
 
       <Card className="w-full bg-white text-gray-900 border-gray-200 shadow-md">
         <CardHeader>
