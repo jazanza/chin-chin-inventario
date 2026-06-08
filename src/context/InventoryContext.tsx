@@ -4,12 +4,12 @@
  * @version v1.9.3
  */
 
-import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo } from "react";
+import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import { db, InventorySession, MasterProductConfig, ProductRule } from "@/lib/persistence";
 import { format } from "date-fns";
 import { showSuccess, showError } from "@/utils/toast";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseConfig } from "@/lib/supabase";
 
 // Interfaces
 export interface InventoryItemFromDB {
@@ -65,6 +65,48 @@ const ALL_PRODUCTS_QUERY = `
 `;
 
 type SyncStatus = 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
+
+type RemoteInventorySession = Omit<InventorySession, 'sync_pending'> & { sync_pending?: boolean };
+type RemoteProductRule = Omit<MasterProductConfig, 'sync_pending' | 'supplier'> & { supplierName: string; sync_pending?: boolean };
+
+const mapRemoteSessionToLocal = (session: RemoteInventorySession): InventorySession => ({
+  ...session,
+  sync_pending: false,
+});
+
+const mapRemoteRuleToLocal = (rule: RemoteProductRule): MasterProductConfig => ({
+  productId: rule.productId,
+  productName: rule.productName,
+  rules: rule.rules,
+  supplier: rule.supplierName,
+  isHidden: rule.isHidden,
+  inventory_type: rule.inventory_type,
+  updated_at: rule.updated_at,
+  sync_pending: false,
+});
+
+const toRemoteSessionPayload = (session: InventorySession) => ({
+  dateKey: session.dateKey,
+  inventoryType: session.inventoryType,
+  inventoryData: session.inventoryData,
+  timestamp: session.timestamp,
+  effectiveness: session.effectiveness,
+  ordersBySupplier: session.ordersBySupplier,
+});
+
+const toRemoteRulePayload = (rule: MasterProductConfig) => ({
+  productId: rule.productId,
+  productName: rule.productName,
+  supplierName: rule.supplier,
+  rules: rule.rules,
+  isHidden: rule.isHidden,
+  inventory_type: rule.inventory_type,
+});
+
+const isRemoteNewer = (remoteUpdatedAt: string | undefined, localUpdatedAt: string) => {
+  if (!remoteUpdatedAt) return false;
+  return new Date(remoteUpdatedAt).getTime() > new Date(localUpdatedAt).getTime();
+};
 
 interface InventoryState {
   dbBuffer: Uint8Array | null;
@@ -174,6 +216,7 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
 
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
+  const syncLockRef = useRef(false);
 
   const setDbBuffer = useCallback((buffer: Uint8Array | null) => dispatch({ type: 'SET_DB_BUFFER', payload: buffer }), []);
   const setInventoryType = useCallback((type: "weekly" | "monthly" | null) => dispatch({ type: 'SET_INVENTORY_TYPE', payload: type }), []);
@@ -189,6 +232,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseConfig.isReady) {
+      dispatch({ type: 'SET_SYNC_STATUS', payload: 'idle' });
+      return;
+    }
+    if (!supabaseConfig.hasPublishableKey) {
+      showError('La variable VITE_SUPABASE_ANON_KEY no parece ser publishable. Revisa Vercel.');
+    }
+    if (supabaseConfig.projectRef && supabaseConfig.projectRef !== 'rnzymlgmrcvwruxdnjkc') {
+      showError(`La app apunta a Supabase ${supabaseConfig.projectRef}, pero el proyecto esperado es rnzymlgmrcvwruxdnjkc.`);
+    }
   }, []);
 
   const updateSyncStatus = useCallback(async () => {
@@ -281,15 +337,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       dispatch({ type: 'SET_HAS_UNSAVED_CHANGES', payload: false });
 
       if (supabase && state.isOnline) {
-        const { error } = await (supabase as any).from('inventory_sessions').upsert({
-          dateKey: sessionToSave.dateKey,
-          inventoryType: sessionToSave.inventoryType,
-          inventoryData: sessionToSave.inventoryData as any,
-          timestamp: sessionToSave.timestamp,
-          effectiveness: sessionToSave.effectiveness,
-          ordersBySupplier: sessionToSave.ordersBySupplier as any,
-          updated_at: sessionToSave.updated_at
-        }, { onConflict: 'dateKey' });
+        const { data: remoteSession } = await supabase
+          .from('inventory_sessions')
+          .select('updated_at')
+          .eq('dateKey', dateKey)
+          .maybeSingle();
+
+        if (isRemoteNewer(remoteSession?.updated_at, sessionToSave.updated_at)) {
+          await db.sessions.update(dateKey, { sync_pending: true });
+          showError('La nube tiene una versión más nueva de esta sesión. Se mantuvo la copia local para evitar sobrescritura.');
+          await forceDownloadConfigFromSupabase();
+          return;
+        }
+
+        const { error } = await supabase.from('inventory_sessions').upsert(
+          toRemoteSessionPayload(sessionToSave),
+          { onConflict: 'dateKey' }
+        );
 
         if (error) throw error;
         await db.sessions.update(dateKey, { sync_pending: false });
@@ -297,9 +361,10 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       } else {
         showSuccess("✓ Sesión guardada localmente (sin conexión)");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Error saving session:", e);
-      showError(`✗ Error al guardar la sesión: ${e.message || 'Error desconocido'}`);
+      const message = e instanceof Error ? e.message : 'Error desconocido';
+      showError(`✗ Error al guardar la sesión: ${message}`);
       throw e;
     } finally {
       updateSyncStatus();
@@ -308,19 +373,22 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const syncToSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline) return;
+    if (syncLockRef.current) return;
+    syncLockRef.current = true;
     dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: true });
+    dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
 
     try {
       if (!db.isOpen()) await db.open();
 
-      const { data: remoteSessions } = await (supabase as any).from('inventory_sessions').select('*');
-      const { data: remoteRules } = await (supabase as any).from('product_rules').select('*');
+      const { data: remoteSessions } = await supabase.from('inventory_sessions').select('*');
+      const { data: remoteRules } = await supabase.from('product_rules').select('*');
 
       if (remoteSessions) {
-        for (const remote of (remoteSessions as any[])) {
+        for (const remote of remoteSessions as RemoteInventorySession[]) {
           const local = await db.sessions.get(remote.dateKey);
           if (!local) {
-            await db.sessions.put({ ...remote, sync_pending: false });
+            await db.sessions.put(mapRemoteSessionToLocal(remote));
           } else {
             const resolved = resolveSessionConflict(local, remote);
             await db.sessions.put(resolved);
@@ -330,38 +398,50 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       const pendingSessions = await db.sessions.toCollection().filter(s => s.sync_pending === true).toArray();
       for (const session of pendingSessions) {
-        const { error } = await (supabase as any).from('inventory_sessions').upsert({
-          dateKey: session.dateKey,
-          inventoryType: session.inventoryType,
-          inventoryData: session.inventoryData as any,
-          timestamp: session.timestamp,
-          effectiveness: session.effectiveness,
-          ordersBySupplier: session.ordersBySupplier as any,
-          updated_at: session.updated_at
-        }, { onConflict: 'dateKey' });
+        const { data: remoteSession } = await supabase
+          .from('inventory_sessions')
+          .select('updated_at')
+          .eq('dateKey', session.dateKey)
+          .maybeSingle();
+
+        if (isRemoteNewer(remoteSession?.updated_at, session.updated_at)) {
+          await db.sessions.update(session.dateKey, { sync_pending: false });
+          continue;
+        }
+
+        const { error } = await supabase.from('inventory_sessions').upsert(
+          toRemoteSessionPayload(session),
+          { onConflict: 'dateKey' }
+        );
         if (!error) await db.sessions.update(session.dateKey, { sync_pending: false });
       }
 
       if (remoteRules) {
-        for (const remote of (remoteRules as any[])) {
+        for (const remote of remoteRules as RemoteProductRule[]) {
           const local = await db.productRules.get(remote.productId);
           if (!local || new Date(remote.updated_at) > new Date(local.updated_at)) {
-            await db.productRules.put({ ...remote, sync_pending: false });
+            await db.productRules.put(mapRemoteRuleToLocal(remote));
           }
         }
       }
 
       const pendingRules = await db.productRules.toCollection().filter(r => r.sync_pending === true).toArray();
       for (const rule of pendingRules) {
-        const { error } = await (supabase as any).from('product_rules').upsert({
-          productId: rule.productId,
-          productName: rule.productName,
-          supplierName: rule.supplier,
-          rules: rule.rules as any,
-          isHidden: rule.isHidden,
-          inventory_type: rule.inventory_type,
-          updated_at: rule.updated_at
-        }, { onConflict: 'productId' });
+        const { data: remoteRule } = await supabase
+          .from('product_rules')
+          .select('updated_at')
+          .eq('productId', rule.productId)
+          .maybeSingle();
+
+        if (isRemoteNewer(remoteRule?.updated_at, rule.updated_at)) {
+          await db.productRules.update(rule.productId, { sync_pending: false });
+          continue;
+        }
+
+        const { error } = await supabase.from('product_rules').upsert(
+          toRemoteRulePayload(rule),
+          { onConflict: 'productId' }
+        );
         if (!error) await db.productRules.update(rule.productId, { sync_pending: false });
       }
 
@@ -370,6 +450,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       console.error("Sync error:", e);
     } finally {
       dispatch({ type: 'SET_SUPABASE_SYNC_IN_PROGRESS', payload: false });
+      syncLockRef.current = false;
       updateSyncStatus();
     }
   }, [state.isOnline, updateSyncStatus]);
@@ -388,16 +469,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const configsToSave = configs.map(c => ({ ...c, sync_pending: true, updated_at: nowIso }));
     await db.productRules.bulkPut(configsToSave);
     if (supabase && state.isOnline) {
-      const { error } = await (supabase as any).from('product_rules').upsert(configsToSave.map(c => ({
-        productId: c.productId,
-        productName: c.productName,
-        supplierName: c.supplier,
-        rules: c.rules as any,
-        isHidden: c.isHidden,
-        inventory_type: c.inventory_type,
-        updated_at: c.updated_at
-      })), { onConflict: 'productId' });
-      if (!error) await db.productRules.bulkUpdate(configsToSave.map(c => ({ key: c.productId, changes: { sync_pending: false } })));
+      const nextPending = [] as { key: number; changes: { sync_pending: boolean } }[];
+      for (const config of configsToSave) {
+        const { data: remoteRule } = await supabase
+          .from('product_rules')
+          .select('updated_at')
+          .eq('productId', config.productId)
+          .maybeSingle();
+
+        if (isRemoteNewer(remoteRule?.updated_at, config.updated_at)) {
+          nextPending.push({ key: config.productId, changes: { sync_pending: true } });
+          continue;
+        }
+
+        const { error } = await supabase.from('product_rules').upsert(toRemoteRulePayload(config), { onConflict: 'productId' });
+        if (!error) nextPending.push({ key: config.productId, changes: { sync_pending: false } });
+      }
+      if (nextPending.length > 0) await db.productRules.bulkUpdate(nextPending);
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
@@ -471,15 +559,19 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
       await db.productRules.bulkPut(updates);
       if (supabase && state.isOnline) {
-        await (supabase as any).from('product_rules').upsert(updates.map(c => ({
-          productId: c.productId,
-          productName: c.productName,
-          supplierName: c.supplier,
-          rules: c.rules as any,
-          isHidden: c.isHidden,
-          inventory_type: c.inventory_type,
-          updated_at: c.updated_at
-        })), { onConflict: 'productId' });
+        for (const config of updates) {
+          const { data: remoteRule } = await supabase
+            .from('product_rules')
+            .select('updated_at')
+            .eq('productId', config.productId)
+            .maybeSingle();
+
+          if (isRemoteNewer(remoteRule?.updated_at, config.updated_at)) {
+            continue;
+          }
+
+          await supabase.from('product_rules').upsert(toRemoteRulePayload(config), { onConflict: 'productId' });
+        }
       }
       await loadMasterProductConfigs();
       showSuccess('Catálogo maestro actualizado.');
@@ -502,39 +594,31 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (!db.isOpen()) await db.open();
       
       // Ya no borramos la base de datos local para evitar pérdida de datos
-      const { data: rules } = await (supabase as any).from('product_rules').select('*');
-      const { data: sessions } = await (supabase as any).from('inventory_sessions').select('*');
+      const { data: rules } = await supabase.from('product_rules').select('*');
+      const { data: sessions } = await supabase.from('inventory_sessions').select('*');
       
       if (rules) {
         // Usamos bulkPut para actualizar sin borrar cambios locales no sincronizados
-        await db.productRules.bulkPut((rules as any[]).map(r => ({ 
-          productId: r.productId,
-          productName: r.productName,
-          supplier: r.supplierName, // Mapeo de nombre de columna
-          rules: r.rules,
-          isHidden: r.isHidden,
-          inventory_type: r.inventory_type,
-          updated_at: r.updated_at,
-          sync_pending: false 
-        })));
+        await db.productRules.bulkPut((rules as RemoteProductRule[]).map(mapRemoteRuleToLocal));
       }
       
       if (sessions) {
-        await db.sessions.bulkPut((sessions as any[]).map(s => ({ ...s, sync_pending: false })));
+        await db.sessions.bulkPut((sessions as RemoteInventorySession[]).map(mapRemoteSessionToLocal));
       }
       
       await loadMasterProductConfigs();
       showSuccess("Datos actualizados desde la nube correctamente.");
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Error en sincronización forzada:", e);
-      showError(`Error al descargar datos: ${e.message || 'Error desconocido'}`);
+      const message = e instanceof Error ? e.message : 'Error desconocido';
+      showError(`Error al descargar datos: ${message}`);
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
       updateSyncStatus();
     }
   }, [state.isOnline, state.hasUnsavedChanges, loadMasterProductConfigs, updateSyncStatus]);
 
-  const updateInventoryItemLocal = useCallback((productId: number, key: keyof InventoryItem, value: any) => {
+  const updateInventoryItemLocal = useCallback((productId: number, key: keyof InventoryItem, value: number | boolean) => {
     dispatch({ type: 'UPDATE_SINGLE_ITEM', payload: { productId, key, value } });
   }, []);
 
@@ -558,7 +642,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
   const deleteSession = useCallback(async (dateKey: string) => {
     if (!db.isOpen()) await db.open();
     await db.sessions.delete(dateKey);
-    if (supabase && state.isOnline) await (supabase as any).from('inventory_sessions').delete().eq('dateKey', dateKey);
+    if (supabase && state.isOnline) await supabase.from('inventory_sessions').delete().eq('dateKey', dateKey);
     if (state.sessionId === dateKey) resetInventoryState();
     updateSyncStatus();
   }, [state.sessionId, state.isOnline, updateSyncStatus, resetInventoryState]);
@@ -576,10 +660,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const nowIso = new Date().toISOString();
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: nowIso });
     if (supabase && state.isOnline) {
-      await (supabase as any).from('product_rules').update({ isHidden: newIsHidden, updated_at: nowIso }).eq('productId', productId);
+      await supabase.from('product_rules').update({ isHidden: newIsHidden, updated_at: nowIso }).eq('productId', productId);
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
+
+  useEffect(() => {
+    if (!supabase || !state.isOnline) return;
+    void syncToSupabase();
+  }, [state.isOnline, syncToSupabase]);
 
   const clearLocalDatabase = useCallback(async () => {
     await db.delete();
