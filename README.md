@@ -9,8 +9,8 @@ Una aplicación web y de escritorio (Electron) diseñada para optimizar la gesti
 *   **Tipos de Inventario Inteligentes:** Soporte para inventarios "Semanales" y "Mensuales" con filtrado automático de productos.
 *   **Edición Interactiva:** Tabla de inventario con cálculo de discrepancias en tiempo real y métricas de efectividad.
 *   **Generación de Pedidos Automática:** Aplica reglas de negocio (ej: "Si stock <= 5, pedir 24") para sugerir pedidos por proveedor.
-*   **Arquitectura de Espejo (Cloud Sync):** Sincronización bidireccional automática con Supabase. Los cambios locales se guardan en IndexedDB y se suben a la nube cuando hay conexión.
-*   **Actualizaciones en Tiempo Real:** Gracias a Supabase Realtime, los cambios realizados en un dispositivo se reflejan instantáneamente en todos los demás.
+*   **Arquitectura de Espejo (Cloud Sync):** Los cambios se guardan primero en IndexedDB y luego se consolidan con Supabase cuando hay conexión.
+*   **Sincronización entre Dispositivos:** La app escucha cambios remotos y rehidrata el estado local, pero no ofrece coedición simultánea tipo documento compartido.
 *   **Configuración Centralizada:** Gestión de proveedores, reglas de pedido y visibilidad de productos (soft delete) desde una interfaz dedicada.
 
 ## 🛠️ Tecnologías
@@ -18,7 +18,7 @@ Una aplicación web y de escritorio (Electron) diseñada para optimizar la gesti
 *   **Frontend:** React 18, TypeScript, Vite.
 *   **Estilos:** Tailwind CSS + shadcn/ui.
 *   **Base de Datos Local:** `sql.js` (lectura de Aronium) y `Dexie.js` (persistencia en IndexedDB).
-*   **Backend/Nube:** Supabase (PostgreSQL + Realtime).
+*   **Backend/Nube:** Supabase (PostgreSQL + Realtime para cambios de tablas críticas).
 *   **Escritorio:** Electron.
 
 ## 📁 Estructura del Proyecto
@@ -31,10 +31,10 @@ Una aplicación web y de escritorio (Electron) diseñada para optimizar la gesti
 ## 🧠 Lógica de Sincronización
 
 La aplicación utiliza una estrategia de **Offline-First**:
-1.  **Guardado Local:** Cualquier cambio se guarda inmediatamente en Dexie y se marca con `sync_pending: true`.
-2.  **Sincronización:** La app intenta subir los cambios a Supabase. Si tiene éxito, marca `sync_pending: false`.
-3.  **Resolución de Conflictos:** Se utiliza la columna `updated_at` para asegurar que la versión más reciente (ya sea local o remota) prevalezca.
-4.  **Realtime:** La app escucha cambios remotos para actualizar la interfaz sin necesidad de recargar.
+1.  **Guardado Local:** Cualquier cambio se guarda en Dexie y se marca con `sync_pending: true`.
+2.  **Sincronización:** La app intenta subir los cambios a Supabase cuando hay conexión; si falla, quedan pendientes para reintento.
+3.  **Resolución de Conflictos:** Se usa `updated_at` para evitar que una copia más vieja pise una más nueva.
+4.  **Realtime / Rehidratación:** La app escucha cambios remotos y vuelve a cargar el estado local cuando detecta cambios en Supabase.
 
 ## ⚠️ Requisitos de Supabase (Esquema)
 
@@ -48,6 +48,11 @@ Para que la sincronización funcione, las tablas en Supabase deben usar **camelC
 *   `isHidden` (bool)
 *   `inventory_type` (text)
 *   `updated_at` (timestamptz, default: now())
+
+### Notas operativas
+
+*   `Forzar Sincronización Total` hoy sirve para rehidratar la instalación local desde la nube, no para coeditar en vivo.
+*   `Guardar cambios` y `Guardar pedido` siguen siendo acciones necesarias para persistir cambios locales antes de que se sincronicen.
 
 ### Tabla `inventory_sessions`
 *   `dateKey` (text, Primary Key)

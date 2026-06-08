@@ -21,7 +21,7 @@ Cada registro en Dexie tiene un booleano `sync_pending`.
 Se utiliza un enfoque de "el último gana" basado en el timestamp `updated_at`. Durante la sincronización inicial (`syncFromSupabase`), la aplicación compara los registros locales con los remotos y actualiza Dexie solo si el registro de la nube es más reciente.
 
 ### Supabase Realtime
-La aplicación se suscribe a los canales de cambios en las tablas `product_rules` e `inventory_sessions`. Cuando otro usuario realiza un cambio, el cliente recibe el evento y actualiza su base de datos local automáticamente, manteniendo la UI sincronizada en todos los dispositivos.
+La aplicación escucha cambios de `product_rules` e `inventory_sessions` para rehidratar la copia local cuando detecta actividad remota. Esto ayuda a que distintos dispositivos converjan al mismo estado, pero **no** implementa coedición simultánea ni bloqueo de sesión por fila.
 
 ## 3. Componentes y Módulos Críticos
 
@@ -55,6 +55,14 @@ Cualquier discrepancia en estos nombres resultará en errores 400 (Bad Request) 
 ## 5. Requisitos de Implementación en Supabase
 
 Para que la aplicación funcione correctamente, las tablas en Supabase deben tener habilitado:
-1.  **Realtime:** Para la actualización instantánea entre dispositivos.
+1.  **Realtime:** Para que los clientes puedan escuchar cambios y rehidratar el estado local.
 2.  **Replica Identity Full:** Necesario para que los eventos de eliminación (`DELETE`) incluyan los datos antiguos y el cliente sepa qué registro borrar localmente.
 3.  **Triggers de `updated_at`:** Para asegurar que el servidor gestione los timestamps de forma centralizada.
+
+## 6. Estado Actual y Limitaciones
+
+La app hoy es **offline-first con sync diferida**:
+- cada cambio se guarda primero localmente;
+- al estar online, se intenta subir a Supabase;
+- el botón `Forzar Sincronización Total` rehidrata la instalación local desde la nube;
+- no existe todavía un modelo de edición simultánea con bloqueo fino por sesión o por producto.
