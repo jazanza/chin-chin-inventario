@@ -18,6 +18,70 @@ export interface OrderItem {
   finalOrderQuantity: number;
 }
 
+export const buildOrdersBySupplier = (inventoryData: InventoryItem[]) => {
+  const orders: { [supplier: string]: OrderItem[] } = {};
+
+  inventoryData.forEach(item => {
+    if (!item.supplier) return;
+
+    let quantityToOrder = 0;
+    if (item.rules && item.rules.length > 0) {
+      const sortedRules = [...item.rules].sort((a, b) => a.minStock - b.minStock);
+      for (const rule of sortedRules) {
+        if (item.physicalQuantity <= rule.minStock) {
+          quantityToOrder = rule.orderAmount;
+          break;
+        }
+      }
+    }
+
+    if (quantityToOrder < 0) quantityToOrder = 0;
+
+    if (!orders[item.supplier]) {
+      orders[item.supplier] = [];
+    }
+    orders[item.supplier].push({
+      product: item.productName,
+      quantityToOrder: Math.round(quantityToOrder),
+      finalOrderQuantity: Math.round(quantityToOrder),
+    });
+  });
+
+  for (const supplier in orders) {
+    orders[supplier].sort((a, b) => a.product.localeCompare(b.product));
+  }
+
+  return orders;
+};
+
+export const mergeSavedOrdersWithSuggestions = (
+  suggestedOrders: { [supplier: string]: OrderItem[] },
+  savedOrders?: { [supplier: string]: OrderItem[] } | null
+) => {
+  if (!savedOrders || Object.keys(savedOrders).length === 0) {
+    return suggestedOrders;
+  }
+
+  const savedByProduct = new Map<string, OrderItem>();
+  Object.values(savedOrders).flat().forEach(order => {
+    savedByProduct.set(order.product, order);
+  });
+
+  const merged: { [supplier: string]: OrderItem[] } = {};
+  for (const supplier in suggestedOrders) {
+    merged[supplier] = suggestedOrders[supplier].map(suggested => {
+      const saved = savedByProduct.get(suggested.product);
+      const wasManuallyAdjusted = saved && saved.finalOrderQuantity !== saved.quantityToOrder;
+      return {
+        ...suggested,
+        finalOrderQuantity: wasManuallyAdjusted ? saved.finalOrderQuantity : suggested.quantityToOrder,
+      };
+    });
+  }
+
+  return merged;
+};
+
 export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModuleProps) => {
   const { saveCurrentSession, inventoryType, sessionId, currentSessionOrders, isOnline } = useInventoryContext();
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
@@ -26,55 +90,11 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
 
   // Calcula las órdenes sugeridas
   const ordersBySupplier = useMemo(() => {
-    const orders: { [supplier: string]: OrderItem[] } = {};
-
-    inventoryData.forEach(item => {
-      if (!item.supplier) return;
-
-      let quantityToOrder = 0;
-      if (item.rules && item.rules.length > 0) {
-        const sortedRules = [...item.rules].sort((a, b) => a.minStock - b.minStock);
-        for (const rule of sortedRules) {
-          if (item.physicalQuantity <= rule.minStock) {
-            quantityToOrder = rule.orderAmount;
-            break;
-          }
-        }
-      }
-      
-      if (quantityToOrder < 0) quantityToOrder = 0;
-
-      if (!orders[item.supplier]) {
-        orders[item.supplier] = [];
-      }
-      orders[item.supplier].push({
-        product: item.productName,
-        quantityToOrder: Math.round(quantityToOrder),
-        finalOrderQuantity: Math.round(quantityToOrder),
-      });
-    });
-
-    for (const supplier in orders) {
-      orders[supplier].sort((a, b) => a.product.localeCompare(b.product));
-    }
-
-    return orders;
+    return buildOrdersBySupplier(inventoryData);
   }, [inventoryData]);
 
-  // Sincronizar finalOrders con currentSessionOrders (si existe) o con ordersBySupplier
   useEffect(() => {
-    if (currentSessionOrders && Object.keys(currentSessionOrders).length > 0) {
-      setFinalOrders(currentSessionOrders);
-    } else {
-      const initialFinalOrders: { [supplier: string]: OrderItem[] } = {};
-      for (const supplier in ordersBySupplier) {
-        initialFinalOrders[supplier] = ordersBySupplier[supplier].map(item => ({
-          ...item,
-          finalOrderQuantity: item.quantityToOrder,
-        }));
-      }
-      setFinalOrders(initialFinalOrders);
-    }
+    setFinalOrders(mergeSavedOrdersWithSuggestions(ordersBySupplier, currentSessionOrders));
   }, [ordersBySupplier, currentSessionOrders]);
 
   // Manejar cambios en la cantidad final de pedido (solo local)

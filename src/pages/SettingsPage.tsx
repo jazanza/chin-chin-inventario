@@ -130,17 +130,19 @@ const SettingsPage = () => {
     value: string
   ) => {
     setEditableProductConfigs(prev => {
-      const newConfigs = { ...prev };
-      const currentConfig = newConfigs[productId];
+      const currentConfig = prev[productId];
       if (currentConfig && currentConfig.rules?.[ruleIndex]) {
         const newRules = [...currentConfig.rules];
         newRules[ruleIndex] = {
           ...newRules[ruleIndex],
           [field]: parseInt(value, 10) || 0,
         };
-        currentConfig.rules = newRules;
+        return {
+          ...prev,
+          [productId]: { ...currentConfig, rules: newRules },
+        };
       }
-      return newConfigs;
+      return prev;
     });
   };
 
