@@ -2,7 +2,8 @@ import { InventorySession, MasterProductConfig } from "@/lib/persistence";
 
 export type RemoteInventorySession = Omit<InventorySession, "sync_pending"> & { sync_pending?: boolean };
 export type RemoteProductRule = Omit<MasterProductConfig, "sync_pending" | "supplier"> & {
-  supplierName: string;
+  supplierName?: string | null;
+  supplier?: string | null;
   sync_pending?: boolean;
 };
 
@@ -15,7 +16,7 @@ export const mapRemoteRuleToLocal = (rule: RemoteProductRule): MasterProductConf
   productId: rule.productId,
   productName: rule.productName,
   rules: rule.rules,
-  supplier: rule.supplierName,
+  supplier: rule.supplierName || rule.supplier || "Desconocido",
   isHidden: rule.isHidden,
   inventory_type: rule.inventory_type,
   updated_at: rule.updated_at,
@@ -44,4 +45,3 @@ export const isRemoteNewer = (remoteUpdatedAt: string | undefined, localUpdatedA
   if (!remoteUpdatedAt) return false;
   return new Date(remoteUpdatedAt).getTime() > new Date(localUpdatedAt).getTime();
 };
-
