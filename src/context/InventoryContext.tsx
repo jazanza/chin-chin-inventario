@@ -43,6 +43,7 @@ export interface InventoryItem {
 }
 
 export interface OrderItem {
+  productId?: number;
   product: string;
   quantityToOrder: number;
   finalOrderQuantity: number;
@@ -199,6 +200,10 @@ const calculateEffectiveness = (data: InventoryItem[]): number => {
   return (matches / data.length) * 100;
 };
 
+export const buildSessionDateKey = (type: "weekly" | "monthly", timestamp: Date): string => (
+  `${format(timestamp, 'yyyy-MM-dd')}-${type}`
+);
+
 export const InventoryProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(inventoryReducer, initialState);
   const syncLockRef = useRef(false);
@@ -295,7 +300,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     forcedSessionId?: string
   ) => {
     if (!data || data.length === 0) return;
-    const dateKey = forcedSessionId || state.sessionId || format(initialTimestamp, 'yyyy-MM-dd');
+    const dateKey = forcedSessionId || state.sessionId || buildSessionDateKey(type, initialTimestamp);
     const effectiveness = calculateEffectiveness(data);
     const nowIso = new Date().toISOString();
 

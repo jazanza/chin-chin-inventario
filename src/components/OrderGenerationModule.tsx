@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -13,10 +13,15 @@ interface OrderGenerationModuleProps {
 }
 
 export interface OrderItem {
+  productId?: number;
   product: string;
   quantityToOrder: number;
   finalOrderQuantity: number;
 }
+
+const getOrderIdentity = (order: OrderItem) => (
+  order.productId !== undefined ? `id:${order.productId}` : `name:${order.product}`
+);
 
 export const buildOrdersBySupplier = (inventoryData: InventoryItem[]) => {
   const orders: { [supplier: string]: OrderItem[] } = {};
@@ -41,6 +46,7 @@ export const buildOrdersBySupplier = (inventoryData: InventoryItem[]) => {
       orders[item.supplier] = [];
     }
     orders[item.supplier].push({
+      productId: item.productId,
       product: item.productName,
       quantityToOrder: Math.round(quantityToOrder),
       finalOrderQuantity: Math.round(quantityToOrder),
@@ -64,13 +70,13 @@ export const mergeSavedOrdersWithSuggestions = (
 
   const savedByProduct = new Map<string, OrderItem>();
   Object.values(savedOrders).flat().forEach(order => {
-    savedByProduct.set(order.product, order);
+    savedByProduct.set(getOrderIdentity(order), order);
   });
 
   const merged: { [supplier: string]: OrderItem[] } = {};
   for (const supplier in suggestedOrders) {
     merged[supplier] = suggestedOrders[supplier].map(suggested => {
-      const saved = savedByProduct.get(suggested.product);
+      const saved = savedByProduct.get(getOrderIdentity(suggested)) || savedByProduct.get(`name:${suggested.product}`);
       const wasManuallyAdjusted = saved && saved.finalOrderQuantity !== saved.quantityToOrder;
       return {
         ...suggested,
@@ -87,6 +93,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [finalOrders, setFinalOrders] = useState<{ [supplier: string]: OrderItem[] }>({});
   const [isSaving, setIsSaving] = useState(false);
+  const previousSessionIdRef = useRef<string | null>(null);
 
   // Calcula las órdenes sugeridas
   const ordersBySupplier = useMemo(() => {
@@ -94,20 +101,32 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
   }, [inventoryData]);
 
   useEffect(() => {
-    setFinalOrders(mergeSavedOrdersWithSuggestions(ordersBySupplier, currentSessionOrders));
-  }, [ordersBySupplier, currentSessionOrders]);
+    const sessionChanged = previousSessionIdRef.current !== sessionId;
+    previousSessionIdRef.current = sessionId;
+
+    setFinalOrders(prevOrders => {
+      const hasLocalOrders = Object.keys(prevOrders).length > 0;
+      const ordersToMerge = sessionChanged
+        ? currentSessionOrders
+        : hasLocalOrders
+          ? prevOrders
+          : currentSessionOrders;
+
+      return mergeSavedOrdersWithSuggestions(ordersBySupplier, ordersToMerge);
+    });
+  }, [ordersBySupplier, currentSessionOrders, sessionId]);
 
   // Manejar cambios en la cantidad final de pedido (solo local)
   const handleFinalOrderQuantityChange = (
     supplier: string,
-    productName: string,
+    orderToUpdate: OrderItem,
     value: number
   ) => {
     setFinalOrders(prevOrders => {
       const newOrders = { ...prevOrders };
       if (newOrders[supplier]) {
         const productIndex = newOrders[supplier].findIndex(
-          item => item.product === productName
+          item => getOrderIdentity(item) === getOrderIdentity(orderToUpdate)
         );
         if (productIndex !== -1) {
           newOrders[supplier][productIndex] = {
@@ -266,7 +285,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                               <Button
                                 variant="outline"
                                 size="icon"
-                                onClick={() => handleFinalOrderQuantityChange(selectedSupplier, order.product, order.finalOrderQuantity - 1)}
+                                onClick={() => handleFinalOrderQuantityChange(selectedSupplier, order, order.finalOrderQuantity - 1)}
                                 disabled={order.finalOrderQuantity <= 0}
                                 className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                               >
@@ -275,7 +294,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                               <Input
                                 type="number"
                                 value={order.finalOrderQuantity}
-                                onChange={(e) => handleFinalOrderQuantityChange(selectedSupplier, order.product, parseInt(e.target.value, 10) || 0)}
+                                onChange={(e) => handleFinalOrderQuantityChange(selectedSupplier, order, parseInt(e.target.value, 10) || 0)}
                                 className={cn(
                                   "w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm",
                                   "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -285,7 +304,7 @@ export const OrderGenerationModule = ({ inventoryData }: OrderGenerationModulePr
                               <Button
                                 variant="outline"
                                 size="icon"
-                                onClick={() => handleFinalOrderQuantityChange(selectedSupplier, order.product, order.finalOrderQuantity + 1)}
+                                onClick={() => handleFinalOrderQuantityChange(selectedSupplier, order, order.finalOrderQuantity + 1)}
                                 className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
                               >
                                 <Plus className="h-3 w-3" />
