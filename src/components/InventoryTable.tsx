@@ -135,8 +135,8 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
   }, [inventoryData]);
 
   useEffect(() => {
-    setVisibleCount(150);
-  }, [inventoryData]);
+      setVisibleCount(150);
+    }, [inventoryData.length]);
 
   const visibleItems = useMemo(() => inventoryData.slice(0, visibleCount), [inventoryData, visibleCount]);
 
