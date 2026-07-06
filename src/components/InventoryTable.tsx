@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
+import { Minus, Plus } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useInventoryContext } from "@/context/InventoryContext";
+import { useInventoryContext, InventoryItem } from "@/context/InventoryContext";
 import { cn } from "@/lib/utils";
 
 interface InventoryTableProps {
@@ -62,7 +63,7 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {inventoryData.slice(0, visibleCount).map((item, index) => {
+          {inventoryData.slice(0, visibleCount).map((item) => {
             const isEdited = item.hasBeenEdited;
             return (
               <tr
@@ -130,11 +131,9 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
           })}
           {visibleCount < inventoryData.length && (
             <tr>
-              <td colSpan="6" className="px-6 py-4 text-center text-sm text-gray-500">
+              <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
                 <button
                   onClick={() => {
-                    // This would be handled by parent component's state
-                    // For now, we'll just show a toast or trigger an event
                     console.log("Show more items requested");
                   }}
                   className="underline hover:text-gray-900"
