@@ -1,102 +1,7 @@
-import React, { useMemo, useCallback, useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Check, ArrowUp, ArrowDown, Minus, Plus } from "lucide-react";
+import { useInventoryContext } from "@/context/InventoryContext";
 import { cn } from "@/lib/utils";
-import { InventoryItem, useInventoryContext } from "@/context/InventoryContext";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-interface InventoryRowProps {
-  item: InventoryItem;
-  onUpdate: (productId: number, key: keyof InventoryItem, value: number | boolean) => void;
-}
-
-// Componente de fila memoizado para evitar re-renders innecesarios
-const InventoryRow = React.memo(({ item, onUpdate }: InventoryRowProps) => {
-  // Estado local para respuesta visual instantánea
-  const [localQty, setLocalQty] = useState(item.physicalQuantity);
-
-  // Sincronizar el estado local si el valor global cambia (ej: por una carga de sesión o sync remoto)
-  useEffect(() => {
-    if (item.physicalQuantity !== localQty) {
-      setLocalQty(item.physicalQuantity);
-    }
-  }, [item.physicalQuantity, localQty]);
-
-  // Función para manejar el cambio de cantidad con respuesta inmediata
-  const handleAdjust = (delta: number) => {
-    const newValue = Math.max(0, localQty + delta);
-    setLocalQty(newValue);
-    onUpdate(item.productId, 'physicalQuantity', newValue);
-  };
-
-  const handleInputChange = (value: string) => {
-    const newValue = parseInt(value, 10);
-    const finalValue = isNaN(newValue) ? 0 : Math.max(0, newValue);
-    setLocalQty(finalValue);
-    onUpdate(item.productId, 'physicalQuantity', finalValue);
-  };
-
-  const isMatch = item.systemQuantity === localQty;
-  const isExcess = localQty > item.systemQuantity;
-  const isDeficit = localQty < item.systemQuantity;
-  const showCheck = isMatch || !item.hasBeenEdited;
-  const showArrows = item.hasBeenEdited && (isExcess || isDeficit);
-
-  return (
-    <TableRow className="border-b border-gray-100 hover:bg-gray-50">
-      <TableCell className="py-2 px-2 text-xs sm:text-sm align-middle font-bold">
-        {item.productName}
-      </TableCell>
-      <TableCell className="py-2 px-2 text-xs sm:text-sm text-center align-middle">
-        {item.systemQuantity}
-      </TableCell>
-      <TableCell className="py-2 px-2 align-middle">
-        <div className="flex items-center space-x-1">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => handleAdjust(-1)}
-            disabled={localQty <= 0}
-            className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
-          >
-            <Minus className="h-3 w-3" />
-          </Button>
-          <Input
-            type="number"
-            value={localQty}
-            onChange={(e) => handleInputChange(e.target.value)}
-            className={cn(
-              "w-full max-w-[4rem] bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500 text-center text-xs sm:text-sm",
-              "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            )}
-            min="0"
-          />
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => handleAdjust(1)}
-            className="h-7 w-7 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        </div>
-      </TableCell>
-      <TableCell className="py-2 px-2 flex items-center justify-center align-middle">
-        {showCheck && <Check className="h-4 w-4 text-green-500" />}
-        {showArrows && (
-          <>
-            {isExcess && <ArrowUp className="h-4 w-4 text-red-500" />}
-            {isDeficit && <ArrowDown className="h-4 w-4 text-red-500" />}
-          </>
-        )}
-      </TableCell>
-    </TableRow>
-  );
-});
-
-InventoryRow.displayName = "InventoryRow";
 
 interface InventoryTableProps {
   inventoryData: InventoryItem[];
@@ -104,90 +9,143 @@ interface InventoryTableProps {
 
 export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
   const { updateInventoryItemLocal } = useInventoryContext();
-  const [visibleCount, setVisibleCount] = useState(150);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevVisibleCountRef = useRef(0);
+  const visibleCount = Math.min(inventoryData.length, 50); // Show first 50 items by default
 
-  // Resumen calculado solo cuando los datos cambian
-  const summary = useMemo(() => {
-    let matches = 0;
-    let positiveDiscrepancies = 0;
-    let negativeDiscrepancies = 0;
-    const totalItems = inventoryData.length;
-
-    inventoryData.forEach(item => {
-      if (item.systemQuantity === item.physicalQuantity) {
-        matches++;
-      } else if (item.physicalQuantity > item.systemQuantity) {
-        positiveDiscrepancies++;
-      } else {
-        negativeDiscrepancies++;
-      }
-    });
-
-    const effectivenessPercentage = totalItems > 0 ? (matches / totalItems) * 100 : 0;
-
-    return {
-      matches,
-      positiveDiscrepancies,
-      negativeDiscrepancies,
-      effectivenessPercentage,
-      totalItems,
-    };
-  }, [inventoryData]);
-
+  // Preserve scroll position when re-rendering due to edits
   useEffect(() => {
-      setVisibleCount(150);
-    }, [inventoryData.length]);
+    if (scrollContainerRef.current) {
+      const scrollTop = scrollContainerRef.current.scrollTop;
+      // Store current visible count for comparison
+      prevVisibleCountRef.current = visibleCount;
+      // Restore scroll position after render
+      requestAnimationFrame(() => {
+        scrollContainerRef.current.scrollTop = scrollTop;
+      });
+    }
+  }, [visibleCount]);
 
-  const visibleItems = useMemo(() => inventoryData.slice(0, visibleCount), [inventoryData, visibleCount]);
+  // Adjust scroll when visibleCount changes (e.g., "Show More" button)
+  useEffect(() => {
+    if (scrollContainerRef.current && prevVisibleCountRef.current !== visibleCount) {
+      const itemHeight = 40; // Approximate row height
+      const targetIndex = Math.min(visibleCount, inventoryData.length) - 1;
+      const newScrollTop = targetIndex * itemHeight;
+      scrollContainerRef.current.scrollTop = newScrollTop;
+    }
+  }, [visibleCount, inventoryData]);
 
   return (
-    <div className="w-full">
-      <div className="overflow-x-auto w-full max-h-[70vh] custom-scrollbar mb-6">
-        <Table className="min-w-full bg-white text-gray-900 border-collapse">
-          <TableHeader className="sticky top-0 bg-white z-10">
-            <TableRow className="border-b border-gray-200">
-              <TableHead className="text-xs sm:text-sm text-gray-700 font-bold">Producto</TableHead>
-              <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Cant. Aronium</TableHead>
-              <TableHead className="text-xs sm:text-sm text-gray-700">Cant. Real</TableHead>
-              <TableHead className="text-xs sm:text-sm text-gray-700 text-center">Acierto / Desacierto</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visibleItems.map((item) => (
-              <InventoryRow
-                key={`${item.productId}_${item.productName}`} // Composite key para garantizar unicidad
-                item={item}
-                onUpdate={updateInventoryItemLocal}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {visibleCount < inventoryData.length && (
-        <div className="flex justify-center mb-6">
-          <Button
-            variant="outline"
-            onClick={() => setVisibleCount((current) => Math.min(current + 150, inventoryData.length))}
-            className="border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            Mostrar 150 más
-          </Button>
-        </div>
-      )}
-
-      <Card className="w-full bg-white text-gray-900 border-gray-200 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-xl sm:text-2xl text-center text-gray-900">Resumen de Inventario</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-base sm:text-lg">
-          <p><strong>Total de Productos:</strong> {summary.totalItems}</p>
-          <p><strong>Cantidad de Aciertos:</strong> {summary.matches}</p>
-          <p><strong>Cantidad de Desaciertos Positivos:</strong> {summary.positiveDiscrepancies}</p>
-          <p><strong>Cantidad de Desaciertos Negativos:</strong> {summary.negativeDiscrepancies}</p>
-          <p><strong>Porcentaje de Efectividad en Stock:</strong> {summary.effectivenessPercentage.toFixed(2)}%</p>
-        </CardContent>
-      </Card>
+    <div className="overflow-x-auto custom-scrollbar" ref={scrollContainerRef}>
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Producto
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Categoría
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Stock Sistema
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Stock Físico
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Proveedor
+            </th>
+            <th scope="col" className="relative px-6 py-3">
+              <span className="sr-only">Acciones</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {inventoryData.slice(0, visibleCount).map((item, index) => {
+            const isEdited = item.hasBeenEdited;
+            return (
+              <tr
+                key={item.productId}
+                className={cn(
+                  "hover:bg-gray-50",
+                  isEdited && "bg-blue-50",
+                  "border-b border-gray-100"
+                )}
+              >
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {item.productName}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {item.category}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {item.systemQuantity}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => updateInventoryItemLocal(item.productId, "physicalQuantity", item.physicalQuantity - 1)}
+                      disabled={item.physicalQuantity <= 0}
+                      className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <input
+                      type="number"
+                      value={item.physicalQuantity}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value, 10) || 0;
+                        updateInventoryItemLocal(item.productId, "physicalQuantity", value);
+                      }}
+                      className={cn(
+                        "w-20 text-center border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500",
+                        isEdited && "border-blue-500 focus:ring-blue-400"
+                      )}
+                    />
+                    <button
+                      onClick={() => updateInventoryItemLocal(item.productId, "physicalQuantity", item.physicalQuantity + 1)}
+                      className="h-8 w-8 p-0 text-gray-700 border-gray-300 hover:bg-gray-100"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {item.supplier}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  {isEdited ? (
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                      Editado
+                    </span>
+                  ) : (
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-500">
+                      Original
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {visibleCount < inventoryData.length && (
+            <tr>
+              <td colSpan="6" className="px-6 py-4 text-center text-sm text-gray-500">
+                <button
+                  onClick={() => {
+                    // This would be handled by parent component's state
+                    // For now, we'll just show a toast or trigger an event
+                    console.log("Show more items requested");
+                  }}
+                  className="underline hover:text-gray-900"
+                >
+                  Mostrar más ({inventoryData.length - visibleCount} más)
+                </button>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 };
