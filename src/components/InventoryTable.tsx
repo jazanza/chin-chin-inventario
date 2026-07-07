@@ -64,7 +64,8 @@ export const InventoryTable = ({ inventoryData }: InventoryTableProps) => {
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {inventoryData.slice(0, visibleCount).map((item) => {
-            const isEdited = item.hasBeenEdited;
+            // BUG FIX: Usar doble negación para manejar undefined explícitamente
+            const isEdited = !!item.hasBeenEdited;
             return (
               <tr
                 key={item.productId}

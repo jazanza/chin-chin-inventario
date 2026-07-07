@@ -321,10 +321,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('dateKey', dateKey)
           .maybeSingle();
 
+        // BUG FIX: No llamar a forceDownloadConfigFromSupabase desde aquí
         if (remoteSession && isRemoteNewer(remoteSession.updated_at, sessionToSave.updated_at)) {
           await db.sessions.update(dateKey, { sync_pending: true });
           showError('La nube tiene una versión más nueva de esta sesión. Se mantuvo la copia local para evitar sobrescritura.');
-          await forceDownloadConfigFromSupabase();
+          // No forzar sincronización desde aquí para evitar bucle
           return;
         }
 
@@ -382,8 +383,18 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('dateKey', session.dateKey)
           .maybeSingle();
 
+        // BUG FIX: Actualizar datos locales cuando el remoto es más nuevo
         if (remoteSession && isRemoteNewer(remoteSession.updated_at, session.updated_at)) {
-          await db.sessions.update(session.dateKey, { sync_pending: false });
+          // Obtener datos completos del remoto y actualizar localmente
+          const { data: fullRemoteSession } = await supabase
+            .from('inventory_sessions')
+            .select('*')
+            .eq('dateKey', session.dateKey)
+            .single();
+          
+          if (fullRemoteSession) {
+            await db.sessions.put(mapRemoteSessionToLocal(fullRemoteSession as RemoteInventorySession));
+          }
           continue;
         }
 
@@ -412,7 +423,16 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .maybeSingle();
 
         if (remoteRule && isRemoteNewer(remoteRule.updated_at, rule.updated_at)) {
-          await db.productRules.update(rule.productId, { sync_pending: false });
+          // BUG FIX: Actualizar datos locales cuando el remoto es más nuevo
+          const { data: fullRemoteRule } = await supabase
+            .from('product_rules')
+            .select('*')
+            .eq('productId', rule.productId)
+            .single();
+          
+          if (fullRemoteRule) {
+            await db.productRules.put(mapRemoteRuleToLocal(fullRemoteRule as RemoteProductRule));
+          }
           continue;
         }
 
@@ -569,11 +589,23 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
       if (!db.isOpen()) await db.open();
       const { data: rules } = await supabase.from('product_rules').select('*');
       const { data: sessions } = await supabase.from('inventory_sessions').select('*');
+      
+      // BUG FIX: No borrar BD local, solo reemplazar datos
       if (rules) {
-        await db.productRules.bulkPut((rules as RemoteProductRule[]).map(mapRemoteRuleToLocal));
+        const mappedRules = (rules as RemoteProductRule[]).map(mapRemoteRuleToLocal);
+        await db.productRules.bulkPut(mappedRules);
+        // Actualizar sync_pending a false
+        for (const rule of mappedRules) {
+          await db.productRules.update(rule.productId, { sync_pending: false });
+        }
       }
       if (sessions) {
-        await db.sessions.bulkPut((sessions as RemoteInventorySession[]).map(mapRemoteSessionToLocal));
+        const mappedSessions = (sessions as RemoteInventorySession[]).map(mapRemoteSessionToLocal);
+        await db.sessions.bulkPut(mappedSessions);
+        // Actualizar sync_pending a false
+        for (const session of mappedSessions) {
+          await db.sessions.update(session.dateKey, { sync_pending: false });
+        }
       }
       await loadMasterProductConfigs();
       showSuccess("Datos actualizados desde la nube correctamente.");
