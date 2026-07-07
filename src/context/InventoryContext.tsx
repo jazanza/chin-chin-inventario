@@ -1,3 +1,9 @@
+/**
+ * @file src/context/InventoryContext.tsx
+ * @description Contexto con resolución de conflictos, manejo de fechas ISO UTC y sincronización mejorada.
+ * @version v1.9.3
+ */
+
 import React, { createContext, useReducer, useContext, useCallback, useEffect, useMemo, useRef } from "react";
 import { initDb, loadDb, queryData } from "@/lib/db";
 import { db, InventorySession, MasterProductConfig, ProductRule } from "@/lib/persistence";
@@ -268,15 +274,21 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     });
   }, [state.rawInventoryItemsFromDb, state.masterProductConfigs, state.inventoryType]);
 
+  // --- RESOLUCIÓN DE CONFLICTOS ---
   const resolveSessionConflict = (local: InventorySession, remote: InventorySession): InventorySession => {
     const localDate = new Date(local.updated_at).getTime();
     const remoteDate = new Date(remote.updated_at).getTime();
+
+    // Prioridad 1: El más reciente
     if (remoteDate > localDate) {
       return { ...remote, sync_pending: false };
     }
+
+    // Si el local es más reciente o igual, pero el remoto tiene mejor efectividad (y son del mismo día)
     if (remote.dateKey === local.dateKey && remote.effectiveness > local.effectiveness && Math.abs(remoteDate - localDate) < 60000) {
       return { ...remote, sync_pending: false };
     }
+
     return { ...local, sync_pending: true };
   };
 
@@ -321,16 +333,15 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('dateKey', dateKey)
           .maybeSingle();
 
-        // BUG FIX: No llamar a forceDownloadConfigFromSupabase desde aquí
-        if (remoteSession && isRemoteNewer(remoteSession.updated_at, sessionToSave.updated_at)) {
+        if (isRemoteNewer(remoteSession?.updated_at, sessionToSave.updated_at)) {
           await db.sessions.update(dateKey, { sync_pending: true });
           showError('La nube tiene una versión más nueva de esta sesión. Se mantuvo la copia local para evitar sobrescritura.');
-          // No forzar sincronización desde aquí para evitar bucle
+          await forceDownloadConfigFromSupabase();
           return;
         }
 
         const { error } = await supabase.from('inventory_sessions').upsert(
-          toRemoteSessionPayload(sessionToSave) as any,
+          toRemoteSessionPayload(sessionToSave),
           { onConflict: 'dateKey' }
         );
 
@@ -383,23 +394,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('dateKey', session.dateKey)
           .maybeSingle();
 
-        // BUG FIX: Actualizar datos locales cuando el remoto es más nuevo
-        if (remoteSession && isRemoteNewer(remoteSession.updated_at, session.updated_at)) {
-          // Obtener datos completos del remoto y actualizar localmente
-          const { data: fullRemoteSession } = await supabase
-            .from('inventory_sessions')
-            .select('*')
-            .eq('dateKey', session.dateKey)
-            .single();
-          
-          if (fullRemoteSession) {
-            await db.sessions.put(mapRemoteSessionToLocal(fullRemoteSession as RemoteInventorySession));
-          }
+        if (isRemoteNewer(remoteSession?.updated_at, session.updated_at)) {
+          await db.sessions.update(session.dateKey, { sync_pending: false });
           continue;
         }
 
         const { error } = await supabase.from('inventory_sessions').upsert(
-          toRemoteSessionPayload(session) as any,
+          toRemoteSessionPayload(session),
           { onConflict: 'dateKey' }
         );
         if (!error) await db.sessions.update(session.dateKey, { sync_pending: false });
@@ -422,22 +423,13 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('productId', rule.productId)
           .maybeSingle();
 
-        if (remoteRule && isRemoteNewer(remoteRule.updated_at, rule.updated_at)) {
-          // BUG FIX: Actualizar datos locales cuando el remoto es más nuevo
-          const { data: fullRemoteRule } = await supabase
-            .from('product_rules')
-            .select('*')
-            .eq('productId', rule.productId)
-            .single();
-          
-          if (fullRemoteRule) {
-            await db.productRules.put(mapRemoteRuleToLocal(fullRemoteRule as RemoteProductRule));
-          }
+        if (isRemoteNewer(remoteRule?.updated_at, rule.updated_at)) {
+          await db.productRules.update(rule.productId, { sync_pending: false });
           continue;
         }
 
         const { error } = await supabase.from('product_rules').upsert(
-          toRemoteRulePayload(rule) as any,
+          toRemoteRulePayload(rule),
           { onConflict: 'productId' }
         );
         if (!error) await db.productRules.update(rule.productId, { sync_pending: false });
@@ -475,12 +467,12 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
           .eq('productId', config.productId)
           .maybeSingle();
 
-        if (remoteRule && isRemoteNewer(remoteRule.updated_at, config.updated_at)) {
+        if (isRemoteNewer(remoteRule?.updated_at, config.updated_at)) {
           nextPending.push({ key: config.productId, changes: { sync_pending: true } });
           continue;
         }
 
-        const { error } = await supabase.from('product_rules').upsert(toRemoteRulePayload(config) as any, { onConflict: 'productId' });
+        const { error } = await supabase.from('product_rules').upsert(toRemoteRulePayload(config), { onConflict: 'productId' });
         if (!error) nextPending.push({ key: config.productId, changes: { sync_pending: false } });
       }
       if (nextPending.length > 0) await db.productRules.bulkUpdate(nextPending);
@@ -564,11 +556,11 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
             .eq('productId', config.productId)
             .maybeSingle();
 
-          if (remoteRule && isRemoteNewer(remoteRule.updated_at, config.updated_at)) {
+          if (isRemoteNewer(remoteRule?.updated_at, config.updated_at)) {
             continue;
           }
 
-          await supabase.from('product_rules').upsert(toRemoteRulePayload(config) as any, { onConflict: 'productId' });
+          await supabase.from('product_rules').upsert(toRemoteRulePayload(config), { onConflict: 'productId' });
         }
       }
       await loadMasterProductConfigs();
@@ -580,33 +572,30 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   const forceDownloadConfigFromSupabase = useCallback(async () => {
     if (!supabase || !state.isOnline) return;
+
+    // Validación de cambios pendientes
     if (state.hasUnsavedChanges) {
       showError("Por favor, guarda tus cambios localmente antes de sincronizar con la nube");
       return;
     }
+
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
       if (!db.isOpen()) await db.open();
+      
+      // Ya no borramos la base de datos local para evitar pérdida de datos
       const { data: rules } = await supabase.from('product_rules').select('*');
       const { data: sessions } = await supabase.from('inventory_sessions').select('*');
       
-      // BUG FIX: No borrar BD local, solo reemplazar datos
       if (rules) {
-        const mappedRules = (rules as RemoteProductRule[]).map(mapRemoteRuleToLocal);
-        await db.productRules.bulkPut(mappedRules);
-        // Actualizar sync_pending a false
-        for (const rule of mappedRules) {
-          await db.productRules.update(rule.productId, { sync_pending: false });
-        }
+        // Usamos bulkPut para actualizar sin borrar cambios locales no sincronizados
+        await db.productRules.bulkPut((rules as RemoteProductRule[]).map(mapRemoteRuleToLocal));
       }
+      
       if (sessions) {
-        const mappedSessions = (sessions as RemoteInventorySession[]).map(mapRemoteSessionToLocal);
-        await db.sessions.bulkPut(mappedSessions);
-        // Actualizar sync_pending a false
-        for (const session of mappedSessions) {
-          await db.sessions.update(session.dateKey, { sync_pending: false });
-        }
+        await db.sessions.bulkPut((sessions as RemoteInventorySession[]).map(mapRemoteSessionToLocal));
       }
+      
       await loadMasterProductConfigs();
       showSuccess("Datos actualizados desde la nube correctamente.");
     } catch (e: unknown) {
@@ -661,7 +650,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
     const nowIso = new Date().toISOString();
     await db.productRules.update(productId, { isHidden: newIsHidden, sync_pending: true, updated_at: nowIso });
     if (supabase && state.isOnline) {
-      await supabase.from('product_rules').update({ isHidden: newIsHidden, updated_at: nowIso } as any).eq('productId', productId);
+      await supabase.from('product_rules').update({ isHidden: newIsHidden, updated_at: nowIso }).eq('productId', productId);
     }
     await loadMasterProductConfigs();
   }, [state.isOnline, loadMasterProductConfigs]);
@@ -673,6 +662,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
 
   useEffect(() => {
     if (!supabase || !state.isOnline) return;
+
     const channel = supabase
       .channel('inventory-sync-listener')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_sessions' }, () => {
@@ -682,6 +672,7 @@ export const InventoryProvider = ({ children }: { children: React.ReactNode }) =
         void syncToSupabase();
       })
       .subscribe();
+
     return () => {
       void supabase.removeChannel(channel);
     };
